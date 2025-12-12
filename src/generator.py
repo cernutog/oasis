@@ -97,10 +97,10 @@ class OASGenerator:
         if df is None: return params
         
         for _, row in df.iterrows():
-            name = row.get("Name") or row.get("Request Parameters")
+            name = self._get_name(row)
             if pd.isna(name): continue
             
-            in_loc = row.get("In")
+            in_loc = self._get_col_value(row, ["In", "Location"])
             if pd.isna(in_loc): 
                  # Try to infer or default? Usually 'query' or 'header'
                  continue 
@@ -108,8 +108,8 @@ class OASGenerator:
             param = {
                 "name": name,
                 "in": str(in_loc).lower(),
-                "description": row.get("Description", ""),
-                "required": str(row.get("Mandatory", "")).lower() == "yes",
+                "description": self._get_description(row) or "",
+                "required": str(self._get_col_value(row, ["Mandatory", "Required"]) or "").lower() in ["yes", "y", "true", "m"],
                 "schema": self._map_type_to_schema(row)
             }
             params.append(param)
@@ -136,6 +136,37 @@ class OASGenerator:
             }
         }
 
+    def _get_col_value(self, row, keys):
+        """
+        Helper to get value from row checking multiple column headers.
+        """
+        if isinstance(keys, str): keys = [keys]
+        for k in keys:
+            if k in row: # direct check
+                val = row[k]
+                if pd.notna(val): return val
+        return None
+
+    def _get_schema_name(self, row):
+        return self._get_col_value(row, [
+            "Schema Name",
+            "Schema Name\n(for Type or Items Data Type = 'schema')",
+            "Schema Name\n(for Type or Items Data Type = 'schema'||'header')",
+            "Schema Name\n(for Type or Items Data Type = 'schema' || 'header')"
+        ])
+
+    def _get_type(self, row):
+        return self._get_col_value(row, ["Type", "Data Type", "Item Type", "Type "]) 
+
+    def _get_name(self, row):
+        return self._get_col_value(row, ["Name", "Parameter Name", "Field Name", "Request Parameters", "Path"])
+
+    def _get_parent(self, row):
+        return self._get_col_value(row, ["Parent", "Parent Name"])
+
+    def _get_description(self, row):
+        return self._get_col_value(row, ["Description", "Desc", "Description "])
+
     def _build_single_response(self, df):
         if df is None or df.empty: return {"description": "Response"}
         
@@ -145,22 +176,22 @@ class OASGenerator:
         schema_rows_mask = []
         
         for idx, row in df.iterrows():
-             r_type = str(row.get("Type")).strip().lower()
+             r_type = str(self._get_type(row)).strip().lower()
              if r_type == 'header':
                  header_rows.append(row)
                  schema_rows_mask.append(False)
              else:
                  schema_rows_mask.append(True)
-                 if pd.isna(row.get("Parent")) and root_row is None:
+                 if pd.isna(self._get_parent(row)) and root_row is None:
                      root_row = row
 
         if root_row is None: 
              # Fallback
              return {"description": "Response"}
 
-        desc = root_row.get("Name") or root_row.get("Description") or "Response"
-        type_val = str(root_row.get("Type")).strip().lower()
-        schema_ref = root_row.get("Schema Name\n(for Type or Items Data Type = 'schema'||'header')") or root_row.get("Schema Name")
+        desc = self._get_name(root_row) or self._get_description(root_row) or "Response"
+        type_val = str(self._get_type(root_row)).strip().lower()
+        schema_ref = self._get_schema_name(root_row)
 
         # 2. Global Response Reference (Type == 'response')
         if type_val == 'response' and pd.notna(schema_ref):
@@ -174,36 +205,41 @@ class OASGenerator:
         if not df_schema.empty:
             schema = self._build_schema_from_flat_table(df_schema)
             # If the root is 'Type: object' but mostly empty, schema might be empty dict.
-            # If Content-Type is implied?
-            # Default to application/json
-            resp_obj["content"] = {
-                "application/json": {
-                    "schema": schema
+            # If function returns empty dict, means no properties?
+            # Check if schema is empty
+            if schema:
+                content_type = "application/json"
+                # If explicit content type in Name?
+                # If root name looks like mimetype?
+                if "/" in str(self._get_name(root_row)):
+                    content_type = str(self._get_name(root_row)).strip()
+                
+                resp_obj["content"] = {
+                    content_type: {
+                        "schema": schema
+                    }
                 }
-            }
         
         # 4. Headers
         if header_rows:
             headers = {}
             for row in header_rows:
-                 h_name = row.get("Name")
+                 h_name = self._get_name(row)
                  if pd.notna(h_name):
-                      # Headers: description + schema
-                      h_schema = self._map_type_to_schema(row)
-                      # Extract description from schema as sibling for Header Object
-                      h_desc = h_schema.pop("description", None)
-                      
-                      head_obj = {"schema": h_schema}
-                      if h_desc: head_obj["description"] = h_desc
-                      # If referencing a global header?
-                      h_ref = row.get("Schema Name\n(for Type or Items Data Type = 'schema'||'header')") or row.get("Schema Name")
-                      # If Type is 'header' and has Schema Name, maybe it's a ref to component/headers?
-                      # But usually Type is 'string' etc.
-                      # If Type is 'header', the Row says "This is a header". 
-                      # The data type of the header is usually separate?
-                      # Assuming standard row mapping works.
-                      
-                      headers[h_name] = head_obj
+                      # Check for Global Header Reference
+                      schema_ref = self._get_schema_name(row)
+                      if pd.notna(schema_ref):
+                           headers[h_name] = {"$ref": f"#/components/headers/{schema_ref}"}
+                      else:
+                           # Headers: description + schema
+                           h_schema = self._map_type_to_schema(row)
+                           # Extract description from schema as sibling for Header Object
+                           h_desc = h_schema.pop("description", None)
+                           
+                           head_obj = {"schema": h_schema}
+                           if h_desc: head_obj["description"] = h_desc
+                
+                           headers[h_name] = head_obj
             resp_obj["headers"] = headers
 
         return resp_obj
@@ -219,23 +255,20 @@ class OASGenerator:
         roots = []
         
         for idx, row in df.iterrows():
-            name = row.get("Name")
+            name = self._get_name(row)
             if pd.isna(name): continue
             name = str(name).strip()
             
             # Skip rows that look like content-types or section headers if they don't have schema info
-            if name == "application/json" and pd.isna(row.get("Parent")):
+            if name == "application/json" and pd.isna(self._get_parent(row)):
                 continue
-            
-            # Check for Mandatory at this level to be used by parent later?
-            # actually we can check it when processing children.
             
             node = {
                 "name": name,
-                "type": row.get("Type"),
-                "description": row.get("Description"),
-                "parent": row.get("Parent"),
-                "mandatory": str(row.get("Mandatory", "")).lower() in ["yes", "y", "true"],
+                "type": self._get_type(row),
+                "description": self._get_description(row),
+                "parent": self._get_parent(row),
+                "mandatory": str(self._get_col_value(row, ["Mandatory", "Required"]) or "").lower() in ["yes", "y", "true", "m"],
                 "schema_obj": self._map_type_to_schema(row, is_node=True)
             }
             
@@ -281,15 +314,15 @@ class OASGenerator:
         """
         Maps Excel row data to an OAS schema object.
         """
-        type_val = row.get("Type")
+        type_val = self._get_type(row)
         if pd.isna(type_val): type_val = "string"
         type_val = str(type_val).lower()
         
         schema = {}
         
         # Check if it's a ref
-        schema_ref = row.get("Schema Name\n(for Type or Items Data Type = 'schema'||'header')") or row.get("Schema Name")
-        desc = row.get("Description")
+        schema_ref = self._get_schema_name(row)
+        desc = self._get_description(row)
         
         if pd.notna(schema_ref):
             ref_path = f"#/components/schemas/{schema_ref}"
@@ -318,26 +351,23 @@ class OASGenerator:
         if pd.notna(desc) and "description" not in schema: 
             schema["description"] = str(desc)
 
-        ex = row.get("Example")
+        ex = self._get_col_value(row, ["Example", "Examples"])
         if pd.notna(ex): schema["example"] = ex
         
         # Enums
-        enum_val = row.get("Allowed value") or row.get("Allowed values")
+        enum_val = self._get_col_value(row, ["Allowed value", "Allowed values"])
         if pd.notna(enum_val):
             schema["enum"] = [x.strip() for x in str(enum_val).split(',')]
 
         # Formatting / Constraints
-        fmt = row.get("Format")
+        fmt = self._get_col_value(row, ["Format"])
         if pd.notna(fmt): schema["format"] = str(fmt)
         
-        pattern = row.get("PatternEba")
+        pattern = self._get_col_value(row, ["PatternEba", "Pattern", "Regex"])
         if pd.notna(pattern): schema["pattern"] = str(pattern)
-        
-        regex = row.get("Regex")  # Override PatternEba if present? Or allow both?
-        if pd.notna(regex): schema["pattern"] = str(regex)
 
-        min_val = row.get("Min\nValue/Length/Item") or row.get("Min Value/Length/Item") or row.get("Min")
-        max_val = row.get("Max\nValue/Length/Item") or row.get("Max Value/Length/Item") or row.get("Max")
+        min_val = self._get_col_value(row, ["Min\nValue/Length/Item", "Min Value/Length/Item", "Min"])
+        max_val = self._get_col_value(row, ["Max\nValue/Length/Item", "Max Value/Length/Item", "Max"])
         
         if pd.notna(min_val):
             # Infer if it's minLength, minimum, or minItems property based on type
@@ -358,7 +388,7 @@ class OASGenerator:
 
         if type_val == "array":
             # If explicit item type is given
-            item_type = row.get("Items Data Type\n(Array only)") or row.get("Items Data Type")
+            item_type = self._get_col_value(row, ["Items Data Type\n(Array only)", "Items Data Type", "Item Type"])
             if pd.notna(item_type):
                  schema["items"] = {"type": str(item_type).lower()}
             elif "items" not in schema:
@@ -399,23 +429,27 @@ class OASGenerator:
         df.columns = df.columns.str.strip()
         
         for idx, row in df.iterrows():
-            name = row.get("Name")
+            name = self._get_name(row)
             if pd.isna(name): continue
             name = str(name).strip()
             
+            # Parsing M for mandatory
+            mand_raw = str(self._get_col_value(row, ["Mandatory", "Required"]) or "").strip().lower()
+            is_mandatory = mand_raw in ["yes", "y", "true", "m"]
+
             node = {
                 "name": name,
-                "type": row.get("Type"),
-                "description": row.get("Description"),
-                "parent": row.get("Parent"),
-                "item_type": row.get("Items Data Type\n(Array only)") or row.get("Items Data Type"),
-                "schema_ref": row.get("Schema Name\n(for Type or Items Data Type = 'schema'||'header')") or row.get("Schema Name"),
-                "example": row.get("Example"),
-                "enum": row.get("Allowed value"),
-                "properties": {},
-                "items": None,
+                "type": self._get_type(row),
+                "description": self._get_description(row),
+                "parent": self._get_parent(row),
+                "mandatory": is_mandatory,
                 "schema_obj": self._map_type_to_schema(row, is_node=True)
             }
+            # Add title if Name is root?
+            # If it's a root (no parent), usually schema name = title too?
+            # Or description is used as title?
+            # OAS schema 'title' property.
+            
             nodes[name] = node
 
         # 2. Link
@@ -423,6 +457,9 @@ class OASGenerator:
             parent_name = node["parent"]
             if pd.isna(parent_name):
                 roots.append(node)
+                # Assign Title to Root if missing?
+                if "title" not in node["schema_obj"]:
+                    node["schema_obj"]["title"] = name
             elif str(parent_name).strip() in nodes:
                 parent = nodes[str(parent_name).strip()]
                 parent_schema = parent["schema_obj"]
@@ -431,10 +468,14 @@ class OASGenerator:
                     parent_schema["items"] = node["schema_obj"]
                 else:
                     if "properties" not in parent_schema: parent_schema["properties"] = {}
-                    
-                    # Special check: If we are adding a property that has an allOf wrapper (for 3.0 ref workadound)
-                    # We add it as is.
                     parent_schema["properties"][name] = node["schema_obj"]
+                    
+                    # Handle Required
+                    if node["mandatory"]:
+                        if "required" not in parent_schema:
+                            parent_schema["required"] = []
+                        if name not in parent_schema["required"]:
+                            parent_schema["required"].append(name)
 
         # 3. Return map of Root Name -> Schema
         return {r["name"]: r["schema_obj"] for r in roots}
