@@ -6,3 +6,27 @@ generated_oas_3.0.yaml
 generated_oas_3.1.yaml
 .vscode/
 .env
+
+# Debug and temporary scripts
+debug_*
+inspect_*
+fix_*
+patch_*
+verify_*
+check_*
+analyze_*
+compare_*
+list_*
+
+# Test scripts in root (should be in tests/)
+test_*.py
+
+# Reports and logs
+*.txt
+*.log
+last_good_*.yaml
+discrepancies*
+
+# Generated output directory
+API Templates/generated/
+API Templates/~*

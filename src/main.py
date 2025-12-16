@@ -34,10 +34,17 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, log_callback=print):
     # 2. Parse Master Index
     log_callback(f"Parsing index: {os.path.basename(index_path)}")
     df_info = parser.load_excel_sheet(index_path, "General Description")
-    info_data = parser.parse_info(df_info)
+    info_data, inline_servers = parser.parse_info(df_info)
     
     df_tags = parser.load_excel_sheet(index_path, "Tags")
     tags_data = parser.parse_tags(df_tags)
+
+    # Parse Servers and Security
+    servers_data = parser.parse_servers(parser.load_excel_sheet(index_path, "Servers"))
+    if not servers_data and inline_servers:
+        servers_data = inline_servers
+
+    security_schemes, security_req = parser.parse_security(parser.load_excel_sheet(index_path, "Security"))
 
     df_paths = parser.load_excel_sheet(index_path, "Paths")
     paths_list = parser.parse_paths_index(df_paths)
@@ -78,10 +85,25 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, log_callback=print):
         generator_30.build_info(info_data)
         if tags_data:
             generator_30.oas["tags"] = tags_data
+        if servers_data:
+            generator_30.oas["servers"] = servers_data
+        if security_req:
+            generator_30.oas["security"] = security_req
+            
         generator_30.build_paths(paths_list, operations_details)
+        
+        # Add Security Schemes to Components
+        if security_schemes:
+            if "securitySchemes" not in components_data: components_data["securitySchemes"] = {}
+            components_data["securitySchemes"].update(security_schemes)
+            
         generator_30.build_components(components_data)
         
-        out_30 = os.path.join(output_dir, "generated_oas_3.0.yaml")
+        # Ensure 'generated' folder exists
+        gen_dir = os.path.join(output_dir, "generated")
+        os.makedirs(gen_dir, exist_ok=True)
+
+        out_30 = os.path.join(gen_dir, "generated_oas_3.0.yaml")
         log_callback(f"Writing OAS 3.0 to: {out_30}")
         with open(out_30, "w", encoding="utf-8") as f:
             f.write(generator_30.get_yaml())
@@ -93,10 +115,19 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, log_callback=print):
         generator_31.build_info(info_data)
         if tags_data:
             generator_31.oas["tags"] = tags_data
+        if servers_data:
+            generator_31.oas["servers"] = servers_data
+        if security_req:
+            generator_31.oas["security"] = security_req
+            
         generator_31.build_paths(paths_list, operations_details)
         generator_31.build_components(components_data)
 
-        out_31 = os.path.join(output_dir, "generated_oas_3.1.yaml")
+        # Ensure 'generated' folder exists
+        gen_dir = os.path.join(output_dir, "generated")
+        os.makedirs(gen_dir, exist_ok=True)
+
+        out_31 = os.path.join(gen_dir, "generated_oas_3.1.yaml")
         log_callback(f"Writing OAS 3.1 to: {out_31}")
         with open(out_31, "w", encoding="utf-8") as f:
             f.write(generator_31.get_yaml())

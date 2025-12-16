@@ -77,6 +77,8 @@ def parse_info(df_info):
         "title": "API Specification", # Default
         "version": "1.0.0"
     }
+    servers = []
+    
     if df_info is not None:
         # Expecting col 0 to be key, col 1 to be val
         # Headers might be shifted or named 'General Description'
@@ -87,18 +89,22 @@ def parse_info(df_info):
             val = row.iloc[1]
             if pd.isna(val): continue
             
-            if "description" in key:
+            if "description" in key and "info" in key:
                 info["description"] = val
-            elif "version" in key:
+            elif "version" in key and "info" in key:
                 info["version"] = str(val)
-            elif "title" in key:
+            elif "title" in key and "info" in key:
                 info["title"] = val
             elif "contact" in key:
                 if "contact" not in info: info["contact"] = {}
                 if "email" in key: info["contact"]["email"] = val
                 if "name" in key: info["contact"]["name"] = val
+            
+            # Servers (Inline)
+            if "servers" in key and "url" in key:
+                servers.append({"url": val, "description": "Server base path"})
 
-    return info
+    return info, servers
 
 def parse_paths_index(df_paths):
     """
@@ -168,6 +174,51 @@ def parse_tags(df_tags):
             if tag["name"]:
                 tags.append(tag)
     return tags
+
+def parse_servers(df_servers):
+    """
+    Parses 'Servers' sheet.
+    Expected columns: URL, Description
+    """
+    servers = []
+    if df_servers is not None:
+        # Normalize cols
+        df_servers.columns = df_servers.columns.str.strip()
+        for _, row in df_servers.iterrows():
+            srv = {
+                "url": row.get("URL"),
+                "description": row.get("Description")
+            }
+            if pd.notna(srv["url"]):
+                servers.append(srv)
+    return servers
+
+def parse_security(df_sec):
+    """
+    Parses 'Security' sheet.
+    Expected columns: Name, Type, Scheme, Format, Description
+    """
+    security_schemes = {}
+    security_req = []
+    
+    if df_sec is not None:
+        df_sec.columns = df_sec.columns.str.strip()
+        for _, row in df_sec.iterrows():
+            name = row.get("Name")
+            if pd.isna(name): continue
+            
+            # Simple Scheme definition
+            scheme = {
+                "type": str(row.get("Type")).lower(),
+                "description": row.get("Description")
+            }
+            if pd.notna(row.get("Scheme")): scheme["scheme"] = row.get("Scheme")
+            if pd.notna(row.get("Format")): scheme["bearerFormat"] = row.get("Format")
+            
+            security_schemes[name] = scheme
+            security_req.append({name: []})
+            
+    return security_schemes, security_req
 
 def parse_components(file_path):
     """
