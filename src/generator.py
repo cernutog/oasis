@@ -738,6 +738,7 @@ class OASGenerator:
             except: pass
 
         if type_val == "array":
+            schema["type"] = "array"
             # If explicit item type is given
             item_type = self._get_col_value(row, ["Items Data Type\n(Array only)", "Items Data Type", "Item Type"])
             if pd.notna(item_type):
@@ -962,7 +963,38 @@ class OASGenerator:
                 parent_schema = parent["schema_obj"]
                 
                 if parent_schema.get("type") == "array":
-                    parent_schema["items"] = node["schema_obj"]
+                    # If parent is array, child usually defines properties of the item object
+                    # Check if items is explicitly object or empty dict (default from map_type)
+                    items_schema = parent_schema.get("items", {})
+                    # Ensure items is a dict
+                    if not isinstance(items_schema, dict):
+                        # Should not happen if map_type works, but safety check
+                        parent_schema["items"] = {}
+                        items_schema = parent_schema["items"]
+
+                    # Logic: If we are adding multiple children to an array, they are properties of the item object.
+                    # FORCE item type to object if we are adding properties
+                    if "type" not in items_schema:
+                         items_schema["type"] = "object"
+                    
+                    if items_schema.get("type") == "object":
+                        if "properties" not in items_schema:
+                            items_schema["properties"] = {}
+                        
+                        items_schema["properties"][name] = node["schema_obj"]
+                        
+                        # Handle Required for Item
+                        if node["mandatory"]:
+                            if "required" not in items_schema:
+                                items_schema["required"] = []
+                            if name not in items_schema["required"]:
+                                items_schema["required"].append(name)
+                        
+                        parent_schema["items"] = items_schema
+                    else:
+                        # If items type is NOT object (e.g. array of strings with a child? Unlikely schema design)
+                        # We fallback to overwriting (Last one wins - Legacy behavior)
+                         parent_schema["items"] = node["schema_obj"]
                 else:
                     if "properties" not in parent_schema: parent_schema["properties"] = {}
                     parent_schema["properties"][name] = node["schema_obj"]
