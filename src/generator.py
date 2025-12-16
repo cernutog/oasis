@@ -924,6 +924,7 @@ class OASGenerator:
         Builds a dictionary of schema components from a single flat sheet containing multiple schemas.
         """
         nodes = {}
+        node_map = {} # Map Name -> Node
         roots = []
         df.columns = df.columns.str.strip()
         
@@ -949,18 +950,20 @@ class OASGenerator:
             # Or description is used as title?
             # OAS schema 'title' property.
             
-            nodes[name] = node
+            nodes[idx] = node
+            node_map[name] = node
 
         # 2. Link
-        for name, node in nodes.items():
+        for idx, node in nodes.items():
+            name = node["name"]
             parent_name = node["parent"]
             if pd.isna(parent_name):
                 roots.append(node)
                 # Assign Title to Root if missing?
                 if "title" not in node["schema_obj"]:
                     node["schema_obj"]["title"] = name
-            elif str(parent_name).strip() in nodes:
-                parent = nodes[str(parent_name).strip()]
+            elif str(parent_name).strip() in node_map:
+                parent = node_map[str(parent_name).strip()]
                 parent_schema = parent["schema_obj"]
                 
                 if parent_schema.get("type") == "array":
