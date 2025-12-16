@@ -29,15 +29,30 @@ def load_excel_sheet(file_path, sheet_name):
         if header_row_idx != -1:
              df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_row_idx)
              
-             # Capture Metadata from rows above header (specifically for Response sheets)
+             # Capture Metadata from rows above header (Gener generalized parsing)
+             # Scan rows preceding the header for "Response" definition layout
              if header_row_idx > 0:
                  try:
-                     # heuristic for Response sheet: A1='Response', C1=Description
-                     first_cell = str(df_raw.iloc[0, 0]).strip()
-                     if first_cell == 'Response' and df_raw.shape[1] > 2:
-                         desc = df_raw.iloc[0, 2]
-                         if pd.notna(desc):
-                             df.attrs['response_description'] = str(desc).strip()
+                     # Iterate rows 0 to header_idx - 1
+                     meta_rows = df_raw.iloc[:header_row_idx]
+                     for meta_idx, meta_row in meta_rows.iterrows():
+                         # Find first non-empty cell
+                         row_vals = [str(x).strip() for x in meta_row.values if pd.notna(x) and str(x).strip()]
+                         if not row_vals: continue
+                         
+                         first_val = row_vals[0]
+                         if first_val.lower() == 'response':
+                             # Found Definition Row: "Response" | Code | Description
+                             # We expect at least 3 values: Response, Code, Description
+                             # Or 2 values if code is implicit? (Rules imply Response | Code | Description)
+                             if len(row_vals) > 2:
+                                 # description is the 3rd value (index 2)
+                                 # or later?
+                                 # We assume standard: Response -> Code -> Description
+                                 desc = row_vals[2]
+                                 df.attrs['response_description'] = str(desc).strip()
+                                 # We could also capture code: row_vals[1]
+                                 break
                  except Exception:
                      pass
         else:
