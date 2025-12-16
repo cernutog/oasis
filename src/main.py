@@ -141,6 +141,9 @@ def main():
     if not os.path.exists(templates_dir):
         templates_dir = cwd # Fallback
         
+    # files = [f for f in files if "account_assessment.251111.xlsm" in f]
+    # print(f"Processing filtered files: {files}")
+    
     generate_oas(templates_dir)
 
 if __name__ == "__main__":

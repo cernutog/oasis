@@ -80,34 +80,34 @@ class OASGenerator:
             if file_ref in operations_details:
                 details = operations_details[file_ref]
                 
-                # Extract Body Examples Global for this Op
-                body_examples = {}
-                if details.get("body_examples") is not None:
-                    body_examples_df = details.get("body_examples")
-                    # Convert DF to dict {Name: Body}
-                    # Assuming col 0 is Name, col 1 is Body
-                    for _, row in body_examples_df.iterrows():
-                        ex_name = str(row.iloc[0]).strip()
-                        ex_body = row.iloc[1]
-                        if pd.notna(ex_body):
-                            # Detect if body is typical "request" example?
-                            # For now just store by name
-                            body_examples[ex_name] = ex_body
+            # Extract Body Examples Global for this Op
+            body_examples = {}
+            if details.get("body_examples") is not None:
+                body_examples_df = details.get("body_examples")
+                # Convert DF to dict {Name: Body}
+                # Assuming col 0 is Name, col 1 is Body
+                for _, row in body_examples_df.iterrows():
+                    ex_name = str(row.iloc[0]).strip()
+                    ex_body = row.iloc[1]
+                    if pd.notna(ex_body):
+                        # Detect if body is typical "request" example?
+                        # For now just store by name
+                        body_examples[ex_name] = ex_body
 
-                # Parameters
-                if details.get("parameters") is not None:
-                    op_obj["parameters"] = self._build_parameters(details["parameters"])
+            # Parameters
+            if details.get("parameters") is not None:
+                op_obj["parameters"] = self._build_parameters(details["parameters"])
 
-                # Request Body
-                if details.get("body") is not None:
-                    req_body = self._build_request_body(details["body"], body_examples)
-                    if req_body:
-                        op_obj["requestBody"] = req_body
+            # Request Body
+            if details.get("body") is not None:
+                req_body = self._build_request_body(details["body"], body_examples)
+                if req_body:
+                    op_obj["requestBody"] = req_body
 
-                # Responses
-                if details.get("responses"):
-                    for code, df_resp in details["responses"].items():
-                        op_obj["responses"][str(code)] = self._build_single_response(df_resp, body_examples, str(code))
+            # Responses
+            if details.get("responses"):
+                for code, df_resp in details["responses"].items():
+                    op_obj["responses"][str(code)] = self._build_single_response(df_resp, body_examples, str(code))
             
             # Fallback for empty responses
             if not op_obj["responses"]:
@@ -303,26 +303,32 @@ class OASGenerator:
         
         nodes = {}
         last_seen = {}
-        roots = []
+        # Use a Synthetic Root to ensure all sibling nodes (headers, content) are visible
+        roots = [{ "name": "Response", "children": [], "idx": -1, "row": None }]
         
-        for idx, row in enumerate(all_rows):
+        for idx, row in df.iterrows():
             name = str(self._get_name(row)).strip()
             parent = self._get_parent(row)
             parent_str = str(parent).strip() if pd.notna(parent) else ""
+            
+
             
             # Root detection: If parent is not in this DF, or empty.
             # However, for the passed DF, the top-level node IS the root.
             # But the top-level node might stick around as Parent of others.
             # Let's assume the first row is the Response Root.
             
+            section = str(self._get_col_value(row, ["Section"])).strip().lower()
+            
             node = { "row": row, "children": [], "idx": idx, "name": name }
             nodes[idx] = node
             
-            if idx == 0:
-                roots.append(node) # The Response itself
+            # Linking Logic
+            if section in ['header', 'headers', 'content']:
+                 # Top-level sections attach to Root
+                 roots[0]["children"].append(node)
             else:
-                # Link to nearest preceding parent
-                # Handle Array Indexing in Parent Name: 'errors[0]' -> 'errors'
+                 # Standard linking logic
                 target_idx = -1
                 
                 if parent_str in last_seen:
@@ -338,13 +344,8 @@ class OASGenerator:
                 if target_idx != -1:
                     nodes[target_idx]["children"].append(node)
                 else:
-                    # Parent not found in this scope?
-                    # Maybe it refers to the Response Root Name?
-                    if roots and roots[0]["name"] == parent_str:
-                         roots[0]["children"].append(node)
-                    else:
-                         # Orphan/Global ref. Attach to root?
-                         roots[0]["children"].append(node)
+                     # Orphan/Global ref. Attach to root.
+                     roots[0]["children"].append(node)
 
             if name and name.lower() != 'nan':
                  last_seen[name] = idx
@@ -353,8 +354,25 @@ class OASGenerator:
         root_node = roots[0]
         
         # Get Description from Root
-        desc = self._get_description(root_node["row"]) or "Response"
-        resp_obj = {"description": str(desc)}
+        # Priority:
+        # 1. df.attrs['response_description'] (Meta row metadata from parser)
+        # 2. Description column (Col D)
+        # 3. Parent column (Col C) - Fallback
+        
+        desc = None
+        if hasattr(df, 'attrs') and 'response_description' in df.attrs:
+            desc = df.attrs['response_description']
+            
+        if pd.isna(desc) or not str(desc).strip():
+             if root_node["row"] is not None:
+                 desc = self._get_description(root_node["row"])
+             
+        if pd.isna(desc) or not str(desc).strip():
+            if root_node["row"] is not None:
+                desc = self._get_parent(root_node["row"])
+            
+        desc = str(desc).strip() if pd.notna(desc) else "Response"
+        resp_obj = {"description": desc}
         
         # Separate Children into: Headers, Content, Links?
         header_nodes = []
@@ -392,7 +410,12 @@ class OASGenerator:
                 schema_ref = self._get_schema_name(row)
                 
                 if pd.notna(schema_ref):
-                    headers[h_name] = {"$ref": f"#/components/headers/{schema_ref}"}
+                    # Column K 'Schema Name' usually refers to a Schema Component (not Header Component)
+                    # So we should wrap it in schema object
+                    headers[h_name] = {
+                        "schema": {"$ref": f"#/components/schemas/{schema_ref}"},
+                        "description": self._get_description(row) or ""
+                    }
                 else:
                     h_schema = self._map_type_to_schema(row)
                     h_desc = h_schema.pop("description", None)
@@ -412,7 +435,14 @@ class OASGenerator:
                 # Split Content Children into Schema vs Examples
                 c_schema_nodes = []
                 c_example_nodes = []
-                
+                # DEBUG 201
+                if str(code) == '201' and content_type == 'application/json':
+                    with open("debug_201_tree.txt", "w") as f:
+                        f.write(f"Content Node: {content_type}\n")
+                        f.write(f"Children Count: {len(c_node['children'])}\n")
+                        for child in c_node["children"]:
+                            f.write(f" - {child['name']} (Section: {self._get_col_value(child['row'], ['Section'])})\n")
+
                 for grand in c_node["children"]:
                     sec = str(self._get_col_value(grand["row"], ["Section"])).strip().lower()
                     if sec in ['example', 'examples']:
@@ -464,8 +494,12 @@ class OASGenerator:
              }
         
         # Check explicit Ref (Response Type)
-        type_val = str(self._get_type(root_node["row"])).strip().lower()
-        schema_ref = self._get_schema_name(root_node["row"])
+        if root_node["row"] is None:
+             type_val = ""
+             schema_ref = None
+        else:
+             type_val = str(self._get_type(root_node["row"])).strip().lower()
+             schema_ref = self._get_schema_name(root_node["row"])
         if type_val == 'response' and pd.notna(schema_ref) and not header_nodes and not content_nodes and not schema_nodes:
             return {"$ref": f"#/components/responses/{schema_ref}"}
 
@@ -662,6 +696,7 @@ class OASGenerator:
         # 2. Build Tree
         for name, node in nodes.items():
             parent_name = node["parent"]
+            
             if pd.isna(parent_name) or str(parent_name).strip() == "":
                 roots.append(node)
             else:
@@ -683,6 +718,9 @@ class OASGenerator:
                                 parent_schema["required"] = []
                             if name not in parent_schema["required"]:
                                 parent_schema["required"].append(name)
+                else:
+                    # Parent not in nodes (e.g. application/json). Treat as Root.
+                    roots.append(node)
                         
         # 3. Return the Root Schema
         if len(roots) == 1:
@@ -847,6 +885,14 @@ class OASGenerator:
                  }
                  nodes[idx] = node
                  
+                 # DEBUG LINKING
+                 with open("debug_linking.txt", "a") as f:
+                      f.write(f"Row {idx}: Name='{name}', Parent='{parent_str}'\n")
+                      if parent_str in last_seen:
+                           f.write(f"  -> Linked to Parent Index {last_seen[parent_str]}\n")
+                      else:
+                           f.write(f"  -> Orphan/Root (last_seen keys: {list(last_seen.keys())})\n")
+
                  # Link to Parent
                  if is_root:
                      roots.append(node)
