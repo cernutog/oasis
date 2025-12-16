@@ -235,7 +235,8 @@ class OASGenerator:
             "Schema Name",
             "Schema Name\n(for Type or Items Data Type = 'schema')",
             "Schema Name\n(for Type or Items Data Type = 'schema'||'header')",
-            "Schema Name\n(for Type or Items Data Type = 'schema' || 'header')"
+            "Schema Name\n(for Type or Items Data Type = 'schema' || 'header')",
+            "Schema Name\n(if Type = schema)"
         ])
 
     def _get_type(self, row):
