@@ -385,6 +385,12 @@ class OASGenerator:
             r_type = str(self._get_type(row)).strip().lower()
             c_name = child["name"]
             
+            # Fix for Response References
+            if r_type == 'response':
+                schema_ref = self._get_schema_name(row)
+                if pd.notna(schema_ref):
+                    return {"$ref": f"#/components/responses/{schema_ref}"}
+
             if section == 'header' or section == 'headers' or r_type == 'header':
                 header_nodes.append(child)
             elif section == 'content':
@@ -739,8 +745,9 @@ class OASGenerator:
         """
         type_val = self._get_type(row)
         if pd.isna(type_val): type_val = "string"
-        type_val = str(type_val).lower()
+        type_val = str(type_val).strip().lower()
         
+
         schema = {}
         
         # Check if it's a ref
@@ -748,6 +755,21 @@ class OASGenerator:
         desc = self._get_description(row)
         
         if pd.notna(schema_ref):
+            # HANDLE COMBINATORS (Top Level)
+            if type_val in ['oneof', 'allof', 'anyof']:
+                refs = [r.strip() for r in str(schema_ref).split(',')]
+                # Convert 'oneof' -> 'oneOf' camelCase
+                combinator_key = {
+                    'oneof': 'oneOf', 
+                    'allof': 'allOf', 
+                    'anyof': 'anyOf'
+                }.get(type_val)
+                
+                schema[combinator_key] = [{"$ref": f"#/components/schemas/{r}"} for r in refs if r]
+                
+                if pd.notna(desc): schema["description"] = str(desc)
+                return schema
+
             ref_path = f"#/components/schemas/{schema_ref}"
             
             if type_val == "array":
@@ -822,9 +844,33 @@ class OASGenerator:
         if type_val == "array":
             schema["type"] = "array"
             # If explicit item type is given
-            item_type = self._get_col_value(row, ["Items Data Type\n(Array only)", "Items Data Type", "Item Type"])
-            if pd.notna(item_type):
-                 schema["items"] = {"type": str(item_type).lower()}
+            item_type_raw = self._get_col_value(row, [
+                "Items Data Type\n(Array only)", 
+                "Items Data Type \n(Array only)", # Handle space before newline
+                "Items Data Type", 
+                "Item Type"
+            ])
+            
+            if pd.notna(item_type_raw):
+                 item_type = str(item_type_raw).strip().lower()
+                 
+                 # HANDLE COMBINATORS (Array Items)
+                 if item_type in ['oneof', 'allof', 'anyof'] and pd.notna(schema_ref):
+                     refs = [r.strip() for r in str(schema_ref).split(',')]
+                     combinator_key = {
+                        'oneof': 'oneOf', 
+                        'allof': 'allOf', 
+                        'anyof': 'anyOf'
+                     }.get(item_type)
+                     
+                     schema["items"] = {
+                         combinator_key: [{"$ref": f"#/components/schemas/{r}"} for r in refs if r]
+                     }
+                 else:
+                     # Only set type if it's NOT a reference placeholder (like 'schema')
+                     # reusing invalid_types list defined earlier in the method
+                     if item_type not in invalid_types:
+                        schema["items"] = {"type": item_type}
             elif "items" not in schema:
                  schema["items"] = {} 
 
