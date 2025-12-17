@@ -114,4 +114,33 @@ Replace `__RAW_EXTENSIONS__` marker in YAML output:
   - `test_loader.py`
   - `test_update.py`
   - `test_reorder.py`
+  - `test_reorder.py`
   - `test_full.py`
+
+## Regression Logic Fix: 201 Headers & Orphan Nodes (2025-12-16)
+
+### Problem Statement
+The `201 Created` response was generating an empty schema (`schema: {}`) and missing the `fri` header, despite the data being present in the Excel source.
+
+### Root Cause Analysis
+1.  **Indentation Error**: A logic block in `build_paths` responsible for processing parameters and responses was accidentally indented inside an `else` block (handling "File Not Found"), making it unreachable for valid operations.
+2.  **Implicit Root Failure**: In `account_assessment.251111` (sheet 201), the first data row was `fri` (a header). The generator implicitly assigned this first row as the Root Node. Since headers are expected to be *children* of the Root, `fri` (being the root itself) was skipped during the header collection phase.
+3.  **Orphan Node Dropping**: Nodes that didn't have a clear parent link to the implicit root were being dropped during the schema tree reconstruction.
+
+### Solution Implemented
+
+#### 1. Synthetic Root System
+Instead of relying on the first row to be the implicit root, implemented a **Synthetic Root Node** (`Response`) at the start of `_build_single_response`.
+- **Logic**: Forced all top-level sections (`headers`, `content`, `links`) to attach explicitly to this synthetic root.
+- **Benefit**: Ensures that the first row (e.g., `fri`) is treated as a child, making it visible to all processing loops.
+
+#### 2. Header Schema Wrapping
+Changed how headers with `Schema Name` references are generated.
+- **Old**: `$ref: #/components/headers/MySchema` (Incorrect: Schema Name usually points to a data model)
+- **New**: `schema: { $ref: #/components/schemas/MySchema }` (Correct: Wraps the data model in a Header Schema Object)
+
+### Results
+- ✅ `201` Response Schema fully populated.
+- ✅ `fri` header correctly generated with proper schema reference.
+- ✅ `pri` parameter correctly isolated to example sections (not appearing as a Response Header).
+- ✅ Codebase structure simplified by removing fragile implicit root logic.

@@ -20,3 +20,5 @@ Don't take long sequences of actions without interacting with him. Sometimes he 
 9. Artifacts (implementation_plan.md, task.md, etc.) must be kept up-to-date as the "single source of truth" for the project state and plan.
 
 10. Excel files are the ONLY source of truth for OAS data. If data is missing or erroneous in Excel, DO NOT hardcode fixes. Instead, generate a specific report highlighting the missing/incorrect data so it can be corrected in the source.
+
+11. Always use Spectral linter to check if there are errors to fix and produce a report to the user with some action suggested.
