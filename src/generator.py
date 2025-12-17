@@ -1224,7 +1224,14 @@ class OASGenerator:
         if "paths" in self.oas: ordered_oas["paths"] = self.oas["paths"]
         
         # 6. Components
-        if "components" in self.oas: ordered_oas["components"] = self.oas["components"]
+        if "components" in self.oas:
+            # Clean up empty global component sections
+            comps = self.oas["components"]
+            # Specific cleanups
+            if "securitySchemes" in comps and not comps["securitySchemes"]:
+                del comps["securitySchemes"]
+            
+            ordered_oas["components"] = comps
         
         # 7. Security (Global)
         if "security" in self.oas: ordered_oas["security"] = self.oas["security"]
