@@ -98,6 +98,7 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, log_callback=print):
             components_data["securitySchemes"].update(security_schemes)
             
         generator_30.build_components(components_data)
+        generator_30.build_paths(paths_list, operations_details)
         
         # Ensure 'generated' folder exists
         gen_dir = os.path.join(output_dir, "generated")
@@ -120,8 +121,8 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, log_callback=print):
         if security_req:
             generator_31.oas["security"] = security_req
             
-        generator_31.build_paths(paths_list, operations_details)
         generator_31.build_components(components_data)
+        generator_31.build_paths(paths_list, operations_details)
 
         # Ensure 'generated' folder exists
         gen_dir = os.path.join(output_dir, "generated")

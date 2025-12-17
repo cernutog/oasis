@@ -39,9 +39,9 @@ class OASGenerator:
             "info": {},
             "paths": {},
             "components": {
-                "schemas": {},
                 "parameters": {},
                 "headers": {},
+                "schemas": {},
                 "responses": {},
                 "securitySchemes": {}
             }
@@ -100,7 +100,8 @@ class OASGenerator:
                 op_obj["parameters"] = self._build_parameters(details["parameters"])
 
             # Request Body
-            if details.get("body") is not None:
+            # Skip for GET, DELETE, HEAD
+            if details.get("body") is not None and method not in ['get', 'delete', 'head']:
                 req_body = self._build_request_body(details["body"], body_examples)
                 if req_body:
                     op_obj["requestBody"] = req_body
@@ -405,6 +406,7 @@ class OASGenerator:
             c_name = child["name"]
             
             # Fix for Response References
+
             if r_type == 'response':
                 schema_ref = self._get_schema_name(row)
                 if pd.notna(schema_ref):
@@ -435,12 +437,21 @@ class OASGenerator:
                 schema_ref = self._get_schema_name(row)
                 
                 if pd.notna(schema_ref):
-                    # Column K 'Schema Name' usually refers to a Schema Component (not Header Component)
-                    # So we should wrap it in schema object
-                    headers[h_name] = {
-                        "schema": {"$ref": f"#/components/schemas/{schema_ref}"},
-                        "description": self._get_description(row) or ""
-                    }
+                    schema_ref = str(schema_ref).strip()
+                    # Check if this reference matches a known HEADER component
+                    if schema_ref in self.oas["components"]["headers"]:
+                         # It is a reference to a Header Object
+                         # Usage: "headerName": { "$ref": "#/components/headers/RefName" }
+                         headers[h_name] = {
+                             "$ref": f"#/components/headers/{schema_ref}"
+                         }
+                    else:
+                        # Assume it is a reference to a Schema Object (Standard behavior)
+                        # Usage: "headerName": { "schema": { "$ref": "#/components/schemas/RefName" } }
+                        headers[h_name] = {
+                            "schema": {"$ref": f"#/components/schemas/{schema_ref}"},
+                            "description": self._get_description(row) or ""
+                        }
                 else:
                     h_schema = self._map_type_to_schema(row)
                     h_desc = h_schema.pop("description", None)
@@ -826,7 +837,11 @@ class OASGenerator:
 
         ex = self._get_col_value(row, ["Example", "Examples"])
         if pd.notna(ex): 
-            schema["example"] = self._parse_example_string(ex)
+            parsed_ex = self._parse_example_string(ex)
+            if self.version.startswith("3.1"):
+                schema["examples"] = [parsed_ex]
+            else:
+                schema["example"] = parsed_ex
         
         # Enums
         enum_val = self._get_col_value(row, ["Allowed value", "Allowed values"])
@@ -909,21 +924,52 @@ class OASGenerator:
     def build_components(self, global_components):
         """
         Populates self.oas["components"]
+        Strictly enforces order: parameters, headers, schemas, responses
+        Strictly enforces separation: Headers stay in headers, etc.
         """
         if not global_components: return
 
-        # Schemas
-        if global_components.get("schemas") is not None:
-             schema_tree = self._build_schema_group(global_components["schemas"])
-             self.oas["components"]["schemas"] = schema_tree
-        
-        # Parameters (Global)
+        # Initialize ordered groups
+        # Note: In Python 3.7+, insertion order is preserved.
+        # We process in order to ensure the final OAS JSON/YAML respects this order.
+        self.oas["components"]["parameters"] = {}
+        self.oas["components"]["headers"] = {}
+        self.oas["components"]["schemas"] = {}
+        self.oas["components"]["responses"] = {}
+
+        # 1. Parameters (Global)
         if global_components.get("parameters") is not None:
             params = self._build_parameters(global_components["parameters"])
             for p in params:
                 self.oas["components"]["parameters"][p["name"]] = p
 
-        # Responses (Global)
+        # 2. Headers (Global)
+        if global_components.get("headers") is not None:
+             df_head = global_components["headers"]
+             for idx, row in df_head.iterrows():
+                 name = self._get_name(row)
+                 if pd.notna(name):
+                      name = str(name).strip()
+                      # Build Schema Inline
+                      schema = self._map_type_to_schema(row)
+                      
+                      header_desc = self._get_description(row)
+                      
+                      # Create Header Object with INLINE schema
+                      header_obj = {
+                          "schema": schema
+                      }
+                      if header_desc:
+                          header_obj["description"] = str(header_desc)
+                          
+                      self.oas["components"]["headers"][name] = header_obj
+
+        # 3. Schemas (Global)
+        if global_components.get("schemas") is not None:
+             schema_tree = self._build_schema_group(global_components["schemas"])
+             self.oas["components"]["schemas"] = schema_tree
+        
+        # 4. Responses (Global)
         if global_components.get("responses") is not None:
              df_resp = global_components["responses"]
              df_resp.columns = df_resp.columns.str.strip()
@@ -931,9 +977,7 @@ class OASGenerator:
              # Convert to list of dicts for easier processing
              all_rows = df_resp.to_dict('records')
              
-             # 1. Build Tree using Nearest Preceding Parent Logic
-             # This handles duplicate names like 'text/plain' or 'application/json' correctly.
-             
+             # Build Tree using Nearest Preceding Parent Logic
              nodes = {} # idx -> node
              last_seen = {} # name -> idx
              roots = []
@@ -947,12 +991,6 @@ class OASGenerator:
                  type_val = str(self._get_type(row)).strip().lower()
                  is_root = (type_val == 'response' or parent_str == "")
                  
-                 # Store node
-                 # Note: row is just the data. We wrap it or just rely on 'children' list logic?
-                 # Since _build_single_response expects a DataFrame of rows, we need to gather descendants later.
-                 # Let's verify _build_single_response inputs. It takes a DF.
-                 # So we need to collect the subtree ROWS.
-                 
                  node = {
                      "row": row,
                      "children": [],
@@ -961,14 +999,6 @@ class OASGenerator:
                  }
                  nodes[idx] = node
                  
-                 # DEBUG LINKING
-                 with open("debug_linking.txt", "a") as f:
-                      f.write(f"Row {idx}: Name='{name}', Parent='{parent_str}'\n")
-                      if parent_str in last_seen:
-                           f.write(f"  -> Linked to Parent Index {last_seen[parent_str]}\n")
-                      else:
-                           f.write(f"  -> Orphan/Root (last_seen keys: {list(last_seen.keys())})\n")
-
                  # Link to Parent
                  if is_root:
                      roots.append(node)
@@ -977,40 +1007,23 @@ class OASGenerator:
                          p_idx = last_seen[parent_str]
                          nodes[p_idx]["children"].append(node)
                      else:
-                         # Orphan? Or referring to Global?
-                         # If orphan, maybe treat as root?
-                         # For strict tree building, we treat as root or skip.
-                         # Let's treat as root to be safe, or just ignore (likely header row or bad data).
-                         # But if it's 'text/plain' without a parent seen yet -> likely a root section?
                          roots.append(node)
                  
-                 # Update last_seen (AFTER processing, so we link to PREVIOUS, but update for NEXT)
-                 # Wait. If I have:
-                 # Row 1: A
-                 # Row 2: B (Parent=A)
-                 # If I update last_seen[A]=1.
-                 # Row 2 sees A.
-                 # If I update last_seen[B]=2.
-                 # Correct.
-                 # Note: If duplicate names exist (e.g. content types), updating overwrites old mapping.
-                 # This ensures we always link to the NEAREST PRECEDING one.
+                 # Update last_seen
                  if name and name.lower() != 'nan':
                      last_seen[name] = idx
              
-             # 2. Process Roots
+             # Process Roots
              for root_node in roots:
                  root_row = root_node["row"]
                  root_name = root_node["name"]
                  
-                 # We need to flatten the tree back into a list of rows for _build_single_response
-                 # (Order matters? Depth-first?)
+                 # Flatten tree
                  collected_rows = []
-                 
                  def collect(n):
                      collected_rows.append(n["row"])
                      for c in n["children"]:
                          collect(c)
-                 
                  collect(root_node)
                  
                  if not root_name or root_name.lower() == 'nan': continue
@@ -1018,42 +1031,6 @@ class OASGenerator:
                  response_df = pd.DataFrame(collected_rows)
                  self.oas["components"]["responses"][str(root_name)] = self._build_single_response(response_df)
 
-        # Headers (Global)
-        if global_components.get("headers") is not None:
-             df_head = global_components["headers"]
-             for idx, row in df_head.iterrows():
-                 name = self._get_name(row)
-                 if pd.notna(name):
-                      name = str(name).strip()
-                      schema = self._map_type_to_schema(row)
-                      
-                      # Description management: Header description vs Schema description
-                      # Usually Header description is for the header itself.
-                      # Schema description is for the value.
-                      # In this tool, they might be mixed.
-                      # self._map_type_to_schema adds description to schema if present.
-                      
-                      # 1. Promote to Component Schema
-                      # Check if schema already exists (from Schemas sheet)?
-                      # If exists, we might overwrite or skip.
-                      # If we overwrite, we ensure consistency with Header def.
-                      # "Last Good" had it in both.
-                      if name not in self.oas["components"]["schemas"]:
-                          self.oas["components"]["schemas"][name] = schema.copy()
-                      
-                      # 2. Create Header Object referencing the Schema
-                      header_desc = self._get_description(row)
-                      header_obj = {
-                          "schema": {"$ref": f"#/components/schemas/{name}"}
-                      }
-                      if header_desc:
-                          header_obj["description"] = str(header_desc)
-                          
-                      self.oas["components"]["headers"][name] = header_obj
-        if global_components.get("responses") is not None:
-             # ... (existing response logic) ...
-             pass
-             
         # Rule 10: Check for missing critical schemas and report them
         self._check_and_report_deficiencies()
 
