@@ -867,10 +867,21 @@ class OASGenerator:
                          combinator_key: [{"$ref": f"#/components/schemas/{r}"} for r in refs if r]
                      }
                  else:
-                     # Only set type if it's NOT a reference placeholder (like 'schema')
-                     # reusing invalid_types list defined earlier in the method
-                     if item_type not in invalid_types:
+                     # Only set type if it's a valid OAS primitive type
+                     allowed_types = ["string", "number", "integer", "boolean", "array", "object"]
+                     if item_type in allowed_types:
                         schema["items"] = {"type": item_type}
+                     elif item_type not in invalid_types and item_type not in allowed_types:
+                        # Assumed to be a reference if it's not a primitive and not an explicit invalid keywords
+                        # e.g. 'hateoasblock' -> $ref: #/components/schemas/HateoasBlock
+                        # Try to capitalize? Or use as provides?
+                        # Usually Schema Name column is used for Refs. If Schema Name is empty, maybe Item Type is the Ref?
+                        
+                        # Use exact casing from Item Type if Schema Name is missing
+                        if pd.isna(schema_ref):
+                             # Only if we don't have a ref from Schema Name already
+                             ref_name = str(item_type_raw).strip() # Use raw casing
+                             schema["items"] = {"$ref": f"#/components/schemas/{ref_name}"}
             elif "items" not in schema:
                  schema["items"] = {} 
 
