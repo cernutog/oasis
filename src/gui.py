@@ -274,7 +274,7 @@ class OASGenApp(ctk.CTk):
 
     def show_results(self, result):
         if not result['success']:
-            self.lbl_status.configure(text="Error running Spectral", text_color="red")
+            self.val_log_print(f"Error: {result.get('error_msg', 'Unknown Error')}")
             self.frame_list.configure(label_text="Error")
             err_lbl = ctk.CTkLabel(self.frame_list, text=result.get('error_msg', 'Unknown Error'), text_color="red")
             err_lbl.pack()
@@ -284,7 +284,7 @@ class OASGenApp(ctk.CTk):
         details = result['details']
         total_issues = len(details)
         
-        self.lbl_status.configure(text=f"Check Complete: {total_issues} issues found.", text_color="green" if total_issues == 0 else "orange")
+        self.val_log_print(f"Check Complete: {total_issues} issues found.")
         self.frame_list.configure(label_text=f"Issues ({total_issues})")
         
         # Update Chart
