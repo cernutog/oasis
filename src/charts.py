@@ -29,6 +29,8 @@ class SemanticPieChart(ctk.CTkFrame):
         }
         
         self.bind("<Configure>", self.draw)
+        self.bind("<Map>", self.draw) # Ensure draw when mapped
+        self.bind("<Visibility>", self.draw)
         self.canvas.bind("<Motion>", self.on_mouse_move)
         self.canvas.bind("<Leave>", self.hide_tooltip)
 
@@ -69,6 +71,7 @@ class SemanticPieChart(ctk.CTkFrame):
         return list(reversed(colors)) # Dark to Light
 
     def draw(self, event=None):
+        self.update_idletasks() # Force geometry update
         self.canvas.delete("all")
         self.canvas.delete("tooltip_tag") # clear tooltip
         self.slices = []

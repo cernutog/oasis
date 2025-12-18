@@ -4,6 +4,7 @@ from tkinter import filedialog
 import threading
 import os
 import sys
+import json
 
 # Ensure imports work
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
@@ -108,7 +109,8 @@ class OASGenApp(ctk.CTk):
         # ==========================
         # TAB 2: VALIDATION
         # ==========================
-        self.linter = SpectralRunner() # Initialized here
+        self.linter = SpectralRunner() 
+        self.last_lint_result = None
         
         self.tab_val.grid_columnconfigure(0, weight=1) # List
         self.tab_val.grid_columnconfigure(1, weight=1) # Chart
@@ -130,17 +132,21 @@ class OASGenApp(ctk.CTk):
         self.btn_lint = ctk.CTkButton(self.frame_val_top, text="↻ Refresh", width=80, command=self.run_validation)
         self.btn_lint.grid(row=0, column=2, padx=(10, 0))
 
+        # Filter Checkbox
+        self.chk_ignore_br = ctk.CTkCheckBox(self.frame_val_top, text="Ignore 'Bad Request' Examples", command=self.on_filter_change)
+        self.chk_ignore_br.grid(row=0, column=3, padx=(20, 0), sticky="w")
+        self.chk_ignore_br.select() # Default Checked
+
         # Progress Bar (Indeterminate)
         # Progress Bar Removed as per user request
 
 
         # Main Layout: List vs Chart
-        self.frame_val_content = ctk.CTkFrame(self.tab_val, fg_color="transparent")
-        # Validation Tab Layout
+
         
         # Use PanedWindow for resizable Log Console
-        self.paned_val = tk.PanedWindow(self.tab_validation, orient="vertical", sashrelief="raised", bg="#d0d0d0")
-        self.paned_val.pack(fill="both", expand=True, padx=5, pady=5)
+        self.paned_val = tk.PanedWindow(self.tab_val, orient="vertical", sashrelief="raised", bg="#d0d0d0")
+        self.paned_val.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
         
         # TOP PANE: Content (List + Chart)
         self.frame_val_content = ctk.CTkFrame(self.paned_val)
@@ -158,38 +164,56 @@ class OASGenApp(ctk.CTk):
         self.chart = SemanticPieChart(self.frame_chart_container)
         self.chart.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # BOTTOM PANE: Logs
-        self.val_log_frame = ctk.CTkFrame(self.paned_val)
-        self.paned_val.add(self.val_log_frame, minsize=50, sticky="nsew")
+        # Log Pane (Created but added dynamically)
+        self.val_log_frame = ctk.CTkFrame(self.paned_val) # Container
         
-        # Log Header (Handle)
-        self.log_header = ctk.CTkFrame(self.val_log_frame, height=25, corner_radius=0, fg_color="gray80")
-        self.log_header.pack(fill="x", side="top")
+        # Internal Log Header (Visible when expanded)
+        self.log_internal_header = ctk.CTkFrame(self.val_log_frame, height=28, corner_radius=0, fg_color=("gray85", "gray20"))
+        self.log_internal_header.pack(fill="x", side="top")
         
-        # Standard style toggle (Window-like)
-        self.btn_toggle_log = ctk.CTkButton(
-            self.log_header, text="▼ Logs", width=60, height=20, fg_color="transparent", 
-            text_color="black", hover_color="gray70", anchor="w", command=self.toggle_log
+        self.btn_toggle_log_h = ctk.CTkButton(
+            self.log_internal_header, text="▼ Logs", width=60, height=20, fg_color="transparent", 
+            text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.toggle_log
         )
-        self.btn_toggle_log.pack(side="left", padx=5)
+        self.btn_toggle_log_h.pack(side="left", padx=5, pady=2)
 
-        self.val_log = ctk.CTkTextbox(self.val_log_frame, height=100, state="disabled", font=("Consolas", 11))
+        self.tab_logs = ctk.CTkTabview(self.val_log_frame, height=150)
+        self.tab_logs.pack(fill="both", expand=True, padx=2, pady=0) # reduced top padding
+        
+        self.tab_logs.add("Analysis Logs")
+        self.tab_logs.add("Spectral Output")
+        
+        # Tab 1: App Logs
+        self.val_log = ctk.CTkTextbox(self.tab_logs.tab("Analysis Logs"), font=("Consolas", 11), state="disabled")
         self.val_log.pack(fill="both", expand=True)
 
-        self.val_log_print("Ready.")
-        self.log_visible = True
-        
-        # Initial Collapse
-        self.toggle_log()
+        # Tab 2: Raw JSON
+        self.val_json_log = ctk.CTkTextbox(self.tab_logs.tab("Spectral Output"), font=("Consolas", 11), state="disabled", wrap="none")
+        self.val_json_log.pack(fill="both", expand=True)
 
+        # Persistent Footer (Status Bar + Log Toggle) -> For Collapsed State
+        self.footer_frame = ctk.CTkFrame(self.tab_val, height=30, corner_radius=0, fg_color=("gray85", "gray20"))
+        self.footer_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+        
+        self.btn_toggle_log_f = ctk.CTkButton(
+            self.footer_frame, text="▶ Logs", width=60, height=24, fg_color="transparent", 
+            text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.toggle_log
+        )
+        self.btn_toggle_log_f.pack(side="left", padx=5, pady=2)
+
+        self.val_log_print("Ready.")
+        self.log_visible = False 
+        
     def toggle_log(self):
         if self.log_visible:
-            self.val_log.pack_forget()
-            self.btn_toggle_log.configure(text="▶ Logs")
+            # COLLAPSE
+            self.paned_val.forget(self.val_log_frame) # Hide Pane 2
+            self.footer_frame.grid() # Show Footer
             self.log_visible = False
         else:
-            self.val_log.pack(fill="both", expand=True)
-            self.btn_toggle_log.configure(text="▼ Logs")
+            # EXPAND
+            self.footer_frame.grid_remove() # Hide Footer
+            self.paned_val.add(self.val_log_frame, minsize=100, sticky="nsew", stretch="always") # Show Pane 2
             self.log_visible = True
 
     def val_log_print(self, msg):
@@ -309,7 +333,13 @@ class OASGenApp(ctk.CTk):
         t = threading.Thread(target=validate_thread)
         t.start()
 
+    def on_filter_change(self):
+        if self.last_lint_result:
+            self.show_results(self.last_lint_result)
+
     def show_results(self, result):
+        self.last_lint_result = result # Store for filtering
+        
         if not result['success']:
             self.val_log_print(f"Error: {result.get('error_msg', 'Unknown Error')}")
             self.frame_list.configure(label_text="Error")
@@ -323,6 +353,36 @@ class OASGenApp(ctk.CTk):
         summary = result['summary']
         code_summary = result.get('code_summary', summary) # Fallback if missing
         details = result['details']
+        
+        # Apply Filters
+        if self.chk_ignore_br.get() == 1:
+            filtered_details = []
+            # Recalculate code_summary from filtered details
+            filtered_code_summary = {}
+            filtered_summary = {'error': 0, 'warning': 0, 'info': 0, 'hint': 0}
+            
+            for item in details:
+                path_str = item.get('path', '')
+                # Filter Condition: Path contains 'examples' AND 'Bad Request' (case insensitive match if needed, but usually strict)
+                # Adding some flexibility: "examples" > ... "Bad Request"
+                if "examples" in path_str and "Bad Request" in path_str:
+                    continue # Skip this issue
+                    
+                filtered_details.append(item)
+                
+                # Rebuild stats
+                code = item['code']
+                sev = item['severity']
+                filtered_summary[sev] = filtered_summary.get(sev, 0) + 1
+                
+                if code not in filtered_code_summary:
+                    filtered_code_summary[code] = {'count': 0, 'severity': sev}
+                filtered_code_summary[code]['count'] += 1
+                
+            details = filtered_details
+            summary = filtered_summary
+            code_summary = filtered_code_summary
+            
         total_issues = len(details)
         
         self.val_log_print(f"Check Complete: {total_issues} issues found.")
@@ -330,6 +390,15 @@ class OASGenApp(ctk.CTk):
         
         # Update Chart - Use code_summary for detailed breakdown
         self.chart.set_data(code_summary)
+
+        # Populate Raw JSON Tab
+        raw_data = result.get('raw_data', [])
+        formatted_json = json.dumps(raw_data, indent=2)
+        
+        self.val_json_log.configure(state="normal")
+        self.val_json_log.delete("0.0", "end")
+        self.val_json_log.insert("0.0", formatted_json)
+        self.val_json_log.configure(state="disabled")
 
         # Populate List
         for widget in self.frame_list.winfo_children(): widget.destroy()

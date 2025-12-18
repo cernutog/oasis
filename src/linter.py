@@ -79,7 +79,10 @@ class SpectralRunner:
                 
                 code = item.get('code', 'unknown')
                 summary[severity_str] = summary.get(severity_str, 0) + 1
-                code_summary[code] = code_summary.get(code, 0) + 1
+                
+                if code not in code_summary:
+                    code_summary[code] = {'count': 0, 'severity': severity_str}
+                code_summary[code]['count'] += 1
                 
                 # Format path nicely
                 raw_path = item.get('path', [])
@@ -96,9 +99,10 @@ class SpectralRunner:
             return {
                 'success': True,
                 'summary': summary,
-                'code_summary': code_summary, # New field
+                'code_summary': code_summary, 
                 'details': simplified_details,
-                'raw_count': len(results)
+                'raw_count': len(results),
+                'raw_data': results # Full original JSON
             }
 
         except subprocess.TimeoutExpired:
