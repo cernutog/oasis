@@ -18,6 +18,16 @@ class PieChart(ctk.CTkFrame):
             'empty': '#CCCCCC'    # Grey
         }
         
+    def _get_color(self, key):
+        if key in self.colors: return self.colors[key]
+        # Generate hash-based pastel color for unknown keys
+        import hashlib
+        h = hashlib.md5(str(key).encode()).hexdigest()
+        r = int(h[0:2], 16) % 127 + 128
+        g = int(h[2:4], 16) % 127 + 128
+        b = int(h[4:6], 16) % 127 + 128
+        return f'#{r:02x}{g:02x}{b:02x}'
+        
         self.data = {}
         self.bind("<Configure>", self.draw)
 
@@ -61,7 +71,8 @@ class PieChart(ctk.CTkFrame):
                 continue
                 
             extent = (value / total) * 360
-            color = self.colors.get(category, '#999999')
+            extent = (value / total) * 360
+            color = self._get_color(category)
             
             self.canvas.create_arc(
                 x - radius, y - radius, x + radius, y + radius,

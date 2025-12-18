@@ -151,146 +151,64 @@ class OASGenApp(ctk.CTk):
         self.chart = PieChart(self.frame_chart_container)
         self.chart.pack(fill="both", expand=True, padx=10, pady=10)
 
-        # Log Console
-        self.val_log = ctk.CTkTextbox(self.frame_val_content, height=100, state="disabled", font=("Consolas", 11))
-        self.val_log.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+        # Log Console (Collapsed by default)
+        
+        self.btn_toggle_log = ctk.CTkButton(self.frame_val_top, text="Show Logs", width=80, fg_color="gray", command=self.toggle_log)
+        self.btn_toggle_log.grid(row=0, column=4, padx=(10, 0))
+
+        self.val_log_frame = ctk.CTkFrame(self.frame_val_content, height=100)
+        self.val_log = ctk.CTkTextbox(self.val_log_frame, height=100, state="disabled", font=("Consolas", 11))
+        self.val_log.pack(fill="both", expand=True)
+        
+        # Grid it initially? No, hide it.
+        # self.val_log_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+        self.log_visible = False
+        
         self.val_log_print("Ready.")
         
+    def toggle_log(self):
+        if self.log_visible:
+            self.val_log_frame.grid_forget()
+            self.btn_toggle_log.configure(text="Show Logs")
+            self.log_visible = False
+        else:
+            self.val_log_frame.grid(row=1, column=0, columnspan=2, sticky="nsew", pady=(10, 0))
+            self.btn_toggle_log.configure(text="Hide Logs")
+            self.log_visible = True
+
     def val_log_print(self, msg):
         self.val_log.configure(state="normal")
         self.val_log.insert("end", f"> {msg}\n")
         self.val_log.see("end")
         self.val_log.configure(state="disabled")
 
-    def browse_dir(self):
-        directory = filedialog.askdirectory()
-        if directory:
-            self.entry_dir.delete(0, 'end')
-            self.entry_dir.insert(0, directory)
-            
-    def log(self, message):
-        self.log_area.configure(state="normal")
-        self.log_area.insert("end", message + "\n")
-        self.log_area.see("end")
-        self.log_area.configure(state="disabled")
-        
-    def start_generation(self):
-        base_dir = self.entry_dir.get()
-        gen_30 = self.var_30.get()
-        gen_31 = self.var_31.get()
-        
-        if not base_dir:
-            self.log("ERROR: Please select a directory.")
-            return
-
-        self.btn_gen.configure(state="disabled", text="GENERATING...")
-        self.log("Starting generation process...")
-        
-        t = threading.Thread(target=self.run_process, args=(base_dir, gen_30, gen_31))
-        t.start()
-        
-    def run_process(self, base_dir, gen_30, gen_31):
-        try:
-            self.last_generated_files = [] 
-            
-            def gui_logger(msg):
-                self.after(0, self.log, msg)
-                if "Writing OAS" in msg:
-                    parts = msg.split(": ")
-                    if len(parts) > 1:
-                         self.last_generated_files.append(parts[1].strip())
-                         self.after(0, self.update_file_list)
-                         
-            main_script.generate_oas(base_dir, gen_30=gen_30, gen_31=gen_31, log_callback=gui_logger)
-            
-        except Exception as e:
-            self.after(0, self.log, f"CRITICAL ERROR: {e}")
-        finally:
-            def reset_btn():
-                self.btn_gen.configure(state="normal", text="GENERATE")
-                self.after(0, self.update_file_list) # Final refresh
-            self.after(0, reset_btn)
-
-    def update_file_list(self):
-        files_to_show = []
-        candidates = list(self.last_generated_files)
-        
-        if not candidates:
-             base_dir = self.entry_dir.get()
-             gen_dir = os.path.join(base_dir, "generated")
-             if os.path.exists(gen_dir):
-                 for f in os.listdir(gen_dir):
-                     if f.endswith(".yaml") or f.endswith(".json"):
-                         candidates.append(os.path.join(gen_dir, f))
-        
-        self.file_map = {}
-        display_names = []
-        for path in candidates:
-            name = os.path.basename(path)
-            self.file_map[name] = path
-            display_names.append(name)
-            
-        if display_names:
-            self.cbo_files.configure(values=display_names)
-            self.cbo_files.set(display_names[0])
-            self.btn_lint.configure(state="normal")
-            self.run_validation()
-        else:
-            self.cbo_files.configure(values=["No OAS files found"])
-            self.cbo_files.set("No OAS files found")
-            
-    def on_file_select(self, value):
-        self.run_validation()
-
-    def run_validation(self):
-        selected_name = self.cbo_files.get()
-        selected_file = self.file_map.get(selected_name)
-        
-        if not selected_file or not os.path.exists(selected_file):
-            self.val_log_print("File not found or not selected.")
-            return
-            
-        self.val_log_print(f"Starting validation for: {selected_name}")
-        self.progress_val.start() # Start pulsing animation
-        
-        for widget in self.frame_list.winfo_children():
-            widget.destroy()
-
-        def validate_thread():
-            try:
-                # Capture logs from linter
-                def thread_logger(msg):
-                    self.after(0, lambda: self.val_log_print(msg))
-                    
-                result = self.linter.run_lint(selected_file, log_callback=thread_logger)
-                self.after(0, lambda: self.show_results(result))
-            except Exception as e:
-                 self.after(0, lambda: self.val_log_print(f"THREAD CRASH: {e}"))
-            finally:
-                self.after(0, self.progress_val.stop)
-
-        t = threading.Thread(target=validate_thread)
-        t.start()
+    # ... existing methods ...
 
     def show_results(self, result):
         if not result['success']:
             self.val_log_print(f"Error: {result.get('error_msg', 'Unknown Error')}")
             self.frame_list.configure(label_text="Error")
+            # Clear previous
+            for widget in self.frame_list.winfo_children(): widget.destroy()
+            
             err_lbl = ctk.CTkLabel(self.frame_list, text=result.get('error_msg', 'Unknown Error'), text_color="red")
             err_lbl.pack()
             return
 
         summary = result['summary']
+        code_summary = result.get('code_summary', summary) # Fallback if missing
         details = result['details']
         total_issues = len(details)
         
         self.val_log_print(f"Check Complete: {total_issues} issues found.")
         self.frame_list.configure(label_text=f"Issues ({total_issues})")
         
-        # Update Chart
-        self.chart.set_data(summary)
+        # Update Chart - Use code_summary for detailed breakdown
+        self.chart.set_data(code_summary)
 
         # Populate List
+        for widget in self.frame_list.winfo_children(): widget.destroy()
+
         if total_issues == 0:
              ctk.CTkLabel(self.frame_list, text="No issues found! Great job!", text_color="green", font=("Arial", 16)).pack(pady=20)
         else:
@@ -312,7 +230,11 @@ class OASGenApp(ctk.CTk):
                 ctk.CTkLabel(r1, text=item['code'], font=("Arial", 11, "bold")).pack(side="left", padx=5)
                 ctk.CTkLabel(r1, text=f"Line: {item['line']}", text_color="gray", font=("Arial", 10)).pack(side="right")
                 
-                # Row 2: Message
+                # Row 2: Path
+                if item['path'] and item['path'] != "Root":
+                     ctk.CTkLabel(card, text=f"Path: {item['path']}", text_color="silver", font=("Consolas", 10), anchor="w").pack(fill="x", padx=5)
+
+                # Row 3: Message
                 ctk.CTkLabel(card, text=item['message'], anchor="w", justify="left", wraplength=350).pack(fill="x", padx=5, pady=(0, 5))
 
     

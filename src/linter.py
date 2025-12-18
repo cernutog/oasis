@@ -69,6 +69,7 @@ class SpectralRunner:
             
             # Analyze results
             summary = {'error': 0, 'warning': 0, 'info': 0, 'hint': 0}
+            code_summary = {} 
             simplified_details = []
 
             for item in results:
@@ -76,12 +77,18 @@ class SpectralRunner:
                 severity_code = item.get('severity', 0)
                 severity_str = severity_map.get(severity_code, 'error')
                 
+                code = item.get('code', 'unknown')
                 summary[severity_str] = summary.get(severity_str, 0) + 1
+                code_summary[code] = code_summary.get(code, 0) + 1
                 
+                # Format path nicely
+                raw_path = item.get('path', [])
+                path_str = " > ".join([str(p) for p in raw_path]) if raw_path else "Root"
+
                 simplified_details.append({
-                    'code': item.get('code'),
+                    'code': code,
                     'message': item.get('message'),
-                    'path': item.get('path', []),
+                    'path': path_str, # now a string
                     'line': item.get('range', {}).get('start', {}).get('line', 0) + 1,
                     'severity': severity_str
                 })
@@ -89,6 +96,7 @@ class SpectralRunner:
             return {
                 'success': True,
                 'summary': summary,
+                'code_summary': code_summary, # New field
                 'details': simplified_details,
                 'raw_count': len(results)
             }
