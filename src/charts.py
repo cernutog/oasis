@@ -18,6 +18,9 @@ class PieChart(ctk.CTkFrame):
             'empty': '#CCCCCC'    # Grey
         }
         
+        self.data = {}
+        self.bind("<Configure>", self.draw)
+
     def _get_color(self, key):
         if key in self.colors: return self.colors[key]
         # Generate hash-based pastel color for unknown keys
@@ -27,9 +30,6 @@ class PieChart(ctk.CTkFrame):
         g = int(h[2:4], 16) % 127 + 128
         b = int(h[4:6], 16) % 127 + 128
         return f'#{r:02x}{g:02x}{b:02x}'
-        
-        self.data = {}
-        self.bind("<Configure>", self.draw)
 
     def set_data(self, data):
         """
