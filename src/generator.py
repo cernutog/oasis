@@ -118,6 +118,7 @@ class OASGenerator:
             # Skip for GET, DELETE, HEAD
             if details.get("body") is not None and method not in ['get', 'delete', 'head']:
                 req_body = self._build_request_body(details["body"], body_examples)
+
                 if req_body:
                     op_obj["requestBody"] = req_body
 
@@ -134,7 +135,6 @@ class OASGenerator:
             # Don't sort extensions - preserve original order from Excel!
             standard_pre = ["summary", "description", "operationId", "tags", "parameters", "requestBody"]
             extensions = [k for k in op_obj.keys() if k.startswith("x-")]
-            # Include __RAW_EXTENSIONS__ marker with other extensions (before responses)
             if "__RAW_EXTENSIONS__" in op_obj:
                 extensions.append("__RAW_EXTENSIONS__")
             standard_post = ["responses"]
@@ -163,13 +163,43 @@ class OASGenerator:
                 ref_path = f"#/components/parameters/{name}"
                 
                 if pd.notna(desc):
-                    # Reference with description - use allOf workaround for OAS 3.0
+                    # Reference with description
                     is_oas30 = self.version.startswith("3.0")
                     if is_oas30:
-                        param = {
-                            "allOf": [{"$ref": ref_path}],
-                            "description": str(desc)
-                        }
+                        # OAS 3.0 does not support 'allOf' for parameters, nor '$ref' with siblings.
+                        # We must resolve the reference inline.
+                        
+                        # Note: This assumes build_components has run and populated self.oas["components"]["parameters"]
+                        # The global parameter name is likely the same as 'name' here, or derived from schema_name
+                        # Logic: schema_name in Excel usually maps to the component name
+                        
+                        global_param = None
+                        target_ref_name = name # Default assumption
+                        
+                        # Try to find the global parameter
+                        if "components" in self.oas and "parameters" in self.oas["components"]:
+                            if name in self.oas["components"]["parameters"]:
+                                global_param = self.oas["components"]["parameters"][name]
+                        
+                        if global_param:
+                            import copy
+                            param = copy.deepcopy(global_param)
+                            param["description"] = str(desc)
+                            param["x-comment"] = f"Reference from '#/components/parameters/{name}' resolved inline to allow description override."
+                        else:
+                            # Fallback if not found (should not happen if build order is correct)
+                            # Retain old invalid behavior or maybe minimal def?
+                            # Using allOf as last resort or error? 
+                            # Let's stick to the allOf "invalid" approach if we can't find the parent, 
+                            # but simpler: just a ref without description and a warning?
+                            # Or better: Create a minimal parameter with just description and schema ref?
+                            # But we don't know 'in' or 'required'.
+                            # Let's fallback to the broken allOf but print a warning.
+                            print(f"WARNING: Global parameter '{name}' not found for inline resolution. Generating invalid 'allOf' parameter.")
+                            param = {
+                                "allOf": [{"$ref": ref_path}],
+                                "description": str(desc)
+                            }
                     else:
                         # OAS 3.1 allows $ref and description at same level
                         param = {
@@ -202,10 +232,8 @@ class OASGenerator:
         return params
 
     def _build_request_body(self, df, body_examples=None):
+
         if df is None or df.empty: return None
-        
-        # DEBUG
-        # print(f"DEBUG BODY COLS: {df.columns.tolist()}")
         
         # The structure usually has the content-type as a root or row 0
         # Let's find the content type. 
@@ -478,6 +506,12 @@ class OASGenerator:
         # 5. Content
         if content_nodes:
             # Explicit Content Types
+            # The structure usually has the content-type as a root or row 0
+            # Let's find the content type. 
+            # Check if 'application/json' is in Name column
+            content_type = "application/json" # Default
+            
+            # We process the rows to build the schema
             resp_obj["content"] = {}
             for c_node in content_nodes:
                 content_type = c_node["name"]
@@ -757,7 +791,23 @@ class OASGenerator:
                     parent_schema = parent["schema_obj"]
                     
                     if parent_schema.get("type") == "array":
-                        parent_schema["items"] = node["schema_obj"]
+                        # Handle Array of Objects
+                        items = parent_schema.get("items", {})
+                        is_object_array = isinstance(items, dict) and (items.get("type") == "object" or "properties" in items)
+                        
+                        if is_object_array:
+                            if "properties" not in items: items["properties"] = {}
+                            items["properties"][name] = node["schema_obj"]
+                            
+                            # Handle Required for Items
+                            if node["mandatory"]:
+                                if "required" not in items: items["required"] = []
+                                if name not in items["required"]: items["required"].append(name)
+                            
+                            parent_schema["items"] = items
+                        else:
+                            # Original behavior: Overwrite items (e.g. for Array of Strings or Array of Refs)
+                            parent_schema["items"] = node["schema_obj"]
                     else:
                         if "properties" not in parent_schema:
                             parent_schema["properties"] = {}
