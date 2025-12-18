@@ -22,13 +22,19 @@ class SpectralRunner:
         os.close(fd)
         
         # Determine command - rely on shell=True to pick up .cmd/.exe from PATH
-        # Explicitly use the local .spectral.yaml to avoid "No ruleset found"
         ruleset_path = os.path.abspath(".spectral.yaml")
+        temp_ruleset = None
+
         if not os.path.exists(ruleset_path):
-             # Fallback if file missing (though we just created it)
-             command = f'{self.cmd} lint "{file_path}" -f json --output "{temp_out}"' 
-        else:
-             command = f'{self.cmd} lint "{file_path}" --ruleset "{ruleset_path}" -f json --output "{temp_out}"'
+             # If local ruleset missing (e.g. inside exe), create a temporary default one
+             log("Ruleset not found. Creating temporary default ruleset...")
+             fd_r, temp_ruleset = tempfile.mkstemp(suffix='.yaml')
+             os.close(fd_r)
+             with open(temp_ruleset, 'w') as f:
+                 f.write("extends: spectral:oas\n")
+             ruleset_path = temp_ruleset
+
+        command = f'{self.cmd} lint "{file_path}" --ruleset "{ruleset_path}" -f json --output "{temp_out}"'
              
         log(f"Executing: {command}")
         
@@ -36,12 +42,16 @@ class SpectralRunner:
             # use stdin=DEVNULL to ensure it never waits for input
             process = subprocess.run(
                 command, 
-                shell=True, 
+                shell=True,
                 capture_output=True, 
                 text=True, 
                 timeout=20,
                 stdin=subprocess.DEVNULL
             )
+            
+            # Cleanup temp ruleset if we created one
+            if temp_ruleset and os.path.exists(temp_ruleset):
+                os.remove(temp_ruleset)
             
             log(f"Process ended. Return Code: {process.returncode}")
             if process.stderr:

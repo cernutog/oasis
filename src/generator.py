@@ -522,7 +522,7 @@ class OASGenerator:
                 c_example_nodes = []
                 # DEBUG 201
                 if str(code) == '201' and content_type == 'application/json':
-                    with open("debug_201_tree.txt", "w") as f:
+                    # Debug code removed
                         f.write(f"Content Node: {content_type}\n")
                         f.write(f"Children Count: {len(c_node['children'])}\n")
                         for child in c_node["children"]:
