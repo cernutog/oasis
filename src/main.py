@@ -136,16 +136,26 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, log_callback=print):
     log_callback("Done!")
 
 def main():
-    # Default CLI behavior
-    cwd = os.getcwd()
-    templates_dir = os.path.join(cwd, "API Templates")
-    if not os.path.exists(templates_dir):
-        templates_dir = cwd # Fallback
-        
-    # files = [f for f in files if "account_assessment.251111.xlsm" in f]
-    # print(f"Processing filtered files: {files}")
-    
-    generate_oas(templates_dir)
+    try:
+        import customtkinter as ctk
+        from src.gui import OASGenApp
+    except ImportError:
+        try:
+            from gui import OASGenApp
+            import customtkinter as ctk
+        except ImportError:
+            # Fallback for dev environment path issues
+            import sys
+            sys.path.append(os.path.join(os.path.dirname(__file__), 'src'))
+            from src.gui import OASGenApp
+            import customtkinter as ctk
+
+    ctk.set_appearance_mode("System")
+    ctk.set_default_color_theme("blue")
+
+    root = ctk.CTk()
+    app = OASGenApp(root)
+    root.mainloop()
 
 if __name__ == "__main__":
     main()
