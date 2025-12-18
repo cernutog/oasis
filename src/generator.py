@@ -520,13 +520,9 @@ class OASGenerator:
                 # Split Content Children into Schema vs Examples
                 c_schema_nodes = []
                 c_example_nodes = []
-                # DEBUG 201
-                if str(code) == '201' and content_type == 'application/json':
-                    # Debug code removed
-                        f.write(f"Content Node: {content_type}\n")
-                        f.write(f"Children Count: {len(c_node['children'])}\n")
-                        for child in c_node["children"]:
-                            f.write(f" - {child['name']} (Section: {self._get_col_value(child['row'], ['Section'])})\n")
+                # DEBUG 201 (Removed)
+                # if str(code) == '201' and content_type == 'application/json':
+                #    pass
 
                 for grand in c_node["children"]:
                     sec = str(self._get_col_value(grand["row"], ["Section"])).strip().lower()
