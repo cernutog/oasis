@@ -1,3 +1,29 @@
+# OAS Generation Tool - Release Notes
+
+## v1.1.0 - The Validation Update 🛡️
+
+This release introduces a powerful new **Validation Engine** powered by `spectral-cli`.
+
+### 🌟 New Features
+*   **Validation Tab**: A dedicated interface to verify your generated OAS specifications.
+    *   **Analytic List**: Complete breakdown of Errors, Warnings, and Info.
+    *   **Interactive Chart**: Dynamic Pie Chart with semantic colors (HSL gradients) and tooltips explaining the rules.
+    *   **Bad Request Filter**: One-click filter to ignore intentional errors in "Bad Request" examples.
+    *   **Dual Log View**:
+        *   **App Logs**: Standard application output.
+        *   **Spectral Output**: Raw JSON output for deep debugging.
+*   **UI Experience Improvements**:
+    *   **Resizable Layout**: New split-pane design with draggable dividers.
+    *   **Smart Log Toggle**: "Logs" button moves intelligently (Footer when closed, Header when open).
+    *   **Visual Polish**: Clean, professional aesthetics with custom icons and consistent spacing.
+
+### 🔧 Fixes & Refinements
+*   Fixed chart visibility issues on window resize.
+*   Optimized layout for varying window sizes.
+*   Corrected handling of spectral process timeouts.
+
+---
+
 # OAS Generation Tool - v1.0.0
 
 First official release of the OAS Generation Tool.
