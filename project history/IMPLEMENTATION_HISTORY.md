@@ -144,3 +144,53 @@ Changed how headers with `Schema Name` references are generated.
 - ✅ `fri` header correctly generated with proper schema reference.
 - ✅ `pri` parameter correctly isolated to example sections (not appearing as a Response Header).
 - ✅ Codebase structure simplified by removing fragile implicit root logic.
+
+## v1.1.0: Validation Engine & UI Refinements (2025-12-18)
+
+### Problem Statement
+The generated OAS files were syntactically correct but potentially contained valid-but-wrong definitions (e.g., missing descriptions, incorrect types) that could only be found by manually running external linters. The UI was also static and lacked feedback.
+
+### Solution Architecture
+Integrated **Spectral** (`spectral-cli`) directly into the application flow using a Python wrapper.
+
+1.  **Validation Loop**:
+    *   **Pre-Process**: Check/Create `.spectral.yaml` ruleset.
+    *   **Execution**: Run `spectral lint -f json` via `subprocess`.
+    *   **Parsing**: Capture standard output/error and parse JSON result.
+    *   **Visualization**: Convert raw JSON into structured objects for UI consumption.
+
+### Key Implementation Details
+
+#### 1. Semantic Charts (`charts.py`)
+Developed a custom `SemanticPieChart` using `tkinter.Canvas` (instead of heavy `matplotlib`).
+*   **Dynamic Coloring**: Used HSL color space.
+    *   Error (0° Red)
+    *   Warning (45° Amber/Yellow)
+    *   Info (200° Blue)
+*   **Interactivity**: Implemented mouse hover events (`<Enter>`, `<Leave>`, `<Motion>`) to draw tooltips with Rule Code, Description, and Count.
+
+#### 2. Log Management
+*   **Dual-Tab System**:
+    *   **Analysis Logs**: User-facing application steps.
+    *   **Spectral Output**: Raw, pretty-printed JSON for deep debugging.
+*   **Smart Toggling**:
+    *   Implemented a "Swapping Header" pattern.
+    *   **Collapsed**: Button lives in a persistent Footer Frame.
+    *   **Expanded**: Button moves to an internal Header Frame at the top of the pane.
+    *   **Result**: Eliminates "Ghost Space" issues common with `pack`/`grid` resizing.
+
+#### 3. Filtering Logic (`gui.py`)
+User Requirement: "Bad Request" examples often contain intentional schema violations that pollute the error report.
+*   **Solution**: Implemented post-validation filtering.
+*   **Constraint**: `path contains "examples"` AND `path contains "Bad Request"`.
+*   **Optimization**: Cached raw results (`self.last_lint_result`) to allow instant filter toggling without re-running the heavy linter process.
+
+### UI Polish
+*   migrated main layout to `grid` geometry manager for better resizing behavior.
+*   Added `CTkPanedWindow` for adjustable split between List and Chart.
+*   Removed unused Progress Bar (superseded by real-time text logs).
+
+### Release
+*   Built standalone executable with `PyInstaller`.
+*   Tagged `v1.1` on GitHub.
+*   Published Release with Asset.
