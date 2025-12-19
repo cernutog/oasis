@@ -46,7 +46,7 @@ class OASGenApp(ctk.CTk):
         self.lbl_title = ctk.CTkLabel(self.frame_header, text="OAS Generator", font=ctk.CTkFont(size=20, weight="bold"))
         self.lbl_title.pack(padx=20, pady=15, side="left")
         
-        self.lbl_version = ctk.CTkLabel(self.frame_header, text="v1.1", font=ctk.CTkFont(size=12))
+        self.lbl_version = ctk.CTkLabel(self.frame_header, text="v1.2", font=ctk.CTkFont(size=12))
         self.lbl_version.pack(padx=20, pady=15, side="right")
 
         # --- Tab View ---
@@ -88,15 +88,15 @@ class OASGenApp(ctk.CTk):
         self.frame_opts.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 10))
 
         self.var_30 = ctk.BooleanVar(value=True)
-        self.chk_30 = ctk.CTkCheckBox(self.frame_opts, text="Generate OAS 3.0", variable=self.var_30)
+        self.chk_30 = ctk.CTkCheckBox(self.frame_opts, text="OAS 3.0", variable=self.var_30)
         self.chk_30.pack(side="left", padx=(0, 20))
         
         self.var_31 = ctk.BooleanVar(value=True)
-        self.chk_31 = ctk.CTkCheckBox(self.frame_opts, text="Generate OAS 3.1", variable=self.var_31)
+        self.chk_31 = ctk.CTkCheckBox(self.frame_opts, text="OAS 3.1", variable=self.var_31)
         self.chk_31.pack(side="left", padx=(0, 20))
 
         self.var_swift = ctk.BooleanVar(value=False)
-        self.chk_swift = ctk.CTkCheckBox(self.frame_opts, text="Generate SWIFT OAS", variable=self.var_swift)
+        self.chk_swift = ctk.CTkCheckBox(self.frame_opts, text="OAS SWIFT", variable=self.var_swift)
         self.chk_swift.pack(side="left")
 
         # Generate Button layout on the right of opts? Or below? Below logs? 

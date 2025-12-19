@@ -1265,11 +1265,14 @@ class OASGenerator:
         
         # 4. Tags
         if "tags" in self.oas: ordered_oas["tags"] = self.oas["tags"]
+
+        # 5. Security (Global) - Reordered: Before Paths
+        if "security" in self.oas: ordered_oas["security"] = self.oas["security"]
         
-        # 5. Paths
+        # 6. Paths
         if "paths" in self.oas: ordered_oas["paths"] = self.oas["paths"]
         
-        # 6. Components
+        # 7. Components
         if "components" in self.oas:
             # Clean up empty global component sections
             comps = self.oas["components"]
@@ -1277,10 +1280,13 @@ class OASGenerator:
             if "securitySchemes" in comps and not comps["securitySchemes"]:
                 del comps["securitySchemes"]
             
-            ordered_oas["components"] = comps
-        
-        # 7. Security (Global)
-        if "security" in self.oas: ordered_oas["security"] = self.oas["security"]
+            # Reorder Components: securitySchemes FIRST
+            ordered_comps = OrderedDict()
+            if "securitySchemes" in comps: ordered_comps["securitySchemes"] = comps["securitySchemes"]
+            for k, v in comps.items():
+                if k != "securitySchemes": ordered_comps[k] = v
+            
+            ordered_oas["components"] = ordered_comps
         
         # Add any other missing keys (e.g. externalDocs) at the end
         for k in self.oas:
@@ -1376,6 +1382,8 @@ class OASGenerator:
         """
         Applies SWIFT-specific customizations (Hardcoded as per exception).
         """
+        import copy
+        
         # 1. SERVERS
         self.oas["servers"] = [
             {
@@ -1480,33 +1488,99 @@ class OASGenerator:
             }
         }
 
-        # 4. PATHS MODIFICATIONS
+        # 4. COMPONENTS MODIFICATIONS (Responses)
+        # Add Header X-Request-ID to ALL Response Components
+        if "responses" in comps:
+             for r_name, r_obj in comps["responses"].items():
+                  if "headers" not in r_obj: r_obj["headers"] = {}
+                  r_obj["headers"]["X-Request-ID"] = {"$ref": "#/components/headers/X-Request-ID"}
+
+        # 5. PATHS MODIFICATIONS
         if "paths" in self.oas:
             for path_url, methods in self.oas["paths"].items():
                 for method, op in methods.items():
                     if method.startswith("x-") or not isinstance(op, dict): continue
                     
-                    # 4.1 Inject Parameters
+                    # 5.1 Inject Parameters
                     if "parameters" not in op: op["parameters"] = []
-                    # Check duplicates? Assuming blindly add for now as they are new
                     op["parameters"].append({"$ref": "#/components/parameters/ivUserKey"})
                     op["parameters"].append({"$ref": "#/components/parameters/ivUserBic"})
 
-                    # 4.2 Inject Headers to Responses (X-Request-ID)
-                    # 4.3 Polymorphic 400
                     if "responses" in op:
                         for code, resp in op["responses"].items():
-                            # X-Request-ID
-                            if "headers" not in resp: resp["headers"] = {}
-                            resp["headers"]["X-Request-ID"] = {"$ref": "#/components/headers/X-Request-ID"}
                             
-                            # Polymorphic 400
+                            # 5.2 Polymorphic 400
+                            # If it's a 400 Ref, Resolve it first to allow modification
+                            if str(code) == '400' and "$ref" in resp:
+                                ref_path = resp["$ref"]
+                                ref_name = ref_path.split("/")[-1]
+                                if "responses" in comps and ref_name in comps["responses"]:
+                                    # Inline the component content
+                                    resp = copy.deepcopy(comps["responses"][ref_name])
+                                    op["responses"][code] = resp # Update in place
+                            
                             if str(code) == '400':
                                 if "content" in resp and "application/json" in resp["content"]:
-                                     # Force oneOf
                                      resp["content"]["application/json"]["schema"] = {
                                          "oneOf": [
                                              {"$ref": "#/components/schemas/ErrorResponse"},
                                              {"$ref": "#/components/schemas/Errors"}
                                          ]
                                      }
+
+                            # 5.3 Inject Headers to Responses (X-Request-ID)
+                            # Only if NOT a ref (Refs are handled in Component Loop above)
+                            if "$ref" not in resp:
+                                if "headers" not in resp: resp["headers"] = {}
+                                resp["headers"]["X-Request-ID"] = {"$ref": "#/components/headers/X-Request-ID"}
+        
+        # 6. CLEANUP (Remove x-sandbox extensions)
+        def clean_sandbox(d):
+            if isinstance(d, dict):
+                keys = list(d.keys())
+                for k in keys:
+                    if k == "__RAW_EXTENSIONS__" and isinstance(d[k], str):
+                        lines = d[k].split('\n')
+                        filtered_lines = []
+                        skip_level = -1
+                        
+                        for line in lines:
+                            # Calculate indentation
+                            stripped = line.lstrip()
+                            if not stripped: # Empty line
+                                if skip_level == -1: filtered_lines.append(line)
+                                continue
+                                
+                            current_indent = len(line) - len(stripped)
+                            
+                            # If we are strictly deeper than the key we skipped, continue skipping
+                            if skip_level != -1 and current_indent > skip_level:
+                                continue
+                            
+                            # We are back to same level or easier, stop skipping (unless this is also a target)
+                            skip_level = -1
+                            
+                            # Check if this is a target key
+                            if stripped.startswith("x-sandbox"):
+                                skip_level = current_indent
+                                continue
+                            
+                            # Keep line
+                            filtered_lines.append(line)
+                            
+                        new_text = '\n'.join(filtered_lines)
+                        
+                        if not new_text.strip():
+                            del d[k]
+                        else:
+                            d[k] = new_text
+
+                    elif k.startswith("x-sandbox"):
+                        del d[k]
+                    else:
+                        clean_sandbox(d[k])
+            elif isinstance(d, list):
+                for item in d:
+                    clean_sandbox(item)
+                    
+        clean_sandbox(self.oas)

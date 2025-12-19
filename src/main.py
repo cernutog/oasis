@@ -1,5 +1,6 @@
 import os
 import sys
+import pandas as pd
 # Add src to path if needed or assume relative imports work if run as module
 # If run as script, parser/generator are in same dir.
 try:
@@ -78,6 +79,39 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
     # Let's write to `base_dir` to keeps things simple as per current flow.
     output_dir = base_dir
 
+    def build_filename(oas_ver, customization=""):
+        pattern = info_data.get("filename_pattern")
+        if not pattern or pd.isna(pattern):
+             # Fallback to legacy naming if pattern missing
+             suffix = "_SWIFT" if customization else ""
+             return f"generated_oas_{oas_ver}{suffix}.yaml"
+        
+        # Placeholders
+        # <current_date>
+        from datetime import datetime
+        now_str = datetime.now().strftime("%Y%m%d")
+        
+        # <oas_version>
+        ver_str = oas_ver # "3.0" or "3.1"
+        
+        # <customization>
+        cust_str = f"{customization}_" if customization else ""
+        
+        # <api_version>
+        api_ver = info_data.get("version", "1.0")
+        
+        # <release>
+        release_str = info_data.get("release", "")
+        
+        fname = pattern.replace("<current_date>", now_str)\
+                       .replace("<oas_version>", ver_str)\
+                       .replace("<customization>", cust_str)\
+                       .replace("<api_version>", api_ver)\
+                       .replace("<release>", release_str)
+                       
+        return fname.strip()
+
+
     # 4. Generate OAS 3.0
     if gen_30:
         log_callback("Generating OAS 3.0...")
@@ -104,7 +138,7 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         gen_dir = os.path.join(output_dir, "generated")
         os.makedirs(gen_dir, exist_ok=True)
 
-        out_30 = os.path.join(gen_dir, "generated_oas_3.0.yaml")
+        out_30 = os.path.join(gen_dir, build_filename("3.0"))
         log_callback(f"Writing OAS 3.0 to: {out_30}")
         with open(out_30, "w", encoding="utf-8") as f:
             f.write(generator_30.get_yaml())
@@ -128,7 +162,7 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         gen_dir = os.path.join(output_dir, "generated")
         os.makedirs(gen_dir, exist_ok=True)
 
-        out_31 = os.path.join(gen_dir, "generated_oas_3.1.yaml")
+        out_31 = os.path.join(gen_dir, build_filename("3.1"))
         log_callback(f"Writing OAS 3.1 to: {out_31}")
         with open(out_31, "w", encoding="utf-8") as f:
             f.write(generator_31.get_yaml())
@@ -157,8 +191,8 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         gen_dir = os.path.join(output_dir, "generated")
         os.makedirs(gen_dir, exist_ok=True)
 
-        out_sw_30 = os.path.join(gen_dir, "generated_oas_3.0_SWIFT.yaml")
-        log_callback(f"Writing SWIFT OAS 3.0 to: {out_sw_30}")
+        out_sw_30 = os.path.join(gen_dir, build_filename("3.0", "SWIFT"))
+        log_callback(f"Writing OAS 3.0 (SWIFT) to: {out_sw_30}")
         with open(out_sw_30, "w", encoding="utf-8") as f:
             f.write(sw_gen_30.get_yaml())
 
@@ -176,8 +210,8 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         # APPLY CUSTOMIZATION
         sw_gen_31.apply_swift_customization()
 
-        out_sw_31 = os.path.join(gen_dir, "generated_oas_3.1_SWIFT.yaml")
-        log_callback(f"Writing SWIFT OAS 3.1 to: {out_sw_31}")
+        out_sw_31 = os.path.join(gen_dir, build_filename("3.1", "SWIFT"))
+        log_callback(f"Writing OAS 3.1 (SWIFT) to: {out_sw_31}")
         with open(out_sw_31, "w", encoding="utf-8") as f:
             f.write(sw_gen_31.get_yaml())
     

@@ -13,7 +13,7 @@ Don't take long sequences of actions without interacting with him. Sometimes he 
 
 6. Key files, to understand the quality achieved, are the OAS present in the "Expected results" folder.
 
-7. Git, git, git. Remember to version every change. Use snapshots before changes and use always development branches. The master branch must always contain the last consolidated and accepted result. Ask always to the user if a branch can be merged to master.
+7. Git, git, git. Remember to version every change. Use snapshots before changes and use always development branches (create a new development branch at each session). The master branch must always contain the last consolidated and accepted result. Ask always to the user if a branch can be merged to master.
 
 8. All reverts must be requested and authorized. Temporary reverts for tests anche checks can be executed autonomously only after having stashed the current situation. Nothing must be lost for a bad git practice.
 

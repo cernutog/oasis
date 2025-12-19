@@ -131,6 +131,10 @@ def parse_info(df_info):
                 if "contact" not in info: info["contact"] = {}
                 if "email" in key: info["contact"]["email"] = val
                 if "name" in key: info["contact"]["name"] = val
+            elif "release" in key:
+                 info["release"] = str(val)
+            elif "filename" in key and "pattern" in key:
+                 info["filename_pattern"] = str(val)
             
             # Servers (Inline)
             if "servers" in key and "url" in key:

@@ -70,6 +70,22 @@ class SemanticPieChart(ctk.CTkFrame):
             
         return list(reversed(colors)) # Dark to Light
 
+    def _darken_color(self, hex_color, factor=0.7):
+        """ Darkens a hex color for 3D shadowing. """
+        if not hex_color.startswith('#'): return hex_color
+        try:
+            r = int(hex_color[1:3], 16)
+            g = int(hex_color[3:5], 16)
+            b = int(hex_color[5:7], 16)
+            
+            r = max(0, min(255, int(r * factor)))
+            g = max(0, min(255, int(g * factor)))
+            b = max(0, min(255, int(b * factor)))
+            
+            return f'#{r:02x}{g:02x}{b:02x}'
+        except:
+            return hex_color
+
     def draw(self, event=None):
         self.update_idletasks() # Force geometry update
         self.canvas.delete("all")
@@ -82,14 +98,18 @@ class SemanticPieChart(ctk.CTkFrame):
         if w < 50 or h < 50: return
 
         padding = 20
+        depth = 15 # 3D Depth
+        
+        # Center and Radii (Elliptical 3D)
         cx = w / 2
-        cy = h / 2
-        radius = min(w, h) / 2 - padding
+        cy = (h / 2) - (depth / 2)
+        rx = min(w, h) / 2 - padding
+        ry = rx * 0.6 # Flatten
         
         total = sum(d['count'] for d in self.data.values())
         
         if total == 0:
-            self.canvas.create_oval(cx - radius, cy - radius, cx + radius, cy + radius, fill="#E0E0E0", outline="")
+            self.canvas.create_oval(cx - rx, cy - ry, cx + rx, cy + ry, fill="#E0E0E0", outline="")
             self.canvas.create_text(cx, cy, text="No Data", fill="gray", font=("Arial", 12))
             return
 
@@ -103,7 +123,6 @@ class SemanticPieChart(ctk.CTkFrame):
         warnings = dict(sorted(warnings.items(), key=lambda item: item[1]['count'], reverse=True))
         
         # Color Palettes
-        # Red Hue = 0.0/1.0. Yellow/Gold Hue ~= 0.12
         err_colors = self._generate_hsl_gradient(0.0, len(errors))
         warn_colors = self._generate_hsl_gradient(0.13, len(warnings)) # 0.13 is nice gold/amber
         other_colors = self._generate_hsl_gradient(0.55, len(others)) # Blueish
@@ -128,39 +147,84 @@ class SemanticPieChart(ctk.CTkFrame):
             
         start_angle = 90
         
+        # 1. Prepare Data
+        slices_meta = []
         for code, info, color in final_list:
             cnt = info['count']
             extent = (cnt / total) * 360
+            if extent < 1: extent = 1 # Min visibility
             
-            tag = f"slice_{code}"
+            slices_meta.append({
+                'code': code, 'info': info, 'color': color,
+                'dark_color': self._darken_color(color, 0.7),
+                'start': start_angle, 'extent': extent
+            })
+            start_angle += extent
+            
+        # 2. Draw Depth (Sides) - O(N*Depth)
+        # Optimization: Only draw if angle implies visibility (South semi-circle) or just brute force.
+        # Brute force is fine for < 100 items.
+        for z in range(depth, 0, -1):
+             for s in slices_meta:
+                 # Check if this slice is in the "bottom" half (approx 180-360 deg in standard math)
+                 # Tkinter start 0=East, go CCW. 
+                 # Visual front depends on tilt. Assume full overlap is safer.
+                 self.canvas.create_arc(
+                     cx - rx, cy - ry + z, cx + rx, cy + ry + z,
+                     start=s['start'], extent=s['extent'],
+                     fill=s['dark_color'], outline=s['dark_color'], width=1, style="pieslice"
+                 )
+
+        # 3. Draw Top Face
+        for s in slices_meta:
+            s_angle = s['start']
+            e_angle = s['extent']
+            actual_end = (s_angle + e_angle) % 360
+            
+            tag = f"slice_{s['code']}"
             self.canvas.create_arc(
-                cx - radius, cy - radius, cx + radius, cy + radius,
-                start=start_angle, extent=extent,
-                fill=color, outline="white", width=1.5, tags=tag
+                cx - rx, cy - ry, cx + rx, cy + ry,
+                start=s_angle, extent=e_angle,
+                fill=s['color'], outline="white", width=1.5, tags=tag
             )
             
             self.slices.append({
-                'start': start_angle % 360,
-                'end': (start_angle + extent) % 360,
-                'code': code,
-                'count': cnt,
-                'severity': info['severity'],
-                'cx': cx, 'cy': cy, 'r': radius,
-                'color': color
+                'start': s_angle % 360,
+                'end': actual_end,
+                'code': s['code'],
+                'count': s['info']['count'],
+                'severity': s['info']['severity'],
+                'cx': cx, 'cy': cy, 
+                'rx': rx, 'ry': ry, # Elliptical
+                'color': s['color']
             })
-            
-            start_angle += extent
 
     def on_mouse_move(self, event):
         x, y = event.x, event.y
         hovered = None
         for s in self.slices:
+            # Elliptical Hit Test
+            # (x-cx)^2/rx^2 + (y-cy)^2/ry^2 <= 1
             dx = x - s['cx']
-            dy = s['cy'] - y 
-            dist = math.sqrt(dx*dx + dy*dy)
-            if dist <= s['r']:
-                angle = math.degrees(math.atan2(dy, dx))
+            dy = s['cy'] - y # Inverted Y in canvas
+            
+            # Use parametric coords for angle check to match create_arc logic
+            # create_arc angles are "parametric angles" on the bounding box
+            
+            norm_x = dx / s['rx']
+            norm_y = dy / s['ry']
+            
+            dist_sq = norm_x*norm_x + norm_y*norm_y
+            
+            if dist_sq <= 1.05: # Allow small margin
+                # Calculate Parametric Angle
+                # Tkinter 'start' is CCW from +x (East). y is UP in math, but DOWN in screen.
+                # create_arc treats +y as UP? No, +y is DOWN.
+                # However, atan2(dy, dx) with dy = cy - y works for standard cartesian.
+                
+                angle = math.degrees(math.atan2(norm_y, norm_x))
                 if angle < 0: angle += 360
+                
                 start, end = s['start'], s['end']
                 
                 # Check angle
