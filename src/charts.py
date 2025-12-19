@@ -98,7 +98,7 @@ class SemanticPieChart(ctk.CTkFrame):
         if w < 50 or h < 50: return
 
         padding = 20
-        depth = 15 # 3D Depth
+        depth = 25 # 3D Depth (Increased)
         
         # Center and Radii (Elliptical 3D)
         cx = w / 2
@@ -161,14 +161,9 @@ class SemanticPieChart(ctk.CTkFrame):
             })
             start_angle += extent
             
-        # 2. Draw Depth (Sides) - O(N*Depth)
-        # Optimization: Only draw if angle implies visibility (South semi-circle) or just brute force.
-        # Brute force is fine for < 100 items.
+        # 2. Draw Depth (Sides)
         for z in range(depth, 0, -1):
              for s in slices_meta:
-                 # Check if this slice is in the "bottom" half (approx 180-360 deg in standard math)
-                 # Tkinter start 0=East, go CCW. 
-                 # Visual front depends on tilt. Assume full overlap is safer.
                  self.canvas.create_arc(
                      cx - rx, cy - ry + z, cx + rx, cy + ry + z,
                      start=s['start'], extent=s['extent'],
@@ -185,7 +180,7 @@ class SemanticPieChart(ctk.CTkFrame):
             self.canvas.create_arc(
                 cx - rx, cy - ry, cx + rx, cy + ry,
                 start=s_angle, extent=e_angle,
-                fill=s['color'], outline="white", width=1.5, tags=tag
+                fill=s['color'], outline="black", width=1.5, tags=tag
             )
             
             self.slices.append({
