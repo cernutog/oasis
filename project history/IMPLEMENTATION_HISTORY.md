@@ -193,4 +193,47 @@ User Requirement: "Bad Request" examples often contain intentional schema violat
 ### Release
 *   Built standalone executable with `PyInstaller`.
 *   Tagged `v1.1` on GitHub.
-*   Published Release with Asset.
+## v1.2.1: SWIFT Support & Dynamic Systems (2025-12-19)
+
+### Major Features
+
+#### 1. SWIFT OAS Customization
+**Requirement**: Generate specialized OAS files for SWIFT compliance alongside standard files.
+- **Solution**: Implemented `apply_swift_customization()` method in `OASGenerator`.
+- **Logic**:
+  - **Servers**: Overrides `servers` list with production/test endpoints.
+  - **Security**: Sets specific `oauthBearerToken` scopes.
+  - **Components**: Injects mandatory parameters (`ivUserKey`, `ivUserBic`) and headers (`X-Request-ID`).
+  - **Polymorphism**: Transforms `400 Bad Request` responses to use `oneOf` polymorphism for error schemas.
+  - **Cleanup**: Recursively removes `x-sandbox` extensions.
+
+#### 2. Dynamic Filename Generation
+**Requirement**: Output filenames must follow a specific pattern defined in Excel (e.g., `EBACL_FPAD_<date>_...`).
+- **Implementation**:
+  - Parsing logic added to extract `filename_pattern` and `release` from the "General Description" sheet.
+  - `build_filename` helper function replaces placeholders: `<current_date>`, `<oas_version>`, `<customization>`, `<release>`.
+  - Fallback mechanism ensures legacy naming if pattern is missing.
+
+#### 3. 3D Visualizations
+**Requirement**: "Make the chart look nicer."
+- **Implementation**:
+  - Upgraded `SemanticPieChart` to a "2.5D" Elliptical Renderer.
+  - **Depth**: Draws stacked arcs shifted on the Y-axis to simulate 3D volume.
+  - **Cosmetics**: Added black outlines and optimized depth sizing (25px).
+  - **Hit Testing**: Updated mouse hover checks to use Elliptical Math (`(dx/rx)^2 + (dy/ry)^2 <= 1`) to correctly detect slices in the distorted projection.
+
+### Stability & Compliance (v1.2.1 Hotfixes)
+
+#### 1. OAS Info Object Injection
+**Issue**: The custom `release` and `filename_pattern` fields were leaking into the generated YAML's `info` object, causing validation errors ("Object includes not allowed fields").
+**Fix**: Implemented a sanitization step in `src/main.py`. A `clean_info` copy is created (popping internal keys) before passing it to the generator.
+
+#### 2. Icon Persistence
+**Issue**: Application icon missing in Window Title and Filesystem for the frozen executable.
+**Fix**: 
+- **Runtime**: Updated `gui.py` to resolving icon path via `sys._MEIPASS` (PyInstaller temp dir).
+- **Build**: Added `--icon='icon.ico'` and `--add-data 'icon.ico;.'` to PyInstaller command to ensure both metadata and physical file presence.
+
+#### 3. Spectral on Windows
+**Issue**: Linter failing with "Invalid ruleset provided".
+**Fix**: Forced inclusion of `os.path.normpath` for ruleset paths to handle Windows backslashes correctly.

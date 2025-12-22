@@ -63,7 +63,8 @@ class OASGenerator:
         }
 
     def build_info(self, info_data):
-        self.oas["info"] = info_data
+        import copy
+        self.oas["info"] = copy.deepcopy(info_data)
 
     def build_paths(self, paths_list, operations_details):
         for op_meta in paths_list:
@@ -532,13 +533,18 @@ class OASGenerator:
                         c_schema_nodes.append(grand)
                 
                 # Build Schema
-                c_schema_df = pd.DataFrame([n["row"] for n in self._flatten_subtree(c_schema_nodes)])
+                # FIX: Include the Content Node itself (e.g. 'application/json') in the schema calculation.
+                # If we only process children, a single child like 'reportId' becomes the root schema.
+                # By including the parent (c_node), we respect its type (e.g. Object) and hierarchy.
+                
+                # Collect all rows including root and descendants
+                all_schema_rows = [c_node["row"]] + [n["row"] for n in self._flatten_subtree(c_schema_nodes)]
+                c_schema_df = pd.DataFrame(all_schema_rows)
                 
                 if not c_schema_df.empty:
                     schema = self._build_schema_from_flat_table(c_schema_df)
                 else:
-                    schema = self._map_type_to_schema(c_node["row"])
-                    if not schema: schema = {}
+                    schema = {}
 
                 # Examples
                 examples = {}
@@ -547,7 +553,16 @@ class OASGenerator:
                     ex_df = pd.DataFrame([n["row"] for n in self._flatten_subtree(c_example_nodes)])
                     examples = self._build_examples_from_rows(ex_df)
                 
-                content_entry = { "schema": schema }
+                # Logic to suppress schema if it's an empty object (no attributes)
+                # as explicitly requested by user.
+                c_type = str(self._get_type(c_node["row"])).strip().lower()
+                has_attributes = len(c_schema_nodes) > 0
+                
+                if c_type == 'object' and not has_attributes:
+                    content_entry = {}
+                else:
+                    content_entry = { "schema": schema }
+
                 if examples:
                     content_entry["examples"] = {}
                     for k, v in examples.items():
@@ -623,6 +638,7 @@ class OASGenerator:
             nodes[idx] = {
                 "name": name,
                 "parent": self._get_parent(row),
+                "type": self._get_type(row), # Capture type for array logic
                 "value": ex_val,
                 "children": []
             }
@@ -732,6 +748,10 @@ class OASGenerator:
                      obj[base][idx] = child_val
                 else:
                      obj[c_name] = child_val
+            
+            # FIX: If node type is array but children were properties, wrap in list
+            if str(node.get("type", "")).strip().lower() == "array":
+                return [obj]
                      
             return obj
 
@@ -818,6 +838,28 @@ class OASGenerator:
                 else:
                     # Parent not in nodes (e.g. application/json). Treat as Root.
                     roots.append(node)
+        
+        # FIX: Re-order 'example' and 'examples' to be the LAST keys in the schema object
+        # Using destructive update with OrderedDict to ensure PyYAML respects the order
+        from collections import OrderedDict
+        for name, node in nodes.items():
+            schema = node["schema_obj"]
+            
+            ex = schema.pop("example", None)
+            exs = schema.pop("examples", None)
+            
+            # Create a new ordered dict with remaining items
+            new_schema = OrderedDict()
+            for k, v in schema.items():
+                new_schema[k] = v
+            
+            # Add back examples at the end
+            if ex is not None: new_schema["example"] = ex
+            if exs is not None: new_schema["examples"] = exs
+            
+            # Destructive update of the original reference
+            schema.clear()
+            schema.update(new_schema)
                         
         # 3. Return the Root Schema
         if len(roots) == 1:
@@ -896,18 +938,41 @@ class OASGenerator:
         if pd.notna(desc) and "description" not in schema: 
             schema["description"] = str(desc)
 
-        ex = self._get_col_value(row, ["Example", "Examples"])
-        if pd.notna(ex): 
-            parsed_ex = self._parse_example_string(ex)
-            if self.version.startswith("3.1"):
-                schema["examples"] = [parsed_ex]
-            else:
-                schema["example"] = parsed_ex
+        # ex = self._get_col_value(row, ["Example", "Examples"])
+        # if pd.notna(ex): 
+        #     parsed_ex = self._parse_example_string(ex)
+        #     if self.version.startswith("3.1"):
+        #         schema["examples"] = [parsed_ex]
+        #     else:
+        #         schema["example"] = parsed_ex
         
         # Enums
         enum_val = self._get_col_value(row, ["Allowed value", "Allowed values"])
         if pd.notna(enum_val):
-            schema["enum"] = [x.strip() for x in str(enum_val).split(',')]
+            enum_list = [x.strip() for x in str(enum_val).split(',')]
+            
+            # Cast based on type
+            if type_val == "integer":
+                try:
+                    enum_list = [int(x) for x in enum_list if x]
+                except ValueError:
+                    pass # Keep as strings if conversion fails
+            elif type_val == "number":
+                try:
+                    # Check if integer float (e.g. 400.0) -> int, else float
+                    new_list = []
+                    for x in enum_list:
+                        if not x: continue
+                        f = float(x)
+                        if f.is_integer():
+                            new_list.append(int(f))
+                        else:
+                            new_list.append(f)
+                    enum_list = new_list
+                except ValueError:
+                    pass
+            
+            schema["enum"] = enum_list
 
         # Formatting / Constraints
         fmt = self._get_col_value(row, ["Format"])
@@ -979,6 +1044,15 @@ class OASGenerator:
                              schema["items"] = {"$ref": f"#/components/schemas/{ref_name}"}
             elif "items" not in schema:
                  schema["items"] = {} 
+
+        # FIX: Move Example processing to the END to ensure it appears last in the YAML
+        ex = self._get_col_value(row, ["Example", "Examples"])
+        if pd.notna(ex): 
+            parsed_ex = self._parse_example_string(ex)
+            if self.version.startswith("3.1"):
+                schema["examples"] = [parsed_ex]
+            else:
+                schema["example"] = parsed_ex
 
         return schema
 
@@ -1293,6 +1367,9 @@ class OASGenerator:
             if k not in ordered_oas:
                 ordered_oas[k] = self.oas[k]
 
+        # FINAL FIX: Recursively enforce 'example'/'examples' at the bottom of every object
+        self._recursive_schema_fix(ordered_oas)
+
         # Generate YAML
         yaml_output = yaml.dump(ordered_oas, Dumper=OASDumper, sort_keys=False, default_flow_style=False, allow_unicode=True, width=120)
         
@@ -1300,6 +1377,41 @@ class OASGenerator:
         yaml_output = self._insert_raw_extensions(yaml_output, ordered_oas)
         
         return yaml_output
+
+    def _recursive_schema_fix(self, obj):
+        """
+        Recursively traverses the OAS structure and enforces that 'example' and 'examples'
+        keys are strictly at the end of any dictionary containing them.
+        """
+        if isinstance(obj, dict):
+            # 1. Process children first
+            for k, v in obj.items():
+                self._recursive_schema_fix(v)
+            
+            # 2. Re-order current dict if needed
+            if "example" in obj or "examples" in obj:
+                # Use destructive update to change order in-place
+                from collections import OrderedDict
+                
+                ex = obj.pop("example", None)
+                exs = obj.pop("examples", None)
+                
+                # Reconstruct dict order (remaining keys are already in order)
+                new_d = OrderedDict()
+                for k, v in obj.items():
+                    new_d[k] = v
+                
+                # Append example/s at the end
+                if ex is not None: new_d["example"] = ex
+                if exs is not None: new_d["examples"] = exs
+                
+                # Destructive update
+                obj.clear()
+                obj.update(new_d)
+                
+        elif isinstance(obj, list):
+            for item in obj:
+                self._recursive_schema_fix(item)
     
     def _insert_raw_extensions(self, yaml_text, oas_dict):
         """Replace __RAW_EXTENSIONS__ markers with raw YAML text"""
@@ -1378,11 +1490,20 @@ class OASGenerator:
         
         return new_d
 
-    def apply_swift_customization(self):
+    def apply_swift_customization(self, source_filename=None):
         """
         Applies SWIFT-specific customizations (Hardcoded as per exception).
+        :param source_filename: Optional filename of the base OAS file to reference in description.
         """
         import copy
+        
+        # 0. Append source reference to Description
+        if source_filename:
+            if "info" not in self.oas: self.oas["info"] = {}
+            if "description" not in self.oas["info"]: self.oas["info"]["description"] = ""
+            
+            # Use strict newline format as requested
+            self.oas["info"]["description"] += f"\n\nBased on {source_filename}"
         
         # 1. SERVERS
         self.oas["servers"] = [
@@ -1415,25 +1536,46 @@ class OASGenerator:
         # 3.2 Parameters (ivUserKey, ivUserBic)
         if "parameters" not in comps: comps["parameters"] = {}
         
-        comps["parameters"]["ivUserKey"] = {
-            "name": "ivUserKey",
-            "in": "header",
-            "description": "The subscription key of a Participant. cn=<SSO+BIC+UserId+T>,o=BIC8,o=swift. SSO is a fixed string, last char is for environment (P for production and T for test) eg SSOUNCRITMMAPI12345P, o=uncritmm,o=swift",
-            "required": True,
-            "schema": {"type": "string"}
-        }
-        
-        comps["parameters"]["ivUserBic"] = {
-            "name": "ivUserBic",
-            "in": "header",
-            "description": "BIC8 identifier",
-            "required": True,
-            "schema": {
-                "type": "string",
-                "pattern": "[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}",
-                "example": "IPSDID21"
+        # FIX: Ensure proper order - ivUserKey and ivUserBic MUST be first as per request
+        new_params = {}
+
+        # 1. Add specific params first
+        specific_params = {
+            "ivUserKey": {
+                "name": "ivUserKey",
+                "in": "header",
+                "description": "The subscription key of a Participant. cn=<SSO+BIC+UserId+T>,o=BIC8,o=swift. SSO is a fixed string, last char is for environment (P for production and T for test) eg SSOUNCRITMMAPI12345P, o=uncritmm,o=swift",
+                "required": True,
+                "schema": {
+                    "type": "string",
+                    "description": "The subscription key of a Participant. cn=<SSO+BIC+UserId+T>,o=BIC8,o=swift. SSO is a fixed string, last char is for environment (P for production and T for test) eg SSOUNCRITMMAPI12345P, o=uncritmm,o=swift",
+                    "example": "cn=SSOUNCRITMMAPI12345P,o=uncritmm,o=swift"
+                }
+            },
+            "ivUserBic": {
+                "name": "ivUserBic",
+                "in": "header",
+                "description": "BIC of the user.",
+                "required": True,
+                "schema": {
+                    "type": "string",
+                    "description": "BIC of the user.",
+                    "example": "UNCRITMM",
+                    "pattern": "^[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}([A-Z0-9]{3,3}){0,1}$"
+                }
             }
         }
+        
+        # Add them to new dict
+        new_params.update(specific_params)
+        
+        # 2. Add existing params (avoiding duplicates if any)
+        for k, v in comps["parameters"].items():
+            if k not in new_params:
+                new_params[k] = v
+                
+        # 3. Replace component parameters
+        comps["parameters"] = new_params
 
         # 3.3 Headers (X-Request-ID)
         if "headers" not in comps: comps["headers"] = {}
@@ -1503,8 +1645,14 @@ class OASGenerator:
                     
                     # 5.1 Inject Parameters
                     if "parameters" not in op: op["parameters"] = []
-                    op["parameters"].append({"$ref": "#/components/parameters/ivUserKey"})
-                    op["parameters"].append({"$ref": "#/components/parameters/ivUserBic"})
+                    
+                    # Ensure ivUserKey/ivUserBic are at the top
+                    # Remove existing if present to avoid duplication/misordering
+                    new_refs = [{"$ref": "#/components/parameters/ivUserKey"}, {"$ref": "#/components/parameters/ivUserBic"}]
+                    existing_params = [p for p in op["parameters"] if p not in new_refs]
+                    
+                    # Prepend new refs
+                    op["parameters"] = new_refs + existing_params
 
                     if "responses" in op:
                         for code, resp in op["responses"].items():

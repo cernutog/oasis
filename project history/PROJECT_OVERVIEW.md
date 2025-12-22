@@ -1,9 +1,17 @@
 # OAS Generation Tool - Project Overview
+**Current Version**: `v1.2.1`
 
 ## Project Purpose
 This tool generates OpenAPI Specification (OAS) 3.0 and 3.1 YAML files from Excel templates (.xlsm files). It reads API definitions from structured Excel sheets and produces compliant OpenAPI specifications.
 
 ## Directory Structure
+... (unchanged)
+
+## Recent Major Changes
+1. **SWIFT OAS Support**: Dedicated generation stream for SWIFT-compliant specs (custom servers, security, headers).
+2. **Dynamic Filenames**: Output files named based on Excel patterns (e.g., `EBACL_FPAD_<date>...`).
+3. **Visualization**: 3D Stacking Pie Charts for validation reports.
+4. **Stability**: Sanitized OAS Info object and robust icon/path handling for Windows.
 
 ```
 OAS_Generation_Tool/

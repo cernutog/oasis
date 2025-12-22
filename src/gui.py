@@ -6,12 +6,18 @@ import os
 import sys
 import json
 
-# Ensure imports work
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# from . import main as main_script # Avoid circular import if possible, or use lazy import inside function
+# But main.py imports gui.py? No, main.py imports gui.py logic. gui.py imports main.py for generate_oas? 
+# Let's check logic. gui.py calls main_script.generate_oas.
+# AND main.py imports gui to run app?
+# Yes, circular dependency if top-level import.
+# But inside run_gui.py, we import src.gui.
+# If src.gui imports src.main, and src.main imports src.gui...
+# src.main imports src.gui inside main() function (lazy import), so it's fine.
 
-import main as main_script
-from linter import SpectralRunner
-from charts import SemanticPieChart
+from . import main as main_script
+from .linter import SpectralRunner
+from .charts import SemanticPieChart
 
 # Set Theme
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
@@ -54,7 +60,7 @@ class OASGenApp(ctk.CTk):
         self.lbl_title = ctk.CTkLabel(self.frame_header, text="OAS Generator", font=ctk.CTkFont(size=20, weight="bold"))
         self.lbl_title.pack(padx=20, pady=15, side="left")
         
-        self.lbl_version = ctk.CTkLabel(self.frame_header, text="v1.2.1", font=ctk.CTkFont(size=12))
+        self.lbl_version = ctk.CTkLabel(self.frame_header, text="v1.2.2", font=ctk.CTkFont(size=12))
         self.lbl_version.pack(padx=20, pady=15, side="right")
 
         # --- Tab View ---
@@ -441,7 +447,7 @@ class OASGenApp(ctk.CTk):
                 if item['path'] and item['path'] != "Root":
                      # High contrast for path
                      path_color = ("#333333", "#CCCCCC") # Dark in light mode, Light in dark mode
-                     ctk.CTkLabel(card, text=f"Path: {item['path']}", text_color=path_color, font=("Consolas", 10, "bold"), anchor="w").pack(fill="x", padx=5)
+                     ctk.CTkLabel(card, text=f"Path: {item['path']}", text_color=path_color, font=("Consolas", 10, "bold"), anchor="w", justify="left", wraplength=350).pack(fill="x", padx=5)
 
                 # Row 3: Message
                 ctk.CTkLabel(card, text=item['message'], anchor="w", justify="left", wraplength=350).pack(fill="x", padx=5, pady=(0, 5))

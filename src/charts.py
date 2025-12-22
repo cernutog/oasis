@@ -13,25 +13,30 @@ class SemanticPieChart(ctk.CTkFrame):
         self.data = {}
         self.slices = [] 
         
-        # Descriptions mapping (could be moved to separate file)
-        self.rule_descriptions = {
-            'oas3-schema': 'Object does not match the schema.',
-            'oas3-valid-media-example': 'Examples must be valid against their defined schema.',
-            'oas3-valid-schema-example': 'Schema examples must be valid against the schema.',
-            'path-params': 'Path parameters must be defined and valid.',
-            'operation-description': 'Operation must have a description.',
-            'info-description': 'Info object must have a description.',
-            'operation-tags': 'Operation should have tags.',
-            'operation-operationId': 'Operation should have a unique operationId.',
-            'typed-enum': 'Enum values must respect the specified type.',
-            'no-unused-components': 'Component is defined but never used.',
-            # Add more defaults/generic fallback
-        }
+import webbrowser
+from src.rules_data import SPECTRAL_RULES
+
+class SemanticPieChart(ctk.CTkFrame):
+    def __init__(self, master, **kwargs):
+        super().__init__(master, **kwargs)
+        
+        self.canvas = tk.Canvas(self, bg=self._apply_appearance_mode(self._fg_color), highlightthickness=0)
+        self.canvas.pack(fill="both", expand=True, padx=10, pady=10)
+        
+        self.data = {}
+        self.slices = [] 
+        
+        # Use imported rules
+        self.rule_descriptions = SPECTRAL_RULES
         
         self.bind("<Configure>", self.draw)
         self.bind("<Map>", self.draw) # Ensure draw when mapped
         self.bind("<Visibility>", self.draw)
         self.canvas.bind("<Motion>", self.on_mouse_move)
+        
+        # Click to open URL
+        self.canvas.bind("<Button-1>", self.on_click)
+        
         self.canvas.bind("<Leave>", self.hide_tooltip)
 
     def set_data(self, code_summary):
@@ -109,8 +114,13 @@ class SemanticPieChart(ctk.CTkFrame):
         total = sum(d['count'] for d in self.data.values())
         
         if total == 0:
-            self.canvas.create_oval(cx - rx, cy - ry, cx + rx, cy + ry, fill="#E0E0E0", outline="")
-            self.canvas.create_text(cx, cy, text="No Data", fill="gray", font=("Arial", 12))
+            # Clean, simple Unicode Checkmark (as requested)
+            cx = w / 2
+            cy = h / 2
+            
+            # Using a large font size for the checkmark
+            # "✔" U+2714 HEAVY CHECK MARK
+            self.canvas.create_text(cx, cy, text="✔", fill="#2e7d32", font=("Segoe UI Symbol", 100))
             return
 
         # Separate items by severity to generate gradients
@@ -154,21 +164,40 @@ class SemanticPieChart(ctk.CTkFrame):
             extent = (cnt / total) * 360
             if extent < 1: extent = 1 # Min visibility
             
+            # Special handling for Full Circle (single slice)
+            is_full = (extent >= 359.9)
+            
             slices_meta.append({
                 'code': code, 'info': info, 'color': color,
                 'dark_color': self._darken_color(color, 0.7),
-                'start': start_angle, 'extent': extent
+                'start': start_angle, 'extent': extent,
+                'is_full': is_full
             })
             start_angle += extent
             
         # 2. Draw Depth (Sides)
-        for z in range(depth, 0, -1):
-             for s in slices_meta:
-                 self.canvas.create_arc(
-                     cx - rx, cy - ry + z, cx + rx, cy + ry + z,
-                     start=s['start'], extent=s['extent'],
-                     fill=s['dark_color'], outline=s['dark_color'], width=1, style="pieslice"
-                 )
+        # For full circle, we just need a cylinder background
+        if len(slices_meta) == 1 and slices_meta[0]['is_full']:
+            s = slices_meta[0]
+            # Draw bottom oval (dark)
+            self.canvas.create_oval(
+                cx - rx, cy - ry + depth, cx + rx, cy + ry + depth,
+                fill=s['dark_color'], outline=""
+            )
+            # Draw rectangle body (simplified cylinder side view)
+            self.canvas.create_rectangle(
+                cx - rx, cy, cx + rx, cy + depth,
+                fill=s['dark_color'], outline=""
+            )
+        else:
+            # Standard Slice Depth
+            for z in range(depth, 0, -1):
+                 for s in slices_meta:
+                     self.canvas.create_arc(
+                         cx - rx, cy - ry + z, cx + rx, cy + ry + z,
+                         start=s['start'], extent=s['extent'],
+                         fill=s['dark_color'], outline=s['dark_color'], width=1, style="pieslice"
+                     )
 
         # 3. Draw Top Face
         for s in slices_meta:
@@ -177,11 +206,19 @@ class SemanticPieChart(ctk.CTkFrame):
             actual_end = (s_angle + e_angle) % 360
             
             tag = f"slice_{s['code']}"
-            self.canvas.create_arc(
-                cx - rx, cy - ry, cx + rx, cy + ry,
-                start=s_angle, extent=e_angle,
-                fill=s['color'], outline="black", width=1.5, tags=tag
-            )
+            
+            if s['is_full']:
+                # Draw OVAL to avoid seam line
+                self.canvas.create_oval(
+                     cx - rx, cy - ry, cx + rx, cy + ry,
+                     fill=s['color'], outline="black", width=1.5, tags=tag
+                )
+            else:
+                self.canvas.create_arc(
+                    cx - rx, cy - ry, cx + rx, cy + ry,
+                    start=s_angle, extent=e_angle,
+                    fill=s['color'], outline="black", width=1.5, tags=tag
+                )
             
             self.slices.append({
                 'start': s_angle % 360,
@@ -191,20 +228,27 @@ class SemanticPieChart(ctk.CTkFrame):
                 'severity': s['info']['severity'],
                 'cx': cx, 'cy': cy, 
                 'rx': rx, 'ry': ry, # Elliptical
-                'color': s['color']
+                'color': s['color'],
+                'is_full': s['is_full']
             })
 
     def on_mouse_move(self, event):
         x, y = event.x, event.y
         hovered = None
         for s in self.slices:
+            # Check for Full Circle first
+            if s.get('is_full'):
+                dx = x - s['cx']
+                dy = s['cy'] - y
+                norm_x = dx / s['rx']
+                norm_y = dy / s['ry']
+                if (norm_x*norm_x + norm_y*norm_y) <= 1.05:
+                    hovered = s
+                    break
+            
             # Elliptical Hit Test
-            # (x-cx)^2/rx^2 + (y-cy)^2/ry^2 <= 1
             dx = x - s['cx']
             dy = s['cy'] - y # Inverted Y in canvas
-            
-            # Use parametric coords for angle check to match create_arc logic
-            # create_arc angles are "parametric angles" on the bounding box
             
             norm_x = dx / s['rx']
             norm_y = dy / s['ry']
@@ -212,11 +256,6 @@ class SemanticPieChart(ctk.CTkFrame):
             dist_sq = norm_x*norm_x + norm_y*norm_y
             
             if dist_sq <= 1.05: # Allow small margin
-                # Calculate Parametric Angle
-                # Tkinter 'start' is CCW from +x (East). y is UP in math, but DOWN in screen.
-                # create_arc treats +y as UP? No, +y is DOWN.
-                # However, atan2(dy, dx) with dy = cy - y works for standard cartesian.
-                
                 angle = math.degrees(math.atan2(norm_y, norm_x))
                 if angle < 0: angle += 360
                 
@@ -229,17 +268,52 @@ class SemanticPieChart(ctk.CTkFrame):
                     if angle >= start or angle <= end: hovered = s
                 if hovered: break
         
-        if hovered: self.show_tooltip(x, y, hovered)
-        else: self.hide_tooltip()
+        if hovered: 
+            self.show_tooltip(x, y, hovered)
+            self.canvas.config(cursor="hand2")
+        else: 
+            self.hide_tooltip()
+            self.canvas.config(cursor="arrow")
+
+    def on_click(self, event):
+        x, y = event.x, event.y
+        # Reuse hit test logic (simplified)
+        for s in self.slices:
+            dx = x - s['cx']
+            dy = s['cy'] - y
+            norm_x = dx / s['rx']
+            norm_y = dy / s['ry']
+            dist_sq = norm_x*norm_x + norm_y*norm_y
+            
+            is_hit = False
+            if s.get('is_full') and dist_sq <= 1.05:
+                is_hit = True
+            elif dist_sq <= 1.05:
+                angle = math.degrees(math.atan2(norm_y, norm_x))
+                if angle < 0: angle += 360
+                start, end = s['start'], s['end']
+                if start < end:
+                     if start <= angle <= end: is_hit = True
+                else:
+                     if angle >= start or angle <= end: is_hit = True
+            
+            if is_hit:
+                code = s['code']
+                info = self.rule_descriptions.get(code)
+                if info and info.get('url'):
+                    webbrowser.open(info['url'])
+                return
 
     def show_tooltip(self, x, y, slice_data):
         code = slice_data['code']
-        desc = self.rule_descriptions.get(code, "No description available.")
+        rule_info = self.rule_descriptions.get(code, {})
+        desc = rule_info.get('description', "No description available.")
         
         text = f"{code}\n"
         text += f"Severity: {slice_data['severity'].upper()}\n"
         text += f"Count: {slice_data['count']}\n"
-        text += f"----------------\n{desc}"
+        text += f"----------------\n{desc}\n"
+        text += f"(Click to view docs)"
         
         tx = x + 20
         ty = y + 20
