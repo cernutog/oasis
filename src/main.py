@@ -11,10 +11,11 @@ def find_best_match_file(target, directory, files_list):
     # Delegate to parser's logic or reimplement simple one
     return parser.find_best_match_file(target, directory, files_list)
 
-def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callback=print):
+def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, output_dir=None, log_callback=print):
     """
     Main execution function.
     base_dir: Directory containing '$index.xlsm'
+    output_dir: Directory to write generated OAS files (defaults to base_dir/generated if None)
     """
     if not os.path.exists(base_dir):
         log_callback(f"Error: Directory not found: {base_dir}")
@@ -70,11 +71,11 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         else:
             log_callback(f"  Operation file not found for: {raw_file_name}")
 
-    # Output Directory: Parent of templates dir, or same dir?
-    # User said input is template folder. Let's output to the parent of that folder to avoid clutter?
-    # Or just inside plain output folder.
-    # Let's write to `base_dir` to keeps things simple as per current flow.
-    output_dir = base_dir
+    # Output Directory: Use provided output_dir or fall back to base_dir/generated
+    if output_dir is None:
+        gen_dir = os.path.join(base_dir, "generated")
+    else:
+        gen_dir = output_dir
 
     def build_filename(oas_ver, customization=""):
         pattern = info_data.get("filename_pattern")
@@ -136,8 +137,7 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         generator_30.build_components(components_data)
         generator_30.build_paths(paths_list, operations_details)
         
-        # Ensure 'generated' folder exists
-        gen_dir = os.path.join(output_dir, "generated")
+        # Ensure OAS output folder exists
         os.makedirs(gen_dir, exist_ok=True)
 
         fname_30 = build_filename("3.0")
@@ -161,8 +161,7 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         generator_31.build_components(components_data)
         generator_31.build_paths(paths_list, operations_details)
 
-        # Ensure 'generated' folder exists
-        gen_dir = os.path.join(output_dir, "generated")
+        # Ensure OAS output folder exists
         os.makedirs(gen_dir, exist_ok=True)
 
         fname_31 = build_filename("3.1")
@@ -193,7 +192,7 @@ def generate_oas(base_dir, gen_30=True, gen_31=True, gen_swift=False, log_callba
         # Pass the filename of the corresponding standard OAS
         sw_gen_30.apply_swift_customization(source_filename=build_filename("3.0"))
 
-        gen_dir = os.path.join(output_dir, "generated")
+        # Ensure OAS output folder exists
         os.makedirs(gen_dir, exist_ok=True)
 
         out_sw_30 = os.path.join(gen_dir, build_filename("3.0", "SWIFT"))

@@ -1,0 +1,82 @@
+# VS Code Dark Theme - Based on Visual Studio Code's default dark theme
+
+[editor]
+bg = "#1e1e1e"
+fg = "#d4d4d4"
+select_bg = "#264f78"
+select_fg = "#ffffff"
+inactive_select_bg = "#3a3d41"
+caret = "#aeafad"
+caret_width = 2
+border_width = 0
+focus_border_width = 0
+
+[general]
+comment = "#6a9955"
+error = "#f44747"
+escape = "#d7ba7d"
+keyword = "#569cd6"
+name = "#9cdcfe"
+string = "#ce9178"
+punctuation = "#d4d4d4"
+
+[keyword]
+constant = "#569cd6"
+declaration = "#569cd6"
+namespace = "#569cd6"
+pseudo = "#569cd6"
+reserved = "#569cd6"
+type = "#4ec9b0"
+
+[name]
+attr = "#9cdcfe"
+builtin = "#4ec9b0"
+builtin_pseudo = "#dcdcaa"
+class = "#4ec9b0"
+class_variable = "#9cdcfe"
+constant = "#4fc1ff"
+decorator = "#dcdcaa"
+entity = "#9cdcfe"
+exception = "#4ec9b0"
+function = "#dcdcaa"
+global_variable = "#9cdcfe"
+instance_variable = "#9cdcfe"
+label = "#9cdcfe"
+magic_function = "#dcdcaa"
+magic_variable = "#9cdcfe"
+namespace = "#d4d4d4"
+tag = "#569cd6"
+variable = "#9cdcfe"
+
+[operator]
+symbol = "#d4d4d4"
+word = "#569cd6"
+
+[string]
+affix = "#ce9178"
+char = "#ce9178"
+delimeter = "#ce9178"
+doc = "#6a9955"
+double = "#ce9178"
+escape = "#d7ba7d"
+heredoc = "#ce9178"
+interpol = "#9cdcfe"
+regex = "#d16969"
+single = "#ce9178"
+symbol = "#ce9178"
+
+[number]
+binary = "#b5cea8"
+float = "#b5cea8"
+hex = "#b5cea8"
+integer = "#b5cea8"
+long = "#b5cea8"
+octal = "#b5cea8"
+
+[comment]
+hashbang = "#6a9955"
+multiline = "#6a9955"
+preproc = "#c586c0"
+preprocfile = "#ce9178"
+single = "#6a9955"
+special = "#6a9955"

@@ -1,0 +1,83 @@
+# OAS Light Theme - Custom theme matching the application's blue accent
+# Light version with blue accent colors
+
+[editor]
+bg = "#f8fafc"
+fg = "#1e293b"
+select_bg = "#bfdbfe"
+select_fg = "#1e3a5f"
+inactive_select_bg = "#e2e8f0"
+caret = "#2563eb"
+caret_width = 2
+border_width = 0
+focus_border_width = 0
+
+[general]
+comment = "#64748b"
+error = "#dc2626"
+escape = "#0891b2"
+keyword = "#2563eb"
+name = "#0d9488"
+string = "#16a34a"
+punctuation = "#475569"
+
+[keyword]
+constant = "#9333ea"
+declaration = "#2563eb"
+namespace = "#2563eb"
+pseudo = "#9333ea"
+reserved = "#2563eb"
+type = "#0891b2"
+
+[name]
+attr = "#0d9488"
+builtin = "#0891b2"
+builtin_pseudo = "#d97706"
+class = "#0891b2"
+class_variable = "#0d9488"
+constant = "#1e293b"
+decorator = "#db2777"
+entity = "#0d9488"
+exception = "#dc2626"
+function = "#3b82f6"
+global_variable = "#0d9488"
+instance_variable = "#0d9488"
+label = "#0d9488"
+magic_function = "#3b82f6"
+magic_variable = "#0d9488"
+namespace = "#1e293b"
+tag = "#2563eb"
+variable = "#0d9488"
+
+[operator]
+symbol = "#475569"
+word = "#2563eb"
+
+[string]
+affix = "#16a34a"
+char = "#16a34a"
+delimeter = "#16a34a"
+doc = "#64748b"
+double = "#16a34a"
+escape = "#0891b2"
+heredoc = "#16a34a"
+interpol = "#0d9488"
+regex = "#d97706"
+single = "#16a34a"
+symbol = "#16a34a"
+
+[number]
+binary = "#9333ea"
+float = "#9333ea"
+hex = "#9333ea"
+integer = "#9333ea"
+long = "#9333ea"
+octal = "#9333ea"
+
+[comment]
+hashbang = "#64748b"
+multiline = "#64748b"
+preproc = "#2563eb"
+preprocfile = "#16a34a"
+single = "#64748b"
+special = "#64748b"

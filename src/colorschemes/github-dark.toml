@@ -1,0 +1,82 @@
+# GitHub Dark Theme - Based on GitHub's dark mode color palette
+
+[editor]
+bg = "#0d1117"
+fg = "#c9d1d9"
+select_bg = "#264f78"
+select_fg = "#ffffff"
+inactive_select_bg = "#1f2937"
+caret = "#58a6ff"
+caret_width = 2
+border_width = 0
+focus_border_width = 0
+
+[general]
+comment = "#8b949e"
+error = "#f85149"
+escape = "#a5d6ff"
+keyword = "#ff7b72"
+name = "#79c0ff"
+string = "#a5d6ff"
+punctuation = "#c9d1d9"
+
+[keyword]
+constant = "#d2a8ff"
+declaration = "#ff7b72"
+namespace = "#ff7b72"
+pseudo = "#d2a8ff"
+reserved = "#ff7b72"
+type = "#ffa657"
+
+[name]
+attr = "#79c0ff"
+builtin = "#ffa657"
+builtin_pseudo = "#ffa657"
+class = "#ffa657"
+class_variable = "#79c0ff"
+constant = "#79c0ff"
+decorator = "#d2a8ff"
+entity = "#7ee787"
+exception = "#f85149"
+function = "#d2a8ff"
+global_variable = "#79c0ff"
+instance_variable = "#79c0ff"
+label = "#79c0ff"
+magic_function = "#d2a8ff"
+magic_variable = "#79c0ff"
+namespace = "#c9d1d9"
+tag = "#7ee787"
+variable = "#ffa657"
+
+[operator]
+symbol = "#c9d1d9"
+word = "#ff7b72"
+
+[string]
+affix = "#a5d6ff"
+char = "#a5d6ff"
+delimeter = "#a5d6ff"
+doc = "#8b949e"
+double = "#a5d6ff"
+escape = "#79c0ff"
+heredoc = "#a5d6ff"
+interpol = "#79c0ff"
+regex = "#7ee787"
+single = "#a5d6ff"
+symbol = "#a5d6ff"
+
+[number]
+binary = "#79c0ff"
+float = "#79c0ff"
+hex = "#79c0ff"
+integer = "#79c0ff"
+long = "#79c0ff"
+octal = "#79c0ff"
+
+[comment]
+hashbang = "#8b949e"
+multiline = "#8b949e"
+preproc = "#ff7b72"
+preprocfile = "#a5d6ff"
+single = "#8b949e"
+special = "#8b949e"

@@ -1,0 +1,83 @@
+# Nord Theme - Arctic, north-bluish color palette
+# Based on the popular Nord color scheme (https://www.nordtheme.com/)
+
+[editor]
+bg = "#2e3440"
+fg = "#d8dee9"
+select_bg = "#434c5e"
+select_fg = "#eceff4"
+inactive_select_bg = "#3b4252"
+caret = "#88c0d0"
+caret_width = 2
+border_width = 0
+focus_border_width = 0
+
+[general]
+comment = "#616e88"
+error = "#bf616a"
+escape = "#88c0d0"
+keyword = "#81a1c1"
+name = "#8fbcbb"
+string = "#a3be8c"
+punctuation = "#d8dee9"
+
+[keyword]
+constant = "#b48ead"
+declaration = "#81a1c1"
+namespace = "#81a1c1"
+pseudo = "#b48ead"
+reserved = "#81a1c1"
+type = "#8fbcbb"
+
+[name]
+attr = "#8fbcbb"
+builtin = "#88c0d0"
+builtin_pseudo = "#d08770"
+class = "#8fbcbb"
+class_variable = "#8fbcbb"
+constant = "#d8dee9"
+decorator = "#b48ead"
+entity = "#8fbcbb"
+exception = "#bf616a"
+function = "#88c0d0"
+global_variable = "#8fbcbb"
+instance_variable = "#8fbcbb"
+label = "#8fbcbb"
+magic_function = "#88c0d0"
+magic_variable = "#8fbcbb"
+namespace = "#d8dee9"
+tag = "#81a1c1"
+variable = "#d8dee9"
+
+[operator]
+symbol = "#d8dee9"
+word = "#81a1c1"
+
+[string]
+affix = "#a3be8c"
+char = "#a3be8c"
+delimeter = "#a3be8c"
+doc = "#616e88"
+double = "#a3be8c"
+escape = "#ebcb8b"
+heredoc = "#a3be8c"
+interpol = "#8fbcbb"
+regex = "#ebcb8b"
+single = "#a3be8c"
+symbol = "#a3be8c"
+
+[number]
+binary = "#b48ead"
+float = "#b48ead"
+hex = "#b48ead"
+integer = "#b48ead"
+long = "#b48ead"
+octal = "#b48ead"
+
+[comment]
+hashbang = "#616e88"
+multiline = "#616e88"
+preproc = "#5e81ac"
+preprocfile = "#a3be8c"
+single = "#616e88"
+special = "#616e88"

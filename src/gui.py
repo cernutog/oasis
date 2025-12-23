@@ -5,6 +5,7 @@ import threading
 import os
 import sys
 import json
+import tempfile
 
 # from . import main as main_script # Avoid circular import if possible, or use lazy import inside function
 # But main.py imports gui.py? No, main.py imports gui.py logic. gui.py imports main.py for generate_oas? 
@@ -18,10 +19,23 @@ import json
 from . import main as main_script
 from .linter import SpectralRunner
 from .charts import SemanticPieChart
+from .redoc_gen import RedocGenerator
+from chlorophyll import CodeView
+import pygments.lexers
 
 # Set Theme
 ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
 ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
+
+# Module-level function for multiprocessing (must be picklable)
+def _run_webview_process(html_file, window_title):
+    """Target function for multiprocessing - runs pywebview in separate process."""
+    try:
+        import webview
+        webview.create_window(window_title, html_file, width=1200, height=800)
+        webview.start()
+    except Exception as e:
+        print(f"WebView error: {e}")
 
 def resource_path(relative_path):
     """ Get absolute path to resource, works for dev and for PyInstaller """
@@ -81,7 +95,7 @@ class OASGenApp(ctk.CTk):
         self.frame_controls.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         self.frame_controls.grid_columnconfigure(1, weight=1)
 
-        self.lbl_dir = ctk.CTkLabel(self.frame_controls, text="Template Directory:")
+        self.lbl_dir = ctk.CTkLabel(self.frame_controls, text="Template Directory:", font=ctk.CTkFont(weight="bold"))
         self.lbl_dir.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
         self.entry_dir = ctk.CTkEntry(self.frame_controls, placeholder_text="Path to API Templates...")
@@ -96,6 +110,20 @@ class OASGenApp(ctk.CTk):
 
         self.btn_browse = ctk.CTkButton(self.frame_controls, text="Browse", width=100, command=self.browse_dir)
         self.btn_browse.grid(row=0, column=2, padx=10, pady=10)
+
+        # OAS Output Folder (shared across all tabs)
+        self.lbl_oas_folder = ctk.CTkLabel(self.frame_controls, text="OAS Output Folder:", font=ctk.CTkFont(weight="bold"))
+        self.lbl_oas_folder.grid(row=1, column=0, padx=10, pady=10, sticky="w")
+
+        self.entry_oas_folder = ctk.CTkEntry(self.frame_controls, placeholder_text="Path to OAS output folder...")
+        self.entry_oas_folder.grid(row=1, column=1, padx=(0, 10), pady=10, sticky="ew")
+        
+        # Default OAS Folder: "OAS Generated" at same level as API Templates
+        default_oas_folder = os.path.join(os.getcwd(), "OAS Generated")
+        self.entry_oas_folder.insert(0, os.path.abspath(default_oas_folder))
+        
+        self.btn_browse_oas = ctk.CTkButton(self.frame_controls, text="Browse", width=100, command=self.browse_oas_folder)
+        self.btn_browse_oas.grid(row=1, column=2, padx=10, pady=10)
 
         # Options
         self.frame_opts = ctk.CTkFrame(self.tab_gen, fg_color="transparent")
@@ -132,19 +160,35 @@ class OASGenApp(ctk.CTk):
         
         self.tab_val.grid_columnconfigure(0, weight=1) # List
         self.tab_val.grid_columnconfigure(1, weight=1) # Chart
-        self.tab_val.grid_rowconfigure(1, weight=1)
+        self.tab_val.grid_rowconfigure(2, weight=1)  # Content pane expands
+        self.tab_val.grid_rowconfigure(3, weight=0)  # Footer row
 
-        # Top Bar
-        self.frame_val_top = ctk.CTkFrame(self.tab_val, fg_color="transparent")
-        self.frame_val_top.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        # Top Bar - OAS Folder
+        self.frame_val_folder = ctk.CTkFrame(self.tab_val, fg_color="transparent")
+        self.frame_val_folder.grid(row=0, column=0, columnspan=2, sticky="ew", padx=10, pady=(10, 0))
+        self.frame_val_folder.grid_columnconfigure(1, weight=1)
         
-        # File Selector
+        ctk.CTkLabel(self.frame_val_folder, text="OAS Folder:", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=(0, 10), sticky="w")
+        self.entry_val_oas_folder = ctk.CTkEntry(self.frame_val_folder, placeholder_text="Path to OAS folder...")
+        self.entry_val_oas_folder.grid(row=0, column=1, padx=(0, 10), sticky="ew")
+        # Use same default as Generation tab
+        self.entry_val_oas_folder.insert(0, os.path.abspath(os.path.join(os.getcwd(), "OAS Generated")))
+        self.btn_browse_val_oas = ctk.CTkButton(self.frame_val_folder, text="Browse", width=80, command=self.browse_oas_folder_validation)
+        self.btn_browse_val_oas.grid(row=0, column=2)
+
+        # Top Bar - File Selector
+        self.frame_val_top = ctk.CTkFrame(self.tab_val, fg_color="transparent")
+        self.frame_val_top.grid(row=1, column=0, columnspan=2, sticky="ew", padx=10, pady=10)
+        
+        # File Selector - use grid with weight for expansion
+        self.frame_val_top.grid_columnconfigure(1, weight=1)  # Make combo column expand
+        
         self.lbl_sel = ctk.CTkLabel(self.frame_val_top, text="Select File:", font=ctk.CTkFont(weight="bold"))
         self.lbl_sel.grid(row=0, column=0, padx=(0, 10))
 
         self.file_map = {} 
         self.cbo_files = ctk.CTkComboBox(self.frame_val_top, width=300, values=["No OAS files found"], command=self.on_file_select)
-        self.cbo_files.grid(row=0, column=1, sticky="w")
+        self.cbo_files.grid(row=0, column=1, sticky="ew")  # Changed from 'w' to 'ew' for expansion
         
         # Refresh Button
         self.btn_lint = ctk.CTkButton(self.frame_val_top, text="↻ Refresh", width=80, command=self.run_validation)
@@ -164,7 +208,7 @@ class OASGenApp(ctk.CTk):
         
         # Use PanedWindow for resizable Log Console
         self.paned_val = tk.PanedWindow(self.tab_val, orient="vertical", sashrelief="raised", bg="#d0d0d0")
-        self.paned_val.grid(row=1, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
+        self.paned_val.grid(row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5)
         
         # TOP PANE: Content (List + Chart)
         self.frame_val_content = ctk.CTkFrame(self.paned_val)
@@ -211,16 +255,136 @@ class OASGenApp(ctk.CTk):
 
         # Persistent Footer (Status Bar + Log Toggle) -> For Collapsed State
         self.footer_frame = ctk.CTkFrame(self.tab_val, height=30, corner_radius=0, fg_color=("gray85", "gray20"))
-        self.footer_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+        self.footer_frame.grid(row=3, column=0, columnspan=2, sticky="ew")
         
         self.btn_toggle_log_f = ctk.CTkButton(
             self.footer_frame, text="▶ Logs", width=60, height=24, fg_color="transparent", 
             text_color=("gray10", "gray90"), hover_color=("gray70", "gray30"), anchor="w", command=self.toggle_log
         )
         self.btn_toggle_log_f.pack(side="left", padx=5, pady=2)
+        # ==========================
+        # TAB 3: VIEW (REDOC)
+        # ==========================
+        self.tab_view_oas = self.tabview.add("View")
+        self.tab_view_oas.grid_columnconfigure(0, weight=1)
+        self.tab_view_oas.grid_rowconfigure(2, weight=1)  # Content at row 2
+
+        # Top Bar - OAS Folder
+        self.frame_view_folder = ctk.CTkFrame(self.tab_view_oas, fg_color="transparent")
+        self.frame_view_folder.grid(row=0, column=0, sticky="ew", padx=10, pady=(10, 0))
+        self.frame_view_folder.grid_columnconfigure(1, weight=1)
+        
+        ctk.CTkLabel(self.frame_view_folder, text="OAS Folder:", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=(0, 10), sticky="w")
+        self.entry_view_oas_folder = ctk.CTkEntry(self.frame_view_folder, placeholder_text="Path to OAS folder...")
+        self.entry_view_oas_folder.grid(row=0, column=1, padx=(0, 10), sticky="ew")
+        # Use same default as Generation tab
+        self.entry_view_oas_folder.insert(0, os.path.abspath(os.path.join(os.getcwd(), "OAS Generated")))
+        self.btn_browse_view_oas = ctk.CTkButton(self.frame_view_folder, text="Browse", width=80, command=self.browse_oas_folder_view)
+        self.btn_browse_view_oas.grid(row=0, column=2)
+
+        # Top Bar - File Selector (row 1)
+        self.frame_view_top = ctk.CTkFrame(self.tab_view_oas, fg_color="transparent")
+        self.frame_view_top.grid(row=1, column=0, sticky="ew", padx=10, pady=10)
+
+        ctk.CTkLabel(self.frame_view_top, text="Select File:", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 10))
+        
+        # Combobox expands to fill available space
+        self.cbo_view_files = ctk.CTkComboBox(self.frame_view_top, width=400, values=["No OAS files found"], command=self.on_view_file_select)
+        self.cbo_view_files.pack(side="left", fill="x", expand=True)
+
+        self.btn_refresh_view = ctk.CTkButton(self.frame_view_top, text="↻ Refresh", width=80, command=self.refresh_view_files)
+        self.btn_refresh_view.pack(side="left", padx=(10, 0))
+        
+        # View Documentation button (no emoji, standard text)
+        self.btn_open_viewer = ctk.CTkButton(
+            self.frame_view_top, 
+            text="View Documentation",
+            width=150,
+            command=self.open_documentation_viewer
+        )
+        self.btn_open_viewer.pack(side="left", padx=(10, 0))
+
+        # Content Area - YAML Viewer with syntax highlighting (full width) - row 2
+        self.frame_yaml = ctk.CTkFrame(self.tab_view_oas)
+        self.frame_yaml.grid(row=2, column=0, sticky="nsew", padx=5, pady=5)
+        
+        # Header bar with title and theme selector
+        self.yaml_header = ctk.CTkFrame(self.frame_yaml, fg_color="transparent")
+        self.yaml_header.pack(fill="x", padx=5, pady=2)
+        
+        ctk.CTkLabel(self.yaml_header, text="YAML Source", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        
+        # Custom colorschemes directory
+        if getattr(sys, 'frozen', False):
+            self.colorschemes_dir = os.path.join(sys._MEIPASS, 'src', 'colorschemes')
+        else:
+            self.colorschemes_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'colorschemes')
+        
+        # Theme selector on the right (custom + bundled themes)
+        self.available_themes = [
+            "oas-dark", "oas-light",  # Custom app themes
+            "github-dark", "nord", "one-dark", "vs-dark",  # Custom popular themes
+            "monokai", "dracula", "ayu-dark", "ayu-light"  # Bundled chlorophyll themes
+        ]
+        self.cbo_theme = ctk.CTkComboBox(
+            self.yaml_header, 
+            width=140, 
+            values=self.available_themes,
+            command=self.on_theme_change
+        )
+        self.cbo_theme.set("oas-dark")
+        self.cbo_theme.pack(side="right")
+        ctk.CTkLabel(self.yaml_header, text="Theme:", font=ctk.CTkFont(size=12)).pack(side="right", padx=(0, 5))
+        
+        # CodeView with YAML lexer and line numbers (start with monokai, then apply custom)
+        self.txt_yaml = CodeView(
+            self.frame_yaml, 
+            lexer=pygments.lexers.YamlLexer,
+            color_scheme="monokai",  # Use built-in initially
+            font=("Consolas", 11)
+        )
+        self.txt_yaml.pack(fill="both", expand=True, padx=2, pady=2)
+        
+        # Apply custom theme after initialization
+        self.after(100, lambda: self.on_theme_change("oas-dark"))
+
+        # Redoc Generator initialization
+        self.redoc_gen = RedocGenerator()
 
         self.val_log_print("Ready.")
         self.log_visible = False 
+        
+        # Load file lists on startup (after widgets are ready)
+        self.after(200, self._load_files_on_startup)
+    
+    def _load_files_on_startup(self):
+        """Load file lists in Validation and View tabs on startup."""
+        oas_dir = self.entry_oas_folder.get()
+        if os.path.exists(oas_dir):
+            self.update_file_list()
+        else:
+            self.val_log_print(f"OAS folder not found: {oas_dir}")
+    
+    def _load_custom_theme(self, theme_name):
+        """Load a custom TOML theme file and return as dict."""
+        import toml
+        custom_path = os.path.join(self.colorschemes_dir, f"{theme_name}.toml")
+        if os.path.exists(custom_path):
+            return toml.load(custom_path)
+        return None
+    
+    def on_theme_change(self, theme_name):
+        """Change the color scheme of the YAML viewer."""
+        try:
+            # Check if it's a custom theme (in our colorschemes folder)
+            theme_dict = self._load_custom_theme(theme_name)
+            if theme_dict:
+                self.txt_yaml._set_color_scheme(theme_dict)
+            else:
+                # Use bundled chlorophyll theme
+                self.txt_yaml._set_color_scheme(theme_name)
+        except Exception as e:
+            self.val_log_print(f"Error changing theme: {e}")
         
     def toggle_log(self):
         if self.log_visible:
@@ -245,6 +409,47 @@ class OASGenApp(ctk.CTk):
         if directory:
             self.entry_dir.delete(0, 'end')
             self.entry_dir.insert(0, directory)
+    
+    def _sync_oas_folders(self, new_path):
+        """Sync OAS folder value across all tabs."""
+        # Update Generation tab
+        self.entry_oas_folder.delete(0, 'end')
+        self.entry_oas_folder.insert(0, new_path)
+        # Update Validation tab
+        self.entry_val_oas_folder.delete(0, 'end')
+        self.entry_val_oas_folder.insert(0, new_path)
+        # Update View tab
+        self.entry_view_oas_folder.delete(0, 'end')
+        self.entry_view_oas_folder.insert(0, new_path)
+        # Clear last generated files so update_file_list reads from folder
+        self.last_generated_files = []
+        # Refresh file lists
+        self.update_file_list()
+        self.refresh_view_files()
+    
+    def browse_oas_folder(self):
+        """Browse for OAS folder (Generation tab)."""
+        current_path = self.entry_oas_folder.get()
+        initial_dir = current_path if os.path.exists(current_path) else os.getcwd()
+        directory = filedialog.askdirectory(initialdir=initial_dir)
+        if directory:
+            self._sync_oas_folders(directory)
+    
+    def browse_oas_folder_validation(self):
+        """Browse for OAS folder (Validation tab)."""
+        current_path = self.entry_val_oas_folder.get()
+        initial_dir = current_path if os.path.exists(current_path) else os.getcwd()
+        directory = filedialog.askdirectory(initialdir=initial_dir)
+        if directory:
+            self._sync_oas_folders(directory)
+    
+    def browse_oas_folder_view(self):
+        """Browse for OAS folder (View tab)."""
+        current_path = self.entry_view_oas_folder.get()
+        initial_dir = current_path if os.path.exists(current_path) else os.getcwd()
+        directory = filedialog.askdirectory(initialdir=initial_dir)
+        if directory:
+            self._sync_oas_folders(directory)
             
     def log(self, message):
         self.log_area.configure(state="normal")
@@ -271,6 +476,7 @@ class OASGenApp(ctk.CTk):
     def run_process(self, base_dir, gen_30, gen_31, gen_swift):
         try:
             self.last_generated_files = [] 
+            output_dir = self.entry_oas_folder.get()  # Get OAS output folder
             
             def gui_logger(msg):
                 self.after(0, self.log, msg)
@@ -280,7 +486,7 @@ class OASGenApp(ctk.CTk):
                          self.last_generated_files.append(parts[1].strip())
                          self.after(0, self.update_file_list)
                          
-            main_script.generate_oas(base_dir, gen_30=gen_30, gen_31=gen_31, gen_swift=gen_swift, log_callback=gui_logger)
+            main_script.generate_oas(base_dir, gen_30=gen_30, gen_31=gen_31, gen_swift=gen_swift, output_dir=output_dir, log_callback=gui_logger)
             
         except Exception as e:
             self.after(0, self.log, f"CRITICAL ERROR: {e}")
@@ -292,19 +498,23 @@ class OASGenApp(ctk.CTk):
 
     def update_file_list(self):
         files_to_show = []
-        candidates = list(self.last_generated_files)
+        candidates = set()  # Use set to avoid duplicates
         
-        if not candidates:
-             base_dir = self.entry_dir.get()
-             gen_dir = os.path.join(base_dir, "generated")
-             if os.path.exists(gen_dir):
-                 for f in os.listdir(gen_dir):
-                     if f.endswith(".yaml") or f.endswith(".json"):
-                         candidates.append(os.path.join(gen_dir, f))
+        # Always read from OAS folder
+        oas_dir = self.entry_oas_folder.get()
+        if os.path.exists(oas_dir):
+            for f in os.listdir(oas_dir):
+                if f.endswith(".yaml") or f.endswith(".json"):
+                    candidates.add(os.path.join(oas_dir, f))
+        
+        # Also add last generated files (in case they're in a different folder)
+        for f in self.last_generated_files:
+            if os.path.exists(f):
+                candidates.add(f)
         
         self.file_map = {}
         display_names = []
-        for path in candidates:
+        for path in sorted(candidates):  # Sort for consistent ordering
             name = os.path.basename(path)
             self.file_map[name] = path
             display_names.append(name)
@@ -318,7 +528,14 @@ class OASGenApp(ctk.CTk):
             self.cbo_files.configure(values=["No OAS files found"])
             self.cbo_files.set("No OAS files found")
             
+        # Refresh View Tab
+        self.refresh_view_files()
+            
     def on_file_select(self, value):
+        # Sync with View tab combo and load YAML
+        if value in self.view_file_map:
+            self.cbo_view_files.set(value)
+            self.on_view_file_select(value)  # Load YAML content in View tab
         self.run_validation()
 
     def run_validation(self):
@@ -453,6 +670,124 @@ class OASGenApp(ctk.CTk):
                 ctk.CTkLabel(card, text=item['message'], anchor="w", justify="left", wraplength=350).pack(fill="x", padx=5, pady=(0, 5))
 
     
+    def refresh_view_files(self):
+        # Use OAS folder from View tab entry
+        oas_dir = self.entry_view_oas_folder.get()
+        candidates = []
+        if os.path.exists(oas_dir):
+            for f in os.listdir(oas_dir):
+                if f.endswith(".yaml") or f.endswith(".json"):
+                    candidates.append(os.path.join(oas_dir, f))
+        
+        self.view_file_map = {}
+        display_names = []
+        for path in candidates:
+            name = os.path.basename(path)
+            self.view_file_map[name] = path
+            display_names.append(name)
+        
+        if display_names:
+            self.cbo_view_files.configure(values=display_names)
+            self.cbo_view_files.set(display_names[0])
+            self.on_view_file_select(display_names[0])
+        else:
+             self.cbo_view_files.configure(values=["No OAS files found"])
+             self.cbo_view_files.set("No OAS files found")
+
+    def on_view_file_select(self, value):
+        # Sync with Validation tab combo
+        if value in self.file_map:
+            self.cbo_files.set(value)
+        
+        filepath = self.view_file_map.get(value)
+        if not filepath or not os.path.exists(filepath):
+            return
+
+        # Load YAML into viewer
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                content = f.read()
+            
+            # CodeView uses standard tk.Text API
+            self.txt_yaml.config(state="normal")
+            self.txt_yaml.delete("1.0", "end")
+            self.txt_yaml.insert("1.0", content)
+            self.txt_yaml.config(state="disabled")
+            
+            # Store the current content for browser opening
+            self._current_yaml_content = content
+            self._current_file_name = os.path.basename(filepath)
+            
+        except Exception as e:
+            self.val_log_print(f"Error loading view: {e}")
+
+    def open_in_browser(self):
+        """Generate Redoc HTML and open it in the system's default browser."""
+        import webbrowser
+        
+        if not hasattr(self, '_current_yaml_content') or not self._current_yaml_content:
+            return
+        
+        try:
+            # Generate HTML
+            html_content = self.redoc_gen.get_html_content(self._current_yaml_content)
+            
+            # Save to file in the generated folder
+            base_dir = self.entry_dir.get()
+            gen_dir = os.path.join(base_dir, "generated")
+            if not os.path.exists(gen_dir):
+                os.makedirs(gen_dir)
+            
+            # Create a nice filename
+            html_filename = self._current_file_name.replace('.yaml', '_redoc.html').replace('.json', '_redoc.html')
+            html_path = os.path.join(gen_dir, html_filename)
+            
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            # Open in browser
+            webbrowser.open(f"file:///{html_path.replace(os.sep, '/')}")
+            
+            self.val_log_print(f"Opened documentation in browser: {html_path}")
+            
+        except Exception as e:
+            self.val_log_print(f"Error opening browser: {e}")
+
+    def open_documentation_viewer(self):
+        """Open documentation in a native pywebview window via multiprocessing."""
+        if not hasattr(self, '_current_yaml_content') or not self._current_yaml_content:
+            return
+        
+        try:
+            # Generate HTML
+            html_content = self.redoc_gen.get_html_content(self._current_yaml_content)
+            
+            # Save to file
+            base_dir = self.entry_dir.get()
+            gen_dir = os.path.join(base_dir, "generated")
+            if not os.path.exists(gen_dir):
+                os.makedirs(gen_dir)
+            
+            html_filename = self._current_file_name.replace('.yaml', '_redoc.html').replace('.json', '_redoc.html')
+            html_path = os.path.join(gen_dir, html_filename)
+            
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+            
+            self.val_log_print(f"Generated documentation: {html_path}")
+            
+            title = f"API Documentation - {self._current_file_name}"
+            
+            # Launch webview in a separate process (avoids COM conflicts)
+            import multiprocessing
+            
+            # Start as a separate process using module-level function
+            p = multiprocessing.Process(target=_run_webview_process, args=(html_path, title))
+            p.start()
+            
+        except Exception as e:
+            self.val_log_print(f"Error opening viewer: {e}")
+
 if __name__ == "__main__":
     app = OASGenApp()
     app.mainloop()

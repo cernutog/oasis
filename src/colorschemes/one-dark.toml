@@ -1,0 +1,82 @@
+# One Dark Theme - Based on Atom's iconic One Dark theme
+
+[editor]
+bg = "#282c34"
+fg = "#abb2bf"
+select_bg = "#3e4451"
+select_fg = "#ffffff"
+inactive_select_bg = "#2c313a"
+caret = "#528bff"
+caret_width = 2
+border_width = 0
+focus_border_width = 0
+
+[general]
+comment = "#5c6370"
+error = "#e06c75"
+escape = "#56b6c2"
+keyword = "#c678dd"
+name = "#e5c07b"
+string = "#98c379"
+punctuation = "#abb2bf"
+
+[keyword]
+constant = "#d19a66"
+declaration = "#c678dd"
+namespace = "#c678dd"
+pseudo = "#c678dd"
+reserved = "#c678dd"
+type = "#e5c07b"
+
+[name]
+attr = "#e5c07b"
+builtin = "#e5c07b"
+builtin_pseudo = "#d19a66"
+class = "#e5c07b"
+class_variable = "#e06c75"
+constant = "#d19a66"
+decorator = "#e5c07b"
+entity = "#e5c07b"
+exception = "#e06c75"
+function = "#61afef"
+global_variable = "#e06c75"
+instance_variable = "#e06c75"
+label = "#e5c07b"
+magic_function = "#61afef"
+magic_variable = "#e06c75"
+namespace = "#abb2bf"
+tag = "#e06c75"
+variable = "#e06c75"
+
+[operator]
+symbol = "#56b6c2"
+word = "#c678dd"
+
+[string]
+affix = "#98c379"
+char = "#98c379"
+delimeter = "#98c379"
+doc = "#5c6370"
+double = "#98c379"
+escape = "#56b6c2"
+heredoc = "#98c379"
+interpol = "#e5c07b"
+regex = "#56b6c2"
+single = "#98c379"
+symbol = "#98c379"
+
+[number]
+binary = "#d19a66"
+float = "#d19a66"
+hex = "#d19a66"
+integer = "#d19a66"
+long = "#d19a66"
+octal = "#d19a66"
+
+[comment]
+hashbang = "#5c6370"
+multiline = "#5c6370"
+preproc = "#c678dd"
+preprocfile = "#98c379"
+single = "#5c6370"
+special = "#5c6370"

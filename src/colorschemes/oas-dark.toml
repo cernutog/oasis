@@ -1,0 +1,83 @@
+# OAS Dark Theme - Custom theme matching the application's blue accent
+# Based on the blue theme colors used in CustomTkinter
+
+[editor]
+bg = "#1a1a2e"
+fg = "#e8e8e8"
+select_bg = "#3a5a8a"
+select_fg = "#ffffff"
+inactive_select_bg = "#2d3a4f"
+caret = "#4a9eff"
+caret_width = 2
+border_width = 0
+focus_border_width = 0
+
+[general]
+comment = "#6b7c8f"
+error = "#ff6b6b"
+escape = "#a8dadc"
+keyword = "#4a9eff"
+name = "#48d1cc"
+string = "#7bed9f"
+punctuation = "#d4d4d8"
+
+[keyword]
+constant = "#dda0dd"
+declaration = "#4a9eff"
+namespace = "#4a9eff"
+pseudo = "#dda0dd"
+reserved = "#4a9eff"
+type = "#4ecdc4"
+
+[name]
+attr = "#48d1cc"
+builtin = "#4ecdc4"
+builtin_pseudo = "#ffd93d"
+class = "#4ecdc4"
+class_variable = "#48d1cc"
+constant = "#e8e8e8"
+decorator = "#ff6b9d"
+entity = "#48d1cc"
+exception = "#ff6b6b"
+function = "#74b9ff"
+global_variable = "#48d1cc"
+instance_variable = "#48d1cc"
+label = "#48d1cc"
+magic_function = "#74b9ff"
+magic_variable = "#48d1cc"
+namespace = "#e8e8e8"
+tag = "#4a9eff"
+variable = "#48d1cc"
+
+[operator]
+symbol = "#d4d4d8"
+word = "#4a9eff"
+
+[string]
+affix = "#7bed9f"
+char = "#7bed9f"
+delimeter = "#7bed9f"
+doc = "#6b7c8f"
+double = "#7bed9f"
+escape = "#a8dadc"
+heredoc = "#7bed9f"
+interpol = "#48d1cc"
+regex = "#ffd93d"
+single = "#7bed9f"
+symbol = "#7bed9f"
+
+[number]
+binary = "#dda0dd"
+float = "#dda0dd"
+hex = "#dda0dd"
+integer = "#dda0dd"
+long = "#dda0dd"
+octal = "#dda0dd"
+
+[comment]
+hashbang = "#6b7c8f"
+multiline = "#6b7c8f"
+preproc = "#4a9eff"
+preprocfile = "#7bed9f"
+single = "#6b7c8f"
+special = "#6b7c8f"

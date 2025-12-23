@@ -25,6 +25,7 @@ class SemanticPieChart(ctk.CTkFrame):
         
         self.data = {}
         self.slices = [] 
+        self.has_data = False  # Track if data has been explicitly set
         
         # Use imported rules
         self.rule_descriptions = SPECTRAL_RULES
@@ -41,7 +42,15 @@ class SemanticPieChart(ctk.CTkFrame):
 
     def set_data(self, code_summary):
         self.data = code_summary
+        self.has_data = True  # Mark that data was set (validation was run)
         self.draw()
+    
+    def clear(self):
+        """Clear the chart display."""
+        self.data = {}
+        self.has_data = False
+        self.slices = []
+        self.canvas.delete("all")
 
     def _generate_hsl_gradient(self, base_hue, num_colors):
         """
@@ -114,13 +123,16 @@ class SemanticPieChart(ctk.CTkFrame):
         total = sum(d['count'] for d in self.data.values())
         
         if total == 0:
-            # Clean, simple Unicode Checkmark (as requested)
-            cx = w / 2
-            cy = h / 2
-            
-            # Using a large font size for the checkmark
-            # "✔" U+2714 HEAVY CHECK MARK
-            self.canvas.create_text(cx, cy, text="✔", fill="#2e7d32", font=("Segoe UI Symbol", 100))
+            # Only show checkmark if data was explicitly set (validation ran)
+            if self.has_data:
+                # Clean, simple Unicode Checkmark (as requested)
+                cx = w / 2
+                cy = h / 2
+                
+                # Using a large font size for the checkmark
+                # "✔" U+2714 HEAVY CHECK MARK
+                self.canvas.create_text(cx, cy, text="✔", fill="#2e7d32", font=("Segoe UI Symbol", 100))
+            # If has_data is False, just leave canvas empty
             return
 
         # Separate items by severity to generate gradients
