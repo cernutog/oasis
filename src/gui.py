@@ -201,6 +201,8 @@ class OASGenApp(ctk.CTk):
         self.linter = SpectralRunner() 
         self.last_lint_result = None
         self.last_generated_files = []  # Track files from generation
+        self.validated_file = None  # Track which file was validated
+        self.validation_issues = {}  # {line_number: [(severity, message), ...]}
         
         self.tab_val.grid_columnconfigure(0, weight=1) # List
         self.tab_val.grid_columnconfigure(1, weight=1) # Chart
@@ -366,6 +368,9 @@ class OASGenApp(ctk.CTk):
         
         ctk.CTkLabel(self.yaml_header, text="YAML Source", font=ctk.CTkFont(weight="bold")).pack(side="left")
         
+        # Marker navigation variable (buttons will be packed on right side later)
+        self.current_marker_index = -1  # Track current position in markers list
+        
         # Custom colorschemes directory
         if getattr(sys, 'frozen', False):
             self.colorschemes_dir = os.path.join(sys._MEIPASS, 'src', 'colorschemes')
@@ -399,7 +404,38 @@ class OASGenApp(ctk.CTk):
         self.slider_font_size.pack(side="right")
         ctk.CTkLabel(self.yaml_header, text="Font:", font=ctk.CTkFont(size=12)).pack(side="right", padx=(0, 5))
         
+        # Marker navigation buttons (right side, near font) - initially hidden
+        self.nav_frame = ctk.CTkFrame(self.yaml_header, fg_color="transparent")
+        # Don't pack yet - will be shown only when there are markers
+        
+        self.btn_last_marker = ctk.CTkButton(
+            self.nav_frame, text="»", width=26, height=22, 
+            font=("Arial", 14), command=self._goto_last_marker
+        )
+        self.btn_last_marker.pack(side="right", padx=1)
+        
+        self.btn_next_marker = ctk.CTkButton(
+            self.nav_frame, text="›", width=26, height=22,
+            font=("Arial", 14), command=self._goto_next_marker
+        )
+        self.btn_next_marker.pack(side="right", padx=1)
+        
+        self.lbl_marker_pos = ctk.CTkLabel(self.nav_frame, text="1/1", width=45, font=("Arial", 10))
+        self.lbl_marker_pos.pack(side="right", padx=3)
+        
+        self.btn_prev_marker = ctk.CTkButton(
+            self.nav_frame, text="‹", width=26, height=22,
+            font=("Arial", 14), command=self._goto_prev_marker
+        )
+        self.btn_prev_marker.pack(side="right", padx=1)
+        
+        self.btn_first_marker = ctk.CTkButton(
+            self.nav_frame, text="«", width=26, height=22, 
+            font=("Arial", 14), command=self._goto_first_marker
+        )
+        self.btn_first_marker.pack(side="right", padx=1)
         # CodeView with YAML lexer and line numbers
+        self._current_marker_line = None
         yaml_font_size = self.prefs_manager.get("yaml_font_size", 12)
         yaml_font_family = self.prefs_manager.get("yaml_font", "Consolas")
         self.txt_yaml = CodeView(
@@ -449,6 +485,12 @@ class OASGenApp(ctk.CTk):
             else:
                 # Use bundled chlorophyll theme
                 self.txt_yaml._set_color_scheme(theme_name)
+            
+            # Reapply validation markers with new theme colors
+            current_file = self.cbo_view_files.get() if hasattr(self, 'cbo_view_files') else None
+            if current_file:
+                self._apply_validation_markers(current_file)
+                
         except Exception as e:
             self.val_log_print(f"Error changing theme: {e}")
     
@@ -810,6 +852,20 @@ class OASGenApp(ctk.CTk):
         self.val_log_print(f"Check Complete: {total_issues} issues found.")
         self.frame_list.configure(label_text=f"Issues ({total_issues})")
         
+        # Store validation issues by line for YAML viewer markers
+        self.validated_file = self.cbo_files.get()  # Get filename being validated
+        self.validation_issues = {}
+        for item in details:
+            line = item.get('line', 0)
+            if line > 0:
+                if line not in self.validation_issues:
+                    self.validation_issues[line] = []
+                self.validation_issues[line].append({
+                    'severity': item['severity'],
+                    'message': item['message'],
+                    'code': item['code']
+                })
+        
         # Update Chart - Use code_summary for detailed breakdown
         self.chart.set_data(code_summary)
 
@@ -844,7 +900,24 @@ class OASGenApp(ctk.CTk):
                 r1.pack(fill="x", padx=5, pady=2)
                 ctk.CTkLabel(r1, text=f"[{item['severity'].upper()}]", text_color=color, font=("Arial", 11, "bold")).pack(side="left")
                 ctk.CTkLabel(r1, text=item['code'], font=("Arial", 11, "bold")).pack(side="left", padx=5)
-                ctk.CTkLabel(r1, text=f"Line: {item['line']}", text_color="gray", font=("Arial", 10)).pack(side="right")
+                
+                # Clickable line number - styled as button
+                line_num = item['line']
+                line_btn = ctk.CTkButton(
+                    r1, 
+                    text=f"Line: {line_num}", 
+                    font=("Arial", 10),
+                    fg_color=("#E8E8E8", "#3D3D3D"),  # Light gray / dark gray
+                    text_color=("#333333", "#FFFFFF"),
+                    hover_color=("#D0D0D0", "#505050"),
+                    border_width=1,
+                    border_color=("#AAAAAA", "#666666"),
+                    corner_radius=4,
+                    width=70,
+                    height=22,
+                    command=lambda ln=line_num: self._goto_line(ln)
+                )
+                line_btn.pack(side="right")
                 
                 # Row 2: Path
                 if item['path'] and item['path'] != "Root":
@@ -854,7 +927,150 @@ class OASGenApp(ctk.CTk):
 
                 # Row 3: Message
                 ctk.CTkLabel(card, text=item['message'], anchor="w", justify="left", wraplength=350).pack(fill="x", padx=5, pady=(0, 5))
-
+        
+        # Refresh markers in View tab if viewing the same file
+        current_view_file = self.cbo_view_files.get() if hasattr(self, 'cbo_view_files') else None
+        if current_view_file and current_view_file == self.validated_file:
+            self._apply_validation_markers(current_view_file)
+    
+    def _goto_line(self, line_num):
+        """Navigate to View tab and scroll to the specified line number."""
+        # Switch to View tab
+        self.tabview.set("View")
+        
+        # Select the validated file in View tab
+        if self.validated_file and self.validated_file in self.view_file_map:
+            self.cbo_view_files.set(self.validated_file)
+            self.on_view_file_select(self.validated_file)
+        
+        # Find and set the marker index for this line
+        lines = self._get_sorted_marker_lines()
+        if line_num in lines:
+            self.current_marker_index = lines.index(line_num)
+            self._update_marker_position_label()
+            # Schedule to update current marker indicator after scroll
+            self.after(150, lambda: self._highlight_current_marker(line_num))
+        
+        # Schedule scroll after a brief delay to allow content to load
+        self.after(100, lambda: self._scroll_to_line(line_num))
+    
+    def _scroll_to_line(self, line_num):
+        """Scroll the YAML viewer to center on the specified line."""
+        try:
+            # Target line index
+            target_index = f"{line_num}.0"
+            
+            # First make sure the line is visible
+            self.txt_yaml.see(target_index)
+            self.txt_yaml.update_idletasks()
+            
+            # Get visible area info
+            # yview returns (first_visible_fraction, last_visible_fraction)
+            first, last = self.txt_yaml.yview()
+            visible_fraction = last - first
+            
+            # Get total lines
+            total_lines = int(self.txt_yaml.index("end-1c").split('.')[0])
+            
+            if total_lines > 0:
+                # Calculate target position as fraction
+                target_fraction = (line_num - 1) / total_lines
+                
+                # Center it by offsetting by half the visible area
+                centered_pos = target_fraction - (visible_fraction / 2)
+                
+                # Clamp to valid range
+                centered_pos = max(0, min(1 - visible_fraction, centered_pos))
+                
+                self.txt_yaml.yview_moveto(centered_pos)
+            
+        except Exception as e:
+            self.val_log_print(f"Error scrolling to line: {e}")
+    
+    def _get_sorted_marker_lines(self):
+        """Get sorted list of line numbers with validation issues."""
+        if not self.validation_issues:
+            return []
+        return sorted(self.validation_issues.keys())
+    
+    def _update_marker_position_label(self):
+        """Update the marker position counter label and show/hide nav bar."""
+        lines = self._get_sorted_marker_lines()
+        total = len(lines)
+        
+        if total == 0:
+            # No markers - hide navigation bar
+            self.nav_frame.pack_forget()
+            # Clear marker indicator
+            self._clear_marker_indicator()
+        else:
+            # Has markers - show navigation bar
+            self.nav_frame.pack(side="right", padx=(0, 20))
+            
+            first_selection = False
+            if self.current_marker_index < 0:
+                self.current_marker_index = 0
+                first_selection = True
+            current = self.current_marker_index + 1
+            self.lbl_marker_pos.configure(text=f"{current}/{total}")
+            
+            # Highlight first marker if just selected
+            if first_selection:
+                self._highlight_current_marker(lines[0])
+    
+    def _goto_first_marker(self):
+        """Navigate to the first marker."""
+        lines = self._get_sorted_marker_lines()
+        if not lines:
+            return
+        self.current_marker_index = 0
+        self._scroll_to_line(lines[0])
+        self._update_marker_position_label()
+        self._highlight_current_marker(lines[0])
+    
+    def _goto_prev_marker(self):
+        """Navigate to the previous marker."""
+        lines = self._get_sorted_marker_lines()
+        if not lines:
+            return
+        if self.current_marker_index > 0:
+            self.current_marker_index -= 1
+        else:
+            self.current_marker_index = len(lines) - 1  # Wrap to last
+        self._scroll_to_line(lines[self.current_marker_index])
+        self._update_marker_position_label()
+        self._highlight_current_marker(lines[self.current_marker_index])
+    
+    def _goto_next_marker(self):
+        """Navigate to the next marker."""
+        lines = self._get_sorted_marker_lines()
+        if not lines:
+            return
+        if self.current_marker_index < len(lines) - 1:
+            self.current_marker_index += 1
+        else:
+            self.current_marker_index = 0  # Wrap to first
+        self._scroll_to_line(lines[self.current_marker_index])
+        self._update_marker_position_label()
+        self._highlight_current_marker(lines[self.current_marker_index])
+    
+    def _goto_last_marker(self):
+        """Navigate to the last marker."""
+        lines = self._get_sorted_marker_lines()
+        if not lines:
+            return
+        self.current_marker_index = len(lines) - 1
+        self._scroll_to_line(lines[-1])
+        self._update_marker_position_label()
+        self._highlight_current_marker(lines[-1])
+    
+    def _highlight_current_marker(self, line_num):
+        """Store the current marker line number (no visual highlight)."""
+        self._current_marker_line = line_num
+    
+    def _clear_marker_indicator(self):
+        """Clear the current marker indicator."""
+        self._current_marker_line = None
     
     def refresh_view_files(self):
         # Use OAS folder from View tab entry
@@ -893,6 +1109,9 @@ class OASGenApp(ctk.CTk):
         # Sync with Validation tab combo
         if value in self.file_map:
             self.cbo_files.set(value)
+            # Trigger validation for the new file if it's different
+            if self.validated_file and self.validated_file != value:
+                self.run_validation()
         
         filepath = self.view_file_map.get(value)
         if not filepath or not os.path.exists(filepath):
@@ -907,6 +1126,10 @@ class OASGenApp(ctk.CTk):
             self.txt_yaml.config(state="normal")
             self.txt_yaml.delete("1.0", "end")
             self.txt_yaml.insert("1.0", content)
+            
+            # Apply validation markers if this is the validated file
+            self._apply_validation_markers(os.path.basename(filepath))
+            
             self.txt_yaml.config(state="disabled")
             
             # Store the current content for browser opening
@@ -982,6 +1205,156 @@ class OASGenApp(ctk.CTk):
             
         except Exception as e:
             self.val_log_print(f"Error opening viewer: {e}")
+    
+    def _apply_validation_markers(self, filename):
+        """Apply visual markers to lines with validation issues."""
+        # Remove previous tags
+        self.txt_yaml.tag_remove("error_line", "1.0", "end")
+        self.txt_yaml.tag_remove("warning_line", "1.0", "end")
+        self.txt_yaml.tag_remove("info_line", "1.0", "end")
+        
+        # Configure tags for highlighting with theme-aware colors
+        current_theme = self.cbo_yaml_theme.get() if hasattr(self, 'cbo_yaml_theme') else 'oas-dark'
+        is_dark_theme = 'dark' in current_theme.lower()
+        
+        if is_dark_theme:
+            # Saturated colors for dark backgrounds
+            self.txt_yaml.tag_configure("error_line", background="#8B0000")  # DarkRed
+            self.txt_yaml.tag_configure("warning_line", background="#B8860B")  # DarkGoldenrod
+            self.txt_yaml.tag_configure("info_line", background="#00008B")  # DarkBlue
+        else:
+            # Slightly darker pastel colors for light backgrounds (visible but not harsh)
+            self.txt_yaml.tag_configure("error_line", background="#FFCCCC")  # Salmon pink
+            self.txt_yaml.tag_configure("warning_line", background="#FFE6A0")  # Light gold
+            self.txt_yaml.tag_configure("info_line", background="#CCE0FF")  # Soft blue
+        
+        # Debug logging
+        self.val_log_print(f"Markers check: file='{filename}', validated='{self.validated_file}', issues={len(self.validation_issues)}")
+        
+        # Check if this is the validated file
+        if filename != self.validated_file or not self.validation_issues:
+            self.val_log_print(f"Markers not applied: filename mismatch or no issues")
+            # Hide nav bar when viewing a different file
+            self.nav_frame.pack_forget()
+            self._clear_marker_indicator()
+            return
+        
+        # Apply tags to lines with issues
+        for line_num, issues in self.validation_issues.items():
+            # Determine highest severity for this line
+            severities = [issue['severity'] for issue in issues]
+            if 'error' in severities:
+                tag = "error_line"
+            elif 'warning' in severities:
+                tag = "warning_line"
+            else:
+                tag = "info_line"
+            
+            # Apply tag to entire line (including beyond last character)
+            start = f"{line_num}.0"
+            end = f"{line_num}.end+1c"  # +1c includes the newline, making full line colored
+            try:
+                self.txt_yaml.tag_add(tag, start, end)
+            except:
+                pass  # Line might not exist
+        
+        # Raise tag priority to be above syntax highlighting
+        self.txt_yaml.tag_raise("error_line")
+        self.txt_yaml.tag_raise("warning_line")
+        self.txt_yaml.tag_raise("info_line")
+        
+        self.val_log_print(f"Markers applied to {len(self.validation_issues)} lines")
+        
+        # Reset marker navigation and update counter
+        self.current_marker_index = -1
+        self._update_marker_position_label()
+        
+        # Bind tooltip events
+        self.txt_yaml.bind("<Motion>", self._on_yaml_hover)
+        self.txt_yaml.bind("<Leave>", self._hide_tooltip)
+        
+        # Initialize tooltip variables
+        if not hasattr(self, '_tooltip_window'):
+            self._tooltip_window = None
+            self._tooltip_line = None
+    
+    def _on_yaml_hover(self, event):
+        """Show tooltip when hovering over a line with validation issues."""
+        # Get line number at cursor position
+        index = self.txt_yaml.index(f"@{event.x},{event.y}")
+        line_num = int(index.split('.')[0])
+        
+        # Check if this line has issues
+        if line_num in self.validation_issues and self._tooltip_line != line_num:
+            self._show_tooltip(event, line_num)
+        elif line_num not in self.validation_issues:
+            self._hide_tooltip(event)
+    
+    def _show_tooltip(self, event, line_num):
+        """Show tooltip with validation messages for the given line."""
+        self._hide_tooltip(event)
+        self._tooltip_line = line_num
+        
+        issues = self.validation_issues.get(line_num, [])
+        if not issues:
+            return
+        
+        # Build tooltip text
+        tooltip_text = ""
+        for issue in issues:
+            sev = issue['severity'].upper()
+            code = issue['code']
+            msg = issue['message']
+            tooltip_text += f"[{sev}] {code}\n{msg}\n\n"
+        tooltip_text = tooltip_text.strip()
+        
+        # Create tooltip window
+        self._tooltip_window = tk.Toplevel(self)
+        self._tooltip_window.wm_overrideredirect(True)
+        
+        # Position tooltip close to cursor, using text widget coordinates
+        # Get the text widget's screen position
+        text_x = self.txt_yaml.winfo_rootx()
+        text_y = self.txt_yaml.winfo_rooty()
+        x = text_x + event.x + 15
+        y = text_y + event.y + 20  # Below cursor line
+        self._tooltip_window.wm_geometry(f"+{x}+{y}")
+        
+        # Determine tooltip colors based on current YAML theme
+        # Light themes get DARK tooltip, Dark themes get LIGHT tooltip (inverted for contrast)
+        current_theme = self.cbo_yaml_theme.get() if hasattr(self, 'cbo_yaml_theme') else 'oas-dark'
+        is_dark_theme = 'dark' in current_theme.lower()
+        
+        if is_dark_theme:
+            # Light tooltip for dark theme (light bg, dark text)
+            bg_color = "#F5F5F5"
+            fg_color = "#1A1A1A"
+        else:
+            # DARK tooltip for light theme (dark bg, light text)
+            bg_color = "#1A1A1A"
+            fg_color = "#F5F5F5"
+        
+        # Style the tooltip
+        label = tk.Label(
+            self._tooltip_window, 
+            text=tooltip_text, 
+            justify="left",
+            background=bg_color,
+            foreground=fg_color,
+            relief="solid",
+            borderwidth=1,
+            font=("Consolas", 10),
+            padx=8,
+            pady=5
+        )
+        label.pack()
+    
+    def _hide_tooltip(self, event=None):
+        """Hide the tooltip window."""
+        if hasattr(self, '_tooltip_window') and self._tooltip_window:
+            self._tooltip_window.destroy()
+            self._tooltip_window = None
+            self._tooltip_line = None
 
 if __name__ == "__main__":
     app = OASGenApp()
