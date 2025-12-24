@@ -17,7 +17,7 @@ def resource_path(relative_path):
 
 
 class PreferencesDialog(ctk.CTkToplevel):
-    """Modal dialog for editing user preferences."""
+    """Non-modal dialog for editing user preferences."""
     
     THEMES = ["oas-dark", "oas-light", "github-dark", "nord", "one-dark", "vs-dark", "monokai", "dracula", "ayu-dark", "ayu-light"]
     SORT_OPTIONS = [("Alphabetical", "alphabetical"), ("Newest First", "newest_first"), ("Oldest First", "oldest_first")]
@@ -35,9 +35,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.geometry("550x580")
         self.resizable(False, False)
         
-        # Make modal
+        # Non-modal: only transient, no grab_set
         self.transient(parent)
-        self.grab_set()
+        # Removed: self.grab_set() - allows interaction with main window
         
         # Center on parent
         self.update_idletasks()
@@ -45,8 +45,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         y = parent.winfo_y() + (parent.winfo_height() - 580) // 2
         self.geometry(f"+{x}+{y}")
         
-        # Set window icon (use after() for Toplevel windows)
-        self.after(100, self._set_icon)
+        # Set window icon AFTER CTkToplevel's internal 200ms default icon setting
+        # CTkToplevel sets a default icon at ~200ms, so we need 250ms+ to override it
+        self.after(250, self._set_icon)
         
         # Build UI
         self._build_ui()
@@ -56,24 +57,14 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
     
     def _set_icon(self):
-        """Set window icon after window is fully created."""
+        """Set window icon - called 250ms after init to override CTkToplevel default."""
         try:
             icon_file = resource_path("icon.ico")
             if os.path.exists(icon_file):
-                # Try multiple approaches for CTkToplevel
-                try:
-                    self.wm_iconbitmap(default=icon_file)
-                except:
-                    pass
-                try:
-                    self.iconbitmap(icon_file)
-                except:
-                    pass
-                try:
-                    self.wm_iconbitmap(icon_file)
-                except:
-                    pass
-        except Exception:
+                # At 250ms, CTkToplevel has already set its default icon,
+                # so we can safely override it now
+                self.iconbitmap(icon_file)
+        except:
             pass
     
     def _build_ui(self):
@@ -198,17 +189,21 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_window_pos.grid(row=1, column=0, columnspan=2, sticky="w", pady=5)
         
         # === BUTTONS ===
+        # UX Best Practice: Primary=blue, Secondary=gray, Destructive=red
         self.frame_buttons = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_buttons.pack(fill="x", padx=15, pady=15)
         
+        # Reset to Defaults - red for destructive action
         ctk.CTkButton(self.frame_buttons, text="Reset to Defaults", width=130, 
-                      fg_color="gray50", hover_color="gray40",
+                      fg_color=("#D04040", "#B03030"), hover_color=("#B03030", "#902020"),
                       command=self._on_reset).pack(side="left")
         
+        # Cancel - gray for secondary action
         ctk.CTkButton(self.frame_buttons, text="Cancel", width=100, 
                       fg_color="gray50", hover_color="gray40",
                       command=self._on_cancel).pack(side="right", padx=(10, 0))
         
+        # Apply & Close - default blue for primary action
         ctk.CTkButton(self.frame_buttons, text="Apply & Close", width=120,
                       command=self._on_save).pack(side="right")
     

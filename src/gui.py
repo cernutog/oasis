@@ -419,9 +419,17 @@ class OASGenApp(ctk.CTk):
             font=("Arial", 14), command=self._goto_next_marker
         )
         self.btn_next_marker.pack(side="right", padx=1)
-        
-        self.lbl_marker_pos = ctk.CTkLabel(self.nav_frame, text="1/1", width=45, font=("Arial", 10))
-        self.lbl_marker_pos.pack(side="right", padx=3)
+        # Marker position counter - clickable button to jump to current marker
+        self.btn_marker_pos = ctk.CTkButton(
+            self.nav_frame, text="1/1", width=50, height=22,
+            font=("Arial", 10),
+            fg_color=("#D0D0D0", "#4A4A4A"),  # Light gray / dark gray
+            hover_color=("#B0B0B0", "#5A5A5A"),  # Darker on hover
+            text_color=("#333333", "#FFFFFF"),
+            corner_radius=4,
+            command=self._goto_current_marker
+        )
+        self.btn_marker_pos.pack(side="right", padx=3)
         
         self.btn_prev_marker = ctk.CTkButton(
             self.nav_frame, text="‹", width=26, height=22,
@@ -1012,11 +1020,19 @@ class OASGenApp(ctk.CTk):
                 self.current_marker_index = 0
                 first_selection = True
             current = self.current_marker_index + 1
-            self.lbl_marker_pos.configure(text=f"{current}/{total}")
+            self.btn_marker_pos.configure(text=f"{current}/{total}")
             
             # Highlight first marker if just selected
             if first_selection:
                 self._highlight_current_marker(lines[0])
+    
+    def _goto_current_marker(self):
+        """Scroll to the current marker position (clicked from counter button)."""
+        lines = self._get_sorted_marker_lines()
+        if not lines or self.current_marker_index < 0:
+            return
+        if self.current_marker_index < len(lines):
+            self._scroll_to_line(lines[self.current_marker_index])
     
     def _goto_first_marker(self):
         """Navigate to the first marker."""
