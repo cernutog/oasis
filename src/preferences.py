@@ -38,6 +38,9 @@ class PreferencesManager:
         "ignore_bad_request": True,
         "remember_window_pos": True,
         "window_geometry": None,  # "WxH+X+Y" format
+        
+        # Documentation Viewer
+        "doc_snap_default_enabled": False,  # Whether doc window snaps to main on open
     }
     
     def __init__(self):

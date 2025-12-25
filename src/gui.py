@@ -7,21 +7,26 @@ import sys
 import json
 import tempfile
 
-# from . import main as main_script # Avoid circular import if possible, or use lazy import inside function
-# But main.py imports gui.py? No, main.py imports gui.py logic. gui.py imports main.py for generate_oas? 
-# Let's check logic. gui.py calls main_script.generate_oas.
-# AND main.py imports gui to run app?
-# Yes, circular dependency if top-level import.
-# But inside run_gui.py, we import src.gui.
-# If src.gui imports src.main, and src.main imports src.gui...
-# src.main imports src.gui inside main() function (lazy import), so it's fine.
+# Conditional imports to support both development and PyInstaller frozen environments
+try:
+    # Try relative imports first (works in development when run as package)
+    from . import main as main_script
+    from .linter import SpectralRunner
+    from .charts import SemanticPieChart
+    from .redoc_gen import RedocGenerator
+    from .preferences import PreferencesManager
+    from .preferences_dialog import PreferencesDialog
+    from .doc_viewer import DockedDocViewer
+except ImportError:
+    # Fall back to absolute imports (works when frozen or run directly)
+    import main as main_script
+    from linter import SpectralRunner
+    from charts import SemanticPieChart
+    from redoc_gen import RedocGenerator
+    from preferences import PreferencesManager
+    from preferences_dialog import PreferencesDialog
+    from doc_viewer import DockedDocViewer
 
-from . import main as main_script
-from .linter import SpectralRunner
-from .charts import SemanticPieChart
-from .redoc_gen import RedocGenerator
-from .preferences import PreferencesManager
-from .preferences_dialog import PreferencesDialog
 from chlorophyll import CodeView
 import pygments.lexers
 
@@ -67,6 +72,9 @@ class OASGenApp(ctk.CTk):
         
         # Initialize Preferences Manager
         self.prefs_manager = PreferencesManager()
+        
+        # Track open documentation viewers
+        self._doc_viewers = []
         
         # Apply saved window geometry if available
         if self.prefs_manager.get("remember_window_pos") and self.prefs_manager.get("window_geometry"):
@@ -367,6 +375,18 @@ class OASGenApp(ctk.CTk):
         self.yaml_header.pack(fill="x", padx=5, pady=2)
         
         ctk.CTkLabel(self.yaml_header, text="YAML Source", font=ctk.CTkFont(weight="bold")).pack(side="left")
+        
+        # Sync Viewer button - Show current YAML section in documentation
+        # Starts hidden until a viewer is opened (shown via pack in open_docked_doc)
+        self.btn_sync_viewer = ctk.CTkButton(
+            self.yaml_header, 
+            text="Locate in Docs", 
+            width=115, 
+            height=24,
+            font=("Arial", 11),
+            command=self.sync_viewer
+        )
+        # Don't pack yet - will be packed when viewer opens
         
         # Marker navigation variable (buttons will be packed on right side later)
         self.current_marker_index = -1  # Track current position in markers list
@@ -1154,6 +1174,9 @@ class OASGenApp(ctk.CTk):
             
         except Exception as e:
             self.val_log_print(f"Error loading view: {e}")
+        
+        # Update sync button visibility based on new file
+        self._update_sync_button_visibility()
 
     def open_in_browser(self):
         """Generate Redoc HTML and open it in the system's default browser."""
@@ -1188,39 +1211,118 @@ class OASGenApp(ctk.CTk):
             self.val_log_print(f"Error opening browser: {e}")
 
     def open_documentation_viewer(self):
-        """Open documentation in a native pywebview window via multiprocessing."""
+        """Open documentation in a docked viewer window."""
         if not hasattr(self, '_current_yaml_content') or not self._current_yaml_content:
             return
         
         try:
-            # Generate HTML
+            # Generate HTML content
             html_content = self.redoc_gen.get_html_content(self._current_yaml_content)
             
-            # Save to file
+            # Save to file (pywebview needs a file path)
             base_dir = self.entry_dir.get()
             gen_dir = os.path.join(base_dir, "generated")
             if not os.path.exists(gen_dir):
                 os.makedirs(gen_dir)
             
-            html_filename = self._current_file_name.replace('.yaml', '_redoc.html').replace('.json', '_redoc.html')
+            # Correct filename: same as YAML but with .html
+            base_name = os.path.splitext(self._current_file_name)[0]
+            html_filename = f"{base_name}.html"
             html_path = os.path.join(gen_dir, html_filename)
             
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(html_content)
             
-            self.val_log_print(f"Generated documentation: {html_path}")
+            # Store path for potential reuse
+            self._current_html_path = html_path
             
             title = f"API Documentation - {self._current_file_name}"
             
-            # Launch webview in a separate process (avoids COM conflicts)
-            import multiprocessing
+            # Initialise list if missing (for safety)
+            if not hasattr(self, '_doc_viewers'):
+                self._doc_viewers = []
+
+            # Clean up closed viewers (those with _closed flag set)
+            self._doc_viewers = [v for v in self._doc_viewers if v and not v._closed]
             
-            # Start as a separate process using module-level function
-            p = multiprocessing.Process(target=_run_webview_process, args=(html_path, title))
-            p.start()
+            # Update button visibility based on remaining viewers
+            self._update_sync_button_visibility()
+
+            # Check if viewer for this file is already open
+            for viewer in self._doc_viewers:
+                if hasattr(viewer, 'file_name') and viewer.file_name == self._current_file_name:
+                    # Try to focus - if it fails, the window is closed
+                    if viewer.focus():
+                        self.val_log_print(f"Bringing existing documentation to front: {self._current_file_name}")
+                        return
+                    else:
+                        # Window was closed, mark it and continue to create a new one
+                        self.val_log_print(f"Viewer for {self._current_file_name} was closed, creating new one")
+                        viewer._closed = True
+                        # Remove from list
+                        self._doc_viewers = [v for v in self._doc_viewers if v != viewer]
+                        break
+
+            # Determine snap state (exclusive)
+            snap_default = self.prefs_manager.get("doc_snap_default_enabled", True)
+            
+            # If starting snapped, unsnap all others
+            if snap_default:
+                for viewer in self._doc_viewers:
+                    if viewer.process and viewer.process.is_alive() and not viewer._closed:
+                        # Force unsnap blindly to avoid race conditions or sync lags
+                        viewer.set_snap(False)
+                # Bring main window to front when starting snapped
+                self.lift()
+                self.focus_force()
+
+            # Create new docked viewer
+            new_viewer = DockedDocViewer(
+                self, 
+                html_path, 
+                title, 
+                snap_default=snap_default, 
+                file_name=self._current_file_name,
+                on_snap_callback=self._on_doc_snap_enabled,
+                on_focus_callback=self._on_doc_focus,
+                on_sync_editor_callback=self._on_doc_sync_editor
+            )
+            self._doc_viewers.append(new_viewer)
+            self.val_log_print(f"Opened documentation: {self._current_file_name}")
+            
+            # Show "Locate in Docs" button now that a viewer is open
+            self.btn_sync_viewer.pack(side="left", padx=10)
+            
+            # If dock is enabled by default, position windows side-by-side
+            if snap_default:
+                self._position_windows_side_by_side(new_viewer)
             
         except Exception as e:
             self.val_log_print(f"Error opening viewer: {e}")
+    
+    def _update_sync_button_visibility(self):
+        """Show or hide the 'Show in Docs' button based on active viewers for current file."""
+        if not hasattr(self, '_doc_viewers'):
+            self._doc_viewers = []
+        
+        # Clean up closed viewers using is_closed property (checks process status)
+        self._doc_viewers = [v for v in self._doc_viewers if v and not v.is_closed]
+        
+        # Get current file in editor
+        current_file = self.cbo_view_files.get() if hasattr(self, 'cbo_view_files') else ""
+        
+        # Check if there's a viewer for the current file
+        has_viewer_for_current_file = any(
+            hasattr(v, 'file_name') and v.file_name == current_file 
+            for v in self._doc_viewers
+        )
+        
+        # Show button only if there's a viewer for this specific file
+        if has_viewer_for_current_file:
+            if not self.btn_sync_viewer.winfo_ismapped():
+                self.btn_sync_viewer.pack(side="left", padx=10)
+        else:
+            self.btn_sync_viewer.pack_forget()
     
     def _apply_validation_markers(self, filename):
         """Apply visual markers to lines with validation issues."""
@@ -1371,6 +1473,275 @@ class OASGenApp(ctk.CTk):
             self._tooltip_window.destroy()
             self._tooltip_window = None
             self._tooltip_line = None
+
+    def _on_doc_snap_enabled(self, active_viewer):
+        """Callback when a doc viewer enables snap - disable snap on others (exclusive snap)."""
+        # Bring main window to front when snapping
+        self.lift()
+        self.focus_force()
+        # Also trigger context sync
+        self._on_doc_focus(active_viewer)
+        
+        # Position windows side-by-side on the same screen
+        self._position_windows_side_by_side(active_viewer)
+        
+        # Iterate through all viewers
+        if hasattr(self, '_doc_viewers'):
+            for viewer in self._doc_viewers:
+                # Skip the one that just enabled snap
+                if viewer == active_viewer:
+                    continue
+                # If another viewer is snapped, unsnap it
+                # We check process liveness too just in case
+                if viewer.process and viewer.process.is_alive() and not viewer._closed:
+                    if viewer.is_snapped:
+                        viewer.set_snap(False)
+    
+    def _position_windows_side_by_side(self, viewer):
+        """Position main window and viewer side-by-side (snap-like behavior).
+        Uses non-blocking scheduling to avoid freezing the UI."""
+        
+        def do_positioning():
+            """Actual positioning logic, called after delay."""
+            try:
+                import pygetwindow as gw
+                import ctypes
+                
+                # Get the work area (screen excluding taskbar) using Windows API
+                # SPI_GETWORKAREA = 0x0030
+                work_area = ctypes.wintypes.RECT()
+                ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(work_area), 0)
+                
+                # Work area dimensions
+                work_left = work_area.left
+                work_top = work_area.top
+                work_width = work_area.right - work_area.left
+                work_height = work_area.bottom - work_area.top
+                
+                # Windows 11 has invisible borders (7px) plus rounded corners (~10px)
+                # We compensate to position windows correctly and show rounded corners above taskbar
+                BORDER = 7
+                BOTTOM_MARGIN = 30  # Extra space to show UI elements above taskbar
+                
+                # Calculate half-width for each window
+                half_width = work_width // 2
+                
+                # Position main window on left half of work area
+                self.geometry(f"{half_width + BORDER}x{work_height - BOTTOM_MARGIN}+{work_left - BORDER}+{work_top}")
+                self.update_idletasks()
+                
+                # Find and position doc viewer window by its actual title
+                if hasattr(viewer, '_window_title') and viewer._window_title:
+                    doc_windows = gw.getWindowsWithTitle(viewer._window_title)
+                    if doc_windows:
+                        doc_win = doc_windows[0]
+                        doc_win.moveTo(work_left + half_width - BORDER, work_top)
+                        doc_win.resizeTo(half_width + BORDER, work_height - BOTTOM_MARGIN)
+            
+            except Exception:
+                # If positioning fails, just continue without it
+                pass
+        
+        # Schedule positioning after 1 second (non-blocking)
+        self.after(1000, do_positioning)
+
+    def _on_doc_focus(self, viewer):
+        """Callback when a doc viewer window gets focus while bound."""
+        if not viewer.is_snapped:
+            return
+            
+        # 1. Bring main window to front robustly
+        try:
+            import pygetwindow as gw
+            # Find windows that match the app title
+            app_windows = gw.getWindowsWithTitle(self.title())
+            if app_windows:
+                # Use the first match
+                win = app_windows[0]
+                if win.isMinimized:
+                    win.restore()
+                win.activate()
+        except Exception:
+            # Fallback to standard tkinter lift
+            self.attributes('-topmost', True)
+            self.after(10, lambda: self.attributes('-topmost', False))
+            self.lift()
+        
+        # Ensure focus on the application
+        self.focus_force()
+        # 2. Sync Tab: Switch to View tab
+        if self.tabview.get() != "View":
+            self.tabview.set("View")
+        
+        # 3. Sync File: Select the viewer's file
+        if hasattr(viewer, 'file_name') and viewer.file_name:
+            if self.cbo_view_files.get() != viewer.file_name:
+                self.val_log_print(f"Binding context to: {viewer.file_name}")
+                self.cbo_view_files.set(viewer.file_name)
+                self.on_view_file_select(viewer.file_name)
+
+    def sync_viewer(self):
+        """Sync Redoc viewer to current YAML cursor position."""
+        # Clean up closed viewers and update button visibility
+        self._update_sync_button_visibility()
+        
+        # Find active viewer for the current file
+        current_file = self.cbo_view_files.get()
+        active_viewer = None
+        if hasattr(self, '_doc_viewers'):
+            for v in self._doc_viewers:
+                if not v._closed and hasattr(v, 'file_name') and v.file_name == current_file:
+                    active_viewer = v
+                    break
+        
+        if not active_viewer:
+            self.val_log_print("No active documentation viewer for this file. Open documentation first.")
+            return
+
+        # Find first operationId visible in the editor viewport
+        try:
+            import re
+            
+            # Get the visible range in the text widget
+            # @0,0 is the top-left corner of the visible area
+            first_visible = self.txt_yaml.index("@0,0")
+            first_line = int(first_visible.split('.')[0])
+            
+            # Get all content
+            content_lines = self.txt_yaml.get("1.0", "end").splitlines()
+            target_path = ""
+            
+            # Search from the first visible line downwards for the first operationId
+            for i in range(first_line - 1, len(content_lines)):
+                line = content_lines[i]
+                
+                # Regex for operationId (handles optional quotes and spacing)
+                op_id_match = re.search(r"operationId:\s+['\"]?([\w\.-]+)['\"]?", line)
+                if op_id_match:
+                    op_id = op_id_match.group(1)
+                    target_path = f"#/operations/{op_id}"
+                    self.val_log_print(f"Found visible operationId '{op_id}' at line {i+1}")
+                    break
+            
+            if target_path:
+                self.val_log_print(f"📲 Syncing viewer to: {target_path}")
+                # Execute in viewer process
+                active_viewer.evaluate_js(f"window.scrollToPath('{target_path}')")
+            else:
+                self.val_log_print("⚠️ No operationId found in visible area.")
+        except Exception as e:
+            self.val_log_print(f"Error during viewer sync: {e}")
+
+    def _on_doc_sync_editor(self, viewer, info):
+        """Callback from Doc Viewer to sync YAML editor to its current section with highlighting."""
+        # Ensure we are on the right file and tab
+        self._on_doc_focus(viewer)
+        
+        # Extract info from JavaScript
+        operation_id = info.get('operationId', '')
+        hash_val = info.get('hash', '')
+        section_title = info.get('sectionTitle', '')
+        debug_info = info.get('debug', '')
+        
+        # Log debug info from JavaScript for troubleshooting
+        if debug_info:
+            self.val_log_print(f"🔍 JS Detection: {debug_info}")
+        
+        search_terms = []
+        
+        # 1. Prioritize operationId (most reliable if present)
+        if operation_id:
+            search_terms.append(f"operationId: {operation_id}")
+            search_terms.append(f"operationId: '{operation_id}'")
+            search_terms.append(f'operationId: "{operation_id}"')
+        
+        # 2. Try to extract from hash
+        if hash_val and not search_terms:
+            clean_hash = hash_val.lstrip('#/')
+            if "operations/" in clean_hash:
+                op_id = clean_hash.split("operations/")[1]
+                search_terms.append(f"operationId: {op_id}")
+            elif "paths/" in clean_hash:
+                path_raw = clean_hash.split("paths/")[1]
+                path = path_raw.replace("~1", "/")
+                search_terms.append(f"  {path}:")  # 2-space indent for path entries
+
+        # 3. Fallback to section title
+        if section_title and not search_terms:
+            search_terms.append(f"summary: {section_title}")
+        
+        if not search_terms:
+            self.val_log_print("⚠️ Sync: No valid operationId or path detected from viewer.")
+            return
+            
+        # Search in YAML
+        content = self.txt_yaml.get("1.0", "end")
+        lines = content.splitlines()
+        
+        found_line = -1
+        matched_term = ""
+        for term in search_terms:
+            if not term: continue
+            for i, line in enumerate(lines):
+                if term in line:
+                    found_line = i + 1
+                    matched_term = term
+                    break
+            if found_line != -1:
+                break
+                
+        if found_line != -1:
+            self.val_log_print(f"⬆️ Syncing editor to line {found_line} (matched: '{matched_term}')")
+            # Defer highlight slightly to ensure window focus and tab switch are complete
+            self.after(50, lambda: self._scroll_to_line_and_highlight(found_line))
+        else:
+            self.val_log_print(f"⚠️ Sync: Could not find '{search_terms[0]}' in YAML.")
+
+    def _scroll_to_line_and_highlight(self, line_no):
+        """Scroll to a line, center it, and apply a temporary highlight 'flash' effect."""
+        try:
+            # 1. Center the line in the view instead of just 'see'
+            # Calculate view fraction (approximate)
+            total_lines = int(self.txt_yaml.index("end-1c").split('.')[0])
+            if total_lines > 0:
+                fraction = max(0, (line_no - 15) / total_lines)
+                self.txt_yaml.yview_moveto(fraction)
+            
+            # Ensure it is visible regardless
+            self.txt_yaml.see(f"{line_no}.0")
+            self.txt_yaml.mark_set(tk.INSERT, f"{line_no}.0")
+            
+            # 2. Apply highlight
+            tag_name = "sync_highlight"
+            self.txt_yaml.tag_remove(tag_name, "1.0", "end")
+            self.txt_yaml.tag_add(tag_name, f"{line_no}.0", f"{line_no}.end")
+            
+            # High-contrast Gold
+            self.txt_yaml.tag_config(tag_name, background="#FFD700", foreground="#000000")
+            
+            # 3. Fade out highlight after 2 seconds
+            self.after(2000, lambda: self.txt_yaml.tag_remove(tag_name, "1.0", "end"))
+        except Exception as e:
+            self.val_log_print(f"Highlight error: {e}")
+
+    
+    def _on_close(self):
+        """Handle window close event."""
+        # Save window geometry
+        if self.prefs_manager.get("remember_window_pos"):
+            self.prefs_manager.set("window_geometry", self.geometry())
+            self.prefs_manager.save()
+        
+        # Close all doc viewers
+        if hasattr(self, '_doc_viewers'):
+            for viewer in self._doc_viewers:
+                if viewer and not viewer._closed:
+                    viewer.close()
+            self._doc_viewers = []
+
+        # Close main window
+        self.destroy()
+        sys.exit(0)
 
 if __name__ == "__main__":
     app = OASGenApp()

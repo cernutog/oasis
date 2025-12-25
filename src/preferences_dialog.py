@@ -188,6 +188,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_window_pos = ctk.CTkCheckBox(self.frame_iface, text="Remember window size and position")
         self.chk_window_pos.grid(row=1, column=0, columnspan=2, sticky="w", pady=5)
         
+        self.chk_snap_default = ctk.CTkCheckBox(self.frame_iface, text="Dock documentation viewer to main window by default")
+        self.chk_snap_default.grid(row=2, column=0, columnspan=2, sticky="w", pady=5)
+        
         # === BUTTONS ===
         # UX Best Practice: Primary=blue, Secondary=gray, Destructive=red
         self.frame_buttons = ctk.CTkFrame(self, fg_color="transparent")
@@ -282,6 +285,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         
         if prefs.get("remember_window_pos", True):
             self.chk_window_pos.select()
+        
+        if prefs.get("doc_snap_default_enabled", True):
+            self.chk_snap_default.select()
     
     def _get_current_values(self) -> dict:
         """Get current values from UI as a dictionary."""
@@ -309,6 +315,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             "file_sort_order": sort_value,
             "default_tab": self.cbo_tab.get(),
             "remember_window_pos": self.chk_window_pos.get() == 1,
+            "doc_snap_default_enabled": self.chk_snap_default.get() == 1,
         }
     
     def _on_save(self):

@@ -9,7 +9,7 @@ DLLS_ROOT = os.path.join(PYTHON_HOME, "DLLs")
 datas = [
     ('src/resources/redoc.standalone.js', 'src/resources'),
     ('src/colorschemes', 'src/colorschemes'),  # Custom color schemes
-    ('src/doc_viewer.py', 'src'),
+    ('src', 'src'),  # Include entire src directory to ensure all modules are available
     ('icon.ico', '.'),
     (os.path.join(TCL_ROOT, "tcl8.6"), "tcl"),
     (os.path.join(TCL_ROOT, "tk8.6"), "tk"),
@@ -19,11 +19,20 @@ binaries = [
     (os.path.join(DLLS_ROOT, "tk86t.dll"), "."),
     (os.path.join(DLLS_ROOT, "_tkinter.pyd"), ".")
 ]
-hiddenimports = ['tkinter', 'src.redoc_gen', 'webview', 'chlorophyll', 'pygments', 'pygments.lexers', 'tklinenums']
+hiddenimports = [
+    'tkinter', 
+    'src', 'src.gui', 'src.main', 'src.redoc_gen', 'src.linter', 'src.charts', 
+    'src.preferences', 'src.preferences_dialog', 'src.doc_viewer', 'src.generator', 'src.excel_parser',
+    'webview', 'chlorophyll', 'pygments', 'pygments.lexers', 'tklinenums', 'tkinterweb', 
+    'pygetwindow', 'pyrect'
+]
 tmp_ret = collect_all('customtkinter')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 # Chlorophyll colorschemes
 tmp_ret = collect_all('chlorophyll')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# tkinterweb for embedded HTML viewer
+tmp_ret = collect_all('tkinterweb')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 a = Analysis(
