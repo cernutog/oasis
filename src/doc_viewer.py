@@ -21,14 +21,7 @@ def resource_path(relative_path):
 
 
 def debug_log(msg):
-    try:
-        with open("snap_debug.log", "a") as f:
-            import datetime
-
-            ts = datetime.datetime.now().strftime("%H:%M:%S.%f")
-            f.write(f"[{ts}] [DOC_VIEWER] {msg}\n")
-    except (OSError, IOError, PermissionError):
-        pass
+    pass
 
 
 class DocViewerAPI:
