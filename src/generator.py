@@ -7,55 +7,8 @@ import pandas as pd
 from datetime import datetime
 from collections import OrderedDict
 
-
-# RawYAML - stores raw YAML text for literal insertion
-class RawYAML:
-    def __init__(self, raw_text, base_indent=0):
-        self.raw_text = raw_text
-        self.base_indent = base_indent
-
-
-# Custom YAML Dumper
-class OASDumper(yaml.SafeDumper):
-    def increase_indent(self, flow=False, indentless=False):
-        return super(OASDumper, self).increase_indent(flow, False)
-
-    def represent_scalar(self, tag, value, style=None):
-        if hasattr(value, "replace"):
-            # Normalize artifacts
-            if "_x000D_" in value:
-                value = value.replace("_x000D_", "")
-            if "\r" in value:
-                value = value.replace("\r", "")
-            if "\t" in value:
-                value = value.replace("\t", "    ")
-
-            # Strip trailing spaces from each line to ensure valid block style
-            if "\n" in value:
-                lines = value.split("\n")
-                value = "\n".join([line.rstrip() for line in lines])
-                style = "|"
-
-        return super(OASDumper, self).represent_scalar(tag, value, style)
-
-
-def raw_yaml_presenter(dumper, data):
-    # Output raw YAML text as-is
-    # Split by lines and output each
-    lines = data.raw_text.strip().split("\n")
-    # Return as a literal scalar block
-    return dumper.represent_scalar("tag:yaml.org,2002:str", data.raw_text, style="|")
-
-
-OASDumper.add_representer(RawYAML, raw_yaml_presenter)
-
-# Preserve OrderedDict order in output
-OASDumper.add_representer(
-    OrderedDict,
-    lambda dumper, data: dumper.represent_mapping(
-        "tag:yaml.org,2002:map", data.items()
-    ),
-)
+# Import YAML utilities from generator_pkg package
+from src.generator_pkg.yaml_output import RawYAML, OASDumper, raw_yaml_presenter
 
 
 class OASGenerator:
