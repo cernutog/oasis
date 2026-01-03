@@ -151,13 +151,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'status' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -365,13 +358,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'requestingAgent' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -493,13 +479,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'bulkId' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -733,15 +712,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    type: ERROR
-                    code: FORMAT ERROR
-                    title: Bad Request
-                    status: 400
-                    detail: The payload is malformed.
-                    instance: https://fpad.ebaclearing.eu/vop/v1/payee-verifications
         '401':
           description: Client invalid. The Requesting PSP is not correctly authorized to perform the request.
           headers:
@@ -902,13 +872,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'transactionData' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -1040,13 +1003,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'senderBic' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -1147,13 +1103,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'senderBic' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -1265,13 +1214,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'senderBic' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -1479,13 +1421,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Field 'senderBic' is required.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -1597,13 +1532,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Value 'NOTYPE' is not defined in the schema.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':
@@ -1694,13 +1622,6 @@ paths:
                 oneOf:
                   - $ref: '#/components/schemas/ErrorResponse'
                   - $ref: '#/components/schemas/Errors'
-              examples:
-                Bad Request:
-                  value:
-                    errors:
-                      - dateTime: 2019-08-24 14:15:22+00:00
-                        code: E400
-                        description: Value 'NOTYPE' is not defined in the schema.
         '401':
           $ref: '#/components/responses/ErrorResponse_401'
         '403':

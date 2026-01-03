@@ -1841,6 +1841,11 @@ class OASGenerator:
                                             {"$ref": "#/components/schemas/Errors"},
                                         ]
                                     }
+                                    # Remove examples from 400 responses (SWIFT requirement)
+                                    if "example" in resp["content"]["application/json"]:
+                                        del resp["content"]["application/json"]["example"]
+                                    if "examples" in resp["content"]["application/json"]:
+                                        del resp["content"]["application/json"]["examples"]
 
                             # 5.3 Inject Headers to Responses (X-Request-ID)
                             # Only if NOT a ref (Refs are handled in Component Loop above)
