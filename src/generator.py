@@ -10,6 +10,15 @@ from collections import OrderedDict
 # Import YAML utilities from generator_pkg package
 from src.generator_pkg.yaml_output import RawYAML, OASDumper, raw_yaml_presenter
 from src.generator_pkg.swift_customizer import apply_swift_customization as _apply_swift_customization
+from src.generator_pkg.row_helpers import (
+    get_col_value as _get_col_value_fn,
+    get_schema_name as _get_schema_name_fn,
+    get_type as _get_type_fn,
+    get_name as _get_name_fn,
+    get_parent as _get_parent_fn,
+    get_description as _get_description_fn,
+    parse_example_string as _parse_example_string_fn,
+)
 
 
 class OASGenerator:
@@ -271,100 +280,32 @@ class OASGenerator:
         }
 
     def _get_col_value(self, row, keys):
-        """
-        Helper to get value from row checking multiple column headers.
-        """
-        if isinstance(keys, str):
-            keys = [keys]
-        for k in keys:
-            if k in row:  # direct check
-                val = row[k]
-                if pd.notna(val):
-                    return val
-        return None
+        """Delegate to row_helpers.get_col_value."""
+        return _get_col_value_fn(row, keys)
 
     def _get_schema_name(self, row):
-        return self._get_col_value(
-            row,
-            [
-                "Schema Name",
-                "Schema Name\n(for Type or Items Data Type = 'schema')",
-                "Schema Name\n(for Type or Items Data Type = 'schema'||'header')",
-                "Schema Name\n(for Type or Items Data Type = 'schema' || 'header')",
-                "Schema Name\n(if Type = schema)",
-            ],
-        )
+        """Delegate to row_helpers.get_schema_name."""
+        return _get_schema_name_fn(row)
 
     def _get_type(self, row):
-        return self._get_col_value(row, ["Type", "Data Type", "Item Type", "Type "])
+        """Delegate to row_helpers.get_type."""
+        return _get_type_fn(row)
 
     def _get_name(self, row):
-        return self._get_col_value(
-            row,
-            [
-                "Name",
-                "Parameter Name",
-                "Field Name",
-                "Request Parameters",
-                "Path",
-                "Name.1",
-            ],
-        )
+        """Delegate to row_helpers.get_name."""
+        return _get_name_fn(row)
 
     def _get_parent(self, row):
-        return self._get_col_value(row, ["Parent", "Parent Name"])
+        """Delegate to row_helpers.get_parent."""
+        return _get_parent_fn(row)
 
     def _get_description(self, row):
-        return self._get_col_value(row, ["Description", "Desc", "Description "])
+        """Delegate to row_helpers.get_description."""
+        return _get_description_fn(row)
 
     def _parse_example_string(self, ex_str):
-        """
-        Parses a string as JSON or YAML.
-        """
-        if not ex_str:
-            return None
-
-        ex_str = str(ex_str).strip()
-
-        # 1. Try JSON if it looks like JSON
-        if ex_str.startswith("{") or ex_str.startswith("["):
-            try:
-                return json.loads(ex_str)
-            except (json.JSONDecodeError, TypeError, ValueError):
-                # Try fixing single quotes
-                try:
-                    fixed = ex_str.replace("'", '"')
-                    fixed = (
-                        fixed.replace("None", "null")
-                        .replace("False", "false")
-                        .replace("True", "true")
-                    )
-                    return json.loads(fixed)
-                except (json.JSONDecodeError, TypeError, ValueError):
-                    pass  # Fallback to YAML
-
-        # 2. Try YAML (Safe Load)
-        try:
-            return yaml.safe_load(ex_str)
-        except (yaml.YAMLError, ValueError, TypeError):
-            # 3. If YAML failed, it might be because of outer braces wrapping block-style YAML?
-            # e.g. "{ \n key: val \n }" -> Invalid flow style but valid block if stripped.
-            if ex_str.startswith("{") and ex_str.endswith("}"):
-                # Remove braces but preserve internal relative indentation
-                inner = ex_str[1:-1]
-                # Normalize tabs to spaces first
-                inner = inner.expandtabs(2)
-                # Use textwrap.dedent to normalize indentation
-                inner = textwrap.dedent(inner)
-                try:
-                    return yaml.safe_load(inner)
-                except Exception as e:
-                    # print(f"DEBUG: Inner YAML parse failed: {e}")
-                    # If parsing fails, return the stripped content as a string
-                    # This produces a Literal Block (|) in YAML instead of a JSON-like string ("{...}")
-                    return inner
-
-            return ex_str
+        """Delegate to row_helpers.parse_example_string."""
+        return _parse_example_string_fn(ex_str)
 
     def _build_response_tree(self, df):
         """

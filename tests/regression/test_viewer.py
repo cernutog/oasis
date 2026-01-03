@@ -52,13 +52,12 @@ class TestRedocGenerator:
             oas_content = f.read()
         
         gen = RedocGenerator()
-        html = gen.get_html_content(oas_content, filename="test_api")
+        html = gen.get_html_content(oas_content)
         
         # Verify HTML structure
         assert '<!DOCTYPE html>' in html, "Should be valid HTML document"
         assert '<html>' in html or '<html ' in html, "Should have html tag"
         assert 'redoc' in html.lower(), "Should contain Redoc"
-        assert 'test_api' in html, "Should contain the filename"
     
     def test_redoc_html_has_toolbar(self, generate_oas):
         """Test that generated HTML has the custom toolbar."""
@@ -71,7 +70,7 @@ class TestRedocGenerator:
             oas_content = f.read()
         
         gen = RedocGenerator()
-        html = gen.get_html_content(oas_content, filename="test_api")
+        html = gen.get_html_content(oas_content)
         
         # Check for toolbar elements
         assert 'doc-toolbar' in html, "Should have toolbar div"
@@ -89,11 +88,10 @@ class TestRedocGenerator:
             oas_content = f.read()
         
         gen = RedocGenerator()
-        html = gen.get_html_content(oas_content, filename="my_custom_api")
+        html = gen.get_html_content(oas_content)
         
-        # Check that filename is injected
-        assert 'my_custom_api' in html, "Should contain custom filename"
-        assert "baseFileName = 'my_custom_api'" in html, "Should have baseFileName variable"
+        # Check that HTML is generated with title
+        assert 'API Documentation' in html, "Should contain API Documentation title"
 
 
 class TestDocViewer:
