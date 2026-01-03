@@ -215,3 +215,117 @@ def build_schema_from_flat_table(df, version: str):
         }
     else:
         return {}
+
+
+def build_examples_from_rows(df):
+    """
+    Constructs example objects from rows marked as Section='example'.
+    Handles nesting and list indices (e.g. items[0]).
+    
+    :param df: DataFrame with example data
+    :return: dict of example objects
+    """
+    if df.empty:
+        return {}
+
+    df = df.copy()
+    df.columns = df.columns.str.strip()
+    nodes = {}
+    
+    for idx, row in df.iterrows():
+        name = get_name(row)
+        if pd.isna(name):
+            continue
+        name = str(name).strip()
+
+        ex_val = get_col_value(row, ["Example", "Examples"])
+
+        nodes[idx] = {
+            "name": name,
+            "parent": get_parent(row),
+            "type": get_type(row),
+            "value": ex_val,
+            "children": [],
+        }
+
+    # Build IDs map
+    name_to_nodes = {}
+    for idx, node in nodes.items():
+        n = node["name"]
+        if n not in name_to_nodes:
+            name_to_nodes[n] = []
+        name_to_nodes[n].append(node)
+
+    roots = []
+
+    for idx, node in nodes.items():
+        parent_name = node["parent"]
+        if pd.isna(parent_name):
+            roots.append(node)
+        else:
+            p_nodes = name_to_nodes.get(str(parent_name).strip())
+
+            if not p_nodes:
+                m = re.match(r"(.+)\[(\d+)\]$", str(parent_name).strip())
+                if m:
+                    base = m.group(1)
+                    arr_idx = int(m.group(2))
+                    p_nodes = name_to_nodes.get(base)
+                    if p_nodes:
+                        node["array_index"] = arr_idx
+
+            if p_nodes:
+                p_nodes[0]["children"].append(node)
+            else:
+                roots.append(node)
+
+    def build_node(node):
+        if not node["children"]:
+            val = node["value"]
+            return parse_example_string(val) if pd.notna(val) else None
+
+        list_grouped = {}
+        has_indexed_children = False
+
+        for child in node["children"]:
+            if "array_index" in child:
+                has_indexed_children = True
+                arr_idx = child["array_index"]
+                if arr_idx not in list_grouped:
+                    list_grouped[arr_idx] = {}
+                list_grouped[arr_idx][child["name"]] = build_node(child)
+
+        if has_indexed_children:
+            max_idx = max(list_grouped.keys()) if list_grouped else -1
+            result_list = [None] * (max_idx + 1)
+            for arr_idx, obj in list_grouped.items():
+                result_list[arr_idx] = obj
+            return result_list
+
+        obj = {}
+        for child in node["children"]:
+            child_val = build_node(child)
+            c_name = child["name"]
+
+            m = re.match(r"(.+)\[(\d+)\]$", c_name)
+            if m:
+                base = m.group(1)
+                arr_idx = int(m.group(2))
+                if base not in obj:
+                    obj[base] = []
+                while len(obj[base]) <= arr_idx:
+                    obj[base].append(None)
+                obj[base][arr_idx] = child_val
+            else:
+                obj[c_name] = child_val
+
+        if str(node.get("type", "")).strip().lower() == "array":
+            return [obj]
+
+        return obj
+
+    final_examples = {}
+    for root in roots:
+        final_examples[root["name"]] = build_node(root)
+
+    return final_examples
