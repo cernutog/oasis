@@ -1,4 +1,3 @@
 @echo off
-echo Launching OAS Generation Tool GUI...
-python src/gui.py
-pause
+echo Launching OASIS...
+.venv\Scripts\python run_gui.py

@@ -1,12 +1,12 @@
-# 📋 OAS Generation Tool
+# 🏝️ OASIS - OAS Integration Suite
 
 > **Transform Excel Templates into robust OpenAPI 3.0 & 3.1 Specifications.**
 
-The **OAS Generation Tool** is a powerful desktop application designed to bridge the gap between business analysts and API developers. It takes structured Excel files (`.xlsm`) as input and automatically generates valid, standards-compliant OpenAPI Specifications (OAS) in YAML format.
+**OASIS** (OAS Integration Suite) is a powerful desktop application designed to bridge the gap between business analysts and API developers. It takes structured Excel files (`.xlsm`) as input and automatically generates valid, standards-compliant OpenAPI Specifications (OAS) in YAML format.
 
 But it doesn't stop at generation. With its **v1.1 Validation Update**, it now includes a built-in **Spectral** engine to analyze, score, and visualize the quality of your API definitions.
 
-![OAS Gen GUI](https://via.placeholder.com/800x400?text=Application+Screenshot+Placeholder)
+![OASIS](https://via.placeholder.com/800x400?text=OASIS+Screenshot+Placeholder)
 
 ---
 
@@ -36,7 +36,7 @@ But it doesn't stop at generation. With its **v1.1 Validation Update**, it now i
 
 ### Option 1: Standalone Executable (Recommended)
 1.  Go to the [**Releases**](../../releases) page.
-2.  Download the latest `OAS_Generation.exe`.
+2.  Download the latest `OASIS.exe`.
 3.  Run it. No installation or dependencies needed.
 
 ### Option 2: Running from Source

@@ -1,4 +1,4 @@
-# OAS Generation Tool - Release Notes
+# OASIS - Release Notes
 
 ## v1.1.0 - The Validation Update 🛡️
 
@@ -24,9 +24,9 @@ This release introduces a powerful new **Validation Engine** powered by `spectra
 
 ---
 
-# OAS Generation Tool - v1.0.0
+# OASIS - v1.0.0
 
-First official release of the OAS Generation Tool.
+First official release of OASIS (OAS Integration Suite).
 
 ## 🌟 New Features
 *   **Modern GUI**: Completely new graphical interface built with `CustomTkinter`.
@@ -44,4 +44,4 @@ First official release of the OAS Generation Tool.
 *   **Validation**: Integrated checking of required fields (Description, Summary, Tags).
 
 ## 📦 Installation
-Simply download `OAS_Generation.exe` and run it. No installation required.
+Simply download `OASIS.exe` and run it. No installation required.

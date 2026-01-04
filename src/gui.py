@@ -63,7 +63,7 @@ class OASGenApp(ctk.CTk):
         super().__init__()
 
         # Window Setup
-        self.title("OAS Generation Tool")
+        self.title("OASIS - OAS Integration Suite")
         self.geometry("1100x700")
 
         # Icon Setup
@@ -102,7 +102,7 @@ class OASGenApp(ctk.CTk):
 
         self.lbl_title = ctk.CTkLabel(
             self.frame_header,
-            text="OAS Generator",
+            text="OASIS",
             font=ctk.CTkFont(size=20, weight="bold"),
         )
         self.lbl_title.pack(padx=20, pady=15, side="left")
