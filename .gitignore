@@ -16,7 +16,6 @@ run_final.txt
 
 # Generated Files
 generated_oas_*.yaml
-*.html
 
 # IDE & Python
 __pycache__/

@@ -113,7 +113,7 @@ class SplashScreen:
         )
         
         # Version
-        self.canvas.create_text(
+        self.version_id = self.canvas.create_text(
             splash_width // 2,
             splash_height - 15,
             text=f"v{VERSION}",
@@ -486,7 +486,7 @@ class SplashScreen:
         x1 = (width - bar_width) // 2
         y1 = self.progress_y
         
-        self.canvas.create_rectangle(
+        self.bg_bar_id = self.canvas.create_rectangle(
             x1, y1, x1 + bar_width, y1 + bar_height,
             fill='#E2E8F0', outline='#CBD5E1', width=1
         )
@@ -515,6 +515,39 @@ class SplashScreen:
             self.canvas.itemconfig(self.status_id, text=status_text)
         self.root.update()
     
+    def set_about_mode(self, version_text, description):
+        """Configure splash screen for 'About' dialog specific layout."""
+        # Hide progress elements and bottom version
+        self.canvas.itemconfigure(self.progress_bar, state='hidden')
+        self.canvas.itemconfigure(self.bg_bar_id, state='hidden')
+        self.canvas.itemconfigure(self.hint_id, state='hidden')
+        self.canvas.itemconfigure(self.version_id, state='hidden') # Hide bottom version
+        
+        # Move Status to center and restyle for Version
+        self.canvas.itemconfigure(self.status_id, state='hidden')
+        
+        # Center coordinates
+        center_x = self.root.winfo_width() // 2
+        
+        # Draw Version (Smaller, Normal Weight, Gray, Closer to Title)
+        self.canvas.create_text(
+            center_x, 280,  # Moved up from 305 to be closer to subtitle (y=255)
+            text=version_text,
+            font=('Segoe UI', 11),
+            fill='#64748B',
+            anchor='center'
+        )
+        
+        # Draw Description (Clean, Spaced)
+        self.canvas.create_text(
+            center_x, 340,  # Moved down slightly to increase gap
+            text=description,
+            font=('Segoe UI', 10),
+            fill='#64748B',
+            anchor='center',
+            justify='center'
+        )
+
     def wait_for_user_click(self):
         self.canvas.itemconfig(self.hint_id, text="Click anywhere to continue...")
         self.root.update()

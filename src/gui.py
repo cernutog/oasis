@@ -18,6 +18,7 @@ try:
     from .preferences_dialog import PreferencesDialog
     from .doc_viewer import DockedDocViewer
     from .version import VERSION
+    from .splash_screen import SplashScreen
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
     import main as main_script
@@ -28,6 +29,7 @@ except ImportError:
     from preferences_dialog import PreferencesDialog
     from doc_viewer import DockedDocViewer
     from version import VERSION
+    from splash_screen import SplashScreen
 
 from chlorophyll import CodeView
 import pygments.lexers
@@ -65,7 +67,7 @@ class OASGenApp(ctk.CTk):
         super().__init__()
 
         # Window Setup
-        self.title("OASIS - OAS Integration Suite")
+        self.title(f"OASIS - OAS Integration Suite v{VERSION}")
         self.geometry("1100x700")
 
         # Icon Setup
@@ -98,40 +100,11 @@ class OASGenApp(ctk.CTk):
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(1, weight=1)  # Tabview expands
 
-        # --- Header ---
-        self.frame_header = ctk.CTkFrame(self, corner_radius=0)
-        self.frame_header.grid(row=0, column=0, sticky="ew", padx=0, pady=0)
-
-        self.lbl_title = ctk.CTkLabel(
-            self.frame_header,
-            text="OASIS - OAS Integration Suite",
-            font=ctk.CTkFont(size=20, weight="bold"),
-        )
-        self.lbl_title.pack(padx=20, pady=15, side="left")
-
-        self.lbl_version = ctk.CTkLabel(
-            self.frame_header, text=f"v{VERSION}", font=ctk.CTkFont(size=12)
-        )
-        self.lbl_version.pack(padx=20, pady=15, side="right")
-
-        # Settings button - use text for clarity
-        self.btn_settings = ctk.CTkButton(
-            self.frame_header,
-            text="⛭",  # Gear without hub, cleaner look
-            width=35,
-            height=35,
-            font=ctk.CTkFont(size=20),
-            command=self.open_preferences,
-        )
-        self.btn_settings.pack(padx=(0, 5), pady=10, side="right")
-
-        # Add tooltip on hover
-        self._tooltip = None
-        self.btn_settings.bind("<Enter>", self._show_settings_tooltip)
-        self.btn_settings.bind("<Leave>", self._hide_settings_tooltip)
+        # --- Menu Bar ---
+        self._create_menu()
 
         # --- Tab View ---
-        self.tabview = ctk.CTkTabview(self)
+        self.tabview = ctk.CTkTabview(self, command=self._on_tab_change)
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
 
         self.tab_gen = self.tabview.add("Generation")
@@ -150,7 +123,7 @@ class OASGenApp(ctk.CTk):
 
         self.lbl_dir = ctk.CTkLabel(
             self.frame_controls,
-            text="Template Directory:",
+            text="Template Folder:",
             font=ctk.CTkFont(weight="bold"),
         )
         self.lbl_dir.grid(row=0, column=0, padx=10, pady=10, sticky="w")
@@ -689,6 +662,73 @@ class OASGenApp(ctk.CTk):
         # Load file lists on startup (after widgets are ready)
         self.after(200, self._load_files_on_startup)
 
+
+
+    def _create_menu(self):
+        """Create standard menu bar."""
+        menubar = tk.Menu(self)
+        self.file_menu = tk.Menu(menubar, tearoff=0)  # Save reference for enabling/disabling
+        
+        # File Menu
+        self.file_menu.add_command(label="Select Template Folder...", command=self._smart_select_template)
+        self.file_menu.add_command(label="Select Output Folder...", command=self._smart_select_output)
+        self.file_menu.add_separator()
+        self.file_menu.add_command(label="Exit", command=self.destroy)
+        menubar.add_cascade(label="File", menu=self.file_menu)
+        
+        # Edit Menu
+        edit_menu = tk.Menu(menubar, tearoff=0)
+        edit_menu.add_command(label="Preferences", command=self.open_preferences)
+        menubar.add_cascade(label="Edit", menu=edit_menu)
+
+        # View Menu (Generation, Validation, YAML Viewer)
+        self.view_menu = tk.Menu(menubar, tearoff=0)
+        self.view_menu.add_command(label="Generation", command=self._view_generation)
+        self.view_menu.add_command(label="Validation", command=self._view_validation)
+        self.view_menu.add_command(label="YAML Viewer", command=self._view_yaml_viewer)
+        menubar.add_cascade(label="View", menu=self.view_menu)
+
+        # Help Menu
+        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu.add_command(label="User Guide", command=self.open_user_guide)
+        help_menu.add_command(label="About", command=self.show_about_dialog)
+        menubar.add_cascade(label="Help", menu=help_menu)
+        
+        self.config(menu=menubar)
+
+    def _on_tab_change(self):
+        """Handle tab changes to update menu state."""
+        current_tab = self.tabview.get()
+        
+        # Enable 'Select Template Folder' only in Generation tab
+        if current_tab == "Generation":
+            self.file_menu.entryconfig("Select Template Folder...", state="normal")
+        else:
+            self.file_menu.entryconfig("Select Template Folder...", state="disabled")
+
+    def _view_yaml_viewer(self):
+        self.tabview.set("View")
+
+    def _smart_select_template(self):
+        """Switch to Generation tab and open template selector."""
+        self.tabview.set("Generation")
+        # Use delay to ensure tab switch renders and state updates
+        self.after(1000, lambda: self.browse_dir()) # Increased delay just in case
+
+
+
+    def _smart_select_output(self):
+        """Switch to Generation tab and open output folder selector."""
+        self.tabview.set("Generation")
+        self.update_idletasks()
+        self.browse_oas_folder()
+
+    def _view_generation(self):
+        self.tabview.set("Generation")
+
+    def _view_validation(self):
+        self.tabview.set("Validation")
+        
     def _load_files_on_startup(self):
         """Load file lists in Validation and View tabs on startup."""
         oas_dir = self.entry_oas_folder.get()
@@ -727,30 +767,8 @@ class OASGenApp(ctk.CTk):
         except Exception as e:
             self.val_log_print(f"Error changing theme: {e}")
 
-    def _show_settings_tooltip(self, event):
-        """Show tooltip for settings button."""
-        if self._tooltip is None:
-            x = self.btn_settings.winfo_rootx() + self.btn_settings.winfo_width() // 2
-            y = self.btn_settings.winfo_rooty() + self.btn_settings.winfo_height() + 5
-            self._tooltip = tk.Toplevel(self)
-            self._tooltip.wm_overrideredirect(True)
-            self._tooltip.wm_geometry(f"+{x - 40}+{y}")
-            label = tk.Label(
-                self._tooltip,
-                text="Preferences",
-                bg="#333",
-                fg="white",
-                font=("Segoe UI", 9),
-                padx=8,
-                pady=4,
-            )
-            label.pack()
+    # Tooltips removed
 
-    def _hide_settings_tooltip(self, event):
-        """Hide tooltip for settings button."""
-        if self._tooltip:
-            self._tooltip.destroy()
-            self._tooltip = None
 
     def _on_font_size_change(self, value):
         """Handle font size slider change in View tab."""
@@ -778,6 +796,51 @@ class OASGenApp(ctk.CTk):
             self, self.prefs_manager, on_save_callback=self._apply_preferences
         )
         self.wait_window(dialog)
+
+    def show_about_dialog(self):
+        """Show About dialog using SplashScreen."""
+        try:
+            # Create splash as generic toplevel
+            splash = SplashScreen(root=self)
+            
+            # Configure About Layout
+            description = (
+                "The OAS Integration Suite automates the generation\n"
+                "and validation of OpenAPI Specifications." # Removed (3.0, 3.1)
+            )
+            splash.set_about_mode(f"v{VERSION}", description)
+            
+            # Use destroy instead of close to avoid app shutdown logic if any
+            # SplashScreen.close calls destroy() which is fine.
+            splash.root.bind("<Button-1>", lambda e: splash.close())
+            
+        except Exception as e:
+            print(f"Error showing about dialog: {e}")
+
+    def open_user_guide(self):
+        """Open the HTML User Guide."""
+        import webbrowser
+        try:
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            doc_path = os.path.join(base_path, 'src', 'docs', 'user_manual.html')
+            
+            if os.path.exists(doc_path):
+                webbrowser.open_new_tab(f"file:///{doc_path}")
+            else:
+                # Fallback or dev mode simplified path check
+                # Try finding it relative to current script if above failed
+                dev_path = os.path.join(os.getcwd(), 'src', 'docs', 'user_manual.html')
+                if os.path.exists(dev_path):
+                    webbrowser.open_new_tab(f"file:///{dev_path}")
+                else:
+                    self.val_log_print(f"Documentation not found at: {doc_path}")
+                    tk.messagebox.showerror("Error", "User Guide not found.")
+        except Exception as e:
+            print(f"Error opening user guide: {e}")
 
     def _apply_preferences(self, new_prefs: dict):
         """Apply new preferences to the UI."""

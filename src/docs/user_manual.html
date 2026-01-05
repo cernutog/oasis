@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OASIS - User Guide</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; max-width: 900px; margin: 0 auto; padding: 20px; background-color: #f9fafb; }
+        header { border-bottom: 2px solid #0056b3; padding-bottom: 20px; margin-bottom: 30px; }
+        h1 { color: #0056b3; margin-bottom: 5px; }
+        h2 { color: #2c3e50; border-left: 4px solid #0056b3; padding-left: 10px; margin-top: 30px; }
+        h3 { color: #444; }
+        .subtitle { color: #666; font-size: 1.1em; }
+        .screenshot { border: 1px solid #ddd; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); max-width: 100%; margin: 20px 0; }
+        code { background-color: #eef; padding: 2px 4px; border-radius: 3px; font-family: Consolas, monospace; }
+        ul { margin-bottom: 20px; }
+        li { margin-bottom: 8px; }
+        footer { margin-top: 50px; border-top: 1px solid #ddd; padding-top: 20px; text-align: center; color: #888; font-size: 0.9em; }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>OASIS Integration Suite</h1>
+    <div class="subtitle">v1.4 User Guide</div>
+</header>
+
+<section id="introduction">
+    <h2>Introduction</h2>
+    <p>The <strong>OAS Integration Suite (OASIS)</strong> is a powerful tool designed to automate the generation and validation of OpenAPI Specifications (OAS 3.0, 3.1) from Excel templates. It streamlines the API design workflow, ensuring standards compliance and efficiency.</p>
+</section>
+
+<section id="interface">
+    <h2>The Interface</h2>
+    <p>OASIS features a clean, tabbed interface organized into three main areas: <strong>Generation</strong>, <strong>Validation</strong>, and <strong>View</strong>.</p>
+    
+    <img src="assets/oasis_main.png" alt="OASIS Main Interface" class="screenshot">
+    
+    <h3>Menu Bar</h3>
+    <ul>
+        <li><strong>File:</strong> Select input/output folders or Exit. Features smart navigation that switches to the correct tab.</li>
+        <li><strong>Edit:</strong> Access application <em>Preferences</em> (Themes, Defaults).</li>
+        <li><strong>View:</strong> Quickly switch between the three main functional tabs.</li>
+        <li><strong>Help:</strong> View this User Guide or the About dialog.</li>
+    </ul>
+</section>
+
+<section id="features">
+    <h2>Key Features</h2>
+    
+    <h3>1. Generation Tab</h3>
+    <p>This is the starting point for your workflow.</p>
+    <ul>
+        <li><strong>Template Folder:</strong> Select the directory containing your API definition Excel files.</li>
+        <li><strong>Output Folder:</strong> Choose where the generated YAML/JSON files will be saved.</li>
+        <li><strong>Options:</strong> Toggle generation for OAS 3.0, 3.1, or SWIFT specific formats.</li>
+        <li><strong>Generate Button:</strong> Starts the processing engine. Logs are displayed in the console below.</li>
+    </ul>
+
+    <h3>2. Validation Tab</h3>
+    <p>Analyze your API specifications for errors and compliance.</p>
+    <img src="assets/oasis_validation.png" alt="OASIS Validation Interface" class="screenshot">
+    <ul>
+        <li>Uses <strong>Spectral</strong> rulesets to validate content.</li>
+        <li>Displays a visual chart of issues (Severity distribution).</li>
+        <li>Lists errors with line numbers for easy remediation.</li>
+    </ul>
+
+    <h3>3. View Tab (YAML Viewer)</h3>
+    <p>A comprehensive, syntax-highlighted editor designed for inspecting generated OAS files.</p>
+    
+    <img src="assets/oasis_view.png" alt="OASIS YAML Viewer Interface" class="screenshot">
+
+    <ul>
+        <li><strong>View Documentation:</strong> Launches a rendered HTML preview of your API (Redoc), allowing you to see the final output as consumers will see it.</li>
+        <li><strong>Locate in Docs:</strong> A powerful navigation feature. Place your cursor on any line in the YAML editor and click 'Locate in Docs' to instantly scroll the HTML documentation to that specific section.</li>
+        <li><strong>Find in YAML:</strong> Use the search bar (or <code>Ctrl+F</code>) to quickly locate schema definitions, paths, or keywords within the code.</li>
+        <li><strong>Syntax Highlighting:</strong> Color-coded YAML syntax for better readability.</li>
+    </ul>
+</section>
+
+<section id="preferences">
+    <h2>Preferences & Configuration</h2>
+    <p>Access the settings via <strong>Edit > Preferences</strong> to tailor OASIS to your specific workflow.</p>
+    <ul>
+        <li><strong>Appearance:</strong>
+            <ul>
+                <li><em>Theme:</em> Switch between 'System', 'Light', or 'Dark' application modes.</li>
+                <li><em>Editor Font:</em> Set your preferred font size and family for the YAML Viewer.</li>
+            </ul>
+        </li>
+        <li><strong>Defaults:</strong>
+            <ul>
+                <li>Set a default <strong>Template Folder</strong> to save time on every startup.</li>
+            </ul>
+        </li>
+        <li><strong>Generation Settings:</strong>
+            <ul>
+                <li>Pre-select desired output versions (OAS 3.0, 3.1, SWIFT) so you don't have to check them manually each time.</li>
+                <li>Configure logging verbosity (Dark/Light log themes).</li>
+            </ul>
+        </li>
+        <li><strong>Validation:</strong>
+            <ul>
+                <li>Configure rule behaviors (e.g., 'Ignore Bad Request' allows suppressing 400 errors from strict validation).</li>
+            </ul>
+        </li>
+    </ul>
+</section>
+
+<footer>
+    <p>&copy; 2024-2026 OAS Integration Suite. All Rights Reserved.</p>
+</footer>
+
+</body>
+</html>
