@@ -132,6 +132,33 @@ def _run_webview_docked(
         print(f"WebView error: {e}")
 
 
+def _get_monitor_work_area():
+    """
+    Get the work area (screen size excluding taskbar) on Windows.
+    Returns (left, top, right, bottom) of the primary monitor work area.
+    """
+    try:
+        # Structure for RECT
+        class RECT(ctypes.Structure):
+            _fields_ = [
+                ("left", ctypes.c_long),
+                ("top", ctypes.c_long),
+                ("right", ctypes.c_long),
+                ("bottom", ctypes.c_long),
+            ]
+
+        # SPI_GETWORKAREA = 0x0030
+        rect = RECT()
+        # SystemParametersInfoW(UINT uiAction, UINT uiParam, PVOID pvParam, UINT fWinIni)
+        ctypes.windll.user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0)
+        return (rect.left, rect.top, rect.right, rect.bottom)
+    except Exception as e:
+        debug_log(f"Error getting work area: {e}")
+        # Fallback to screen size using tkinter (passed via parent normally, but here we are in same process mainly)
+        # For simplicity, if this fails, we return a safe default or full screen
+        return (0, 0, 1920, 1080)
+
+
 class DockedDocViewer:
     """
     Docked documentation viewer using multiprocessing.
@@ -199,10 +226,17 @@ class DockedDocViewer:
         title_bar_height = parent.winfo_rooty() - parent.winfo_y()
         self.parent_height = parent.winfo_height() + title_bar_height + 8
 
+        # Initial layout logic - respecting work area from the start
+        try:
+            wa_left, wa_top, wa_right, wa_bottom = _get_monitor_work_area()
+            max_h = wa_bottom - wa_top
+        except:
+            max_h = 1000  # Fallback
+
         self.doc_x = self.parent_x + self.parent_width
         self.doc_y = self.parent_y
         self.doc_width = max(800, self.parent_width)
-        self.doc_height = self.parent_height
+        self.doc_height = min(self.parent_height, max_h) # Clamp initial height
 
         self._start_webview()
         self._start_sync_timer()
@@ -225,6 +259,7 @@ class DockedDocViewer:
         )
         self.process.daemon = True
         self.process.start()
+
 
     def _start_sync_timer(self):
         """Start a timer to periodically sync window position."""
@@ -346,6 +381,15 @@ class DockedDocViewer:
                     outer_height = current_height + title_bar_height + 8
                     target_x = current_x + current_width
                     target_y = current_y
+
+                    # Prevent going under taskbar
+                    try:
+                        _, wa_top, _, wa_bottom = _get_monitor_work_area()
+                        max_h = wa_bottom - target_y # Available height from Y position
+                        if outer_height > max_h:
+                             outer_height = max_h
+                    except:
+                        pass # Fallback to no clamping if error
 
                     if (
                         abs(doc_x - target_x) > 2

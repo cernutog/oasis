@@ -62,6 +62,58 @@ def resource_path(relative_path):
     return os.path.join(base_path, relative_path)
 
 
+
+class LogWindow(ctk.CTkToplevel):
+    """Detached window for application logs."""
+
+    def __init__(self, parent, theme="Light"):
+        super().__init__(parent)
+        self.title("Application Logs")
+        self.geometry("800x600")
+
+        # Set appearance
+        self.theme = theme
+
+        # Main Textbox
+        self.textbox = ctk.CTkTextbox(
+            self, font=("Consolas", 11), wrap="word", state="disabled"
+        )
+        self.textbox.pack(fill="both", expand=True, padx=10, pady=10)
+
+        # Apply initial theme
+        self.apply_theme(self.theme)
+
+        # Handle close (hide instead of destroy? No, destroy is fine, we recreate)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.on_close_callback = None
+
+    def _on_close(self):
+        if self.on_close_callback:
+            self.on_close_callback()
+        self.destroy()
+
+    def append_log(self, text):
+        """Append text to the log window."""
+        self.textbox.configure(state="normal")
+        self.textbox.insert("end", text + "\n")
+        self.textbox.see("end")
+        self.textbox.configure(state="disabled")
+
+    def clear_log(self):
+        """Clear all logs."""
+        self.textbox.configure(state="normal")
+        self.textbox.delete("1.0", "end")
+        self.textbox.configure(state="disabled")
+
+    def apply_theme(self, theme_mode):
+        """Apply Light/Dark theme to the log window."""
+        self.theme = theme_mode
+        if theme_mode == "Dark":
+            self.textbox.configure(fg_color="#1E1E1E", text_color="#D4D4D4")
+        else:
+            self.textbox.configure(fg_color="#F0F0F0", text_color="#000000")
+
+
 class OASGenApp(ctk.CTk):
     def __init__(self):
         super().__init__()
@@ -80,6 +132,10 @@ class OASGenApp(ctk.CTk):
 
         # Initialize Preferences Manager
         self.prefs_manager = PreferencesManager()
+
+        # Log Window State
+        self.log_window = None
+        self.log_history = []  # Store logs to populate window when opened
 
         # Track open documentation viewers
         self._doc_viewers = []
@@ -357,8 +413,8 @@ class OASGenApp(ctk.CTk):
 
         self.btn_toggle_log_h = ctk.CTkButton(
             self.log_internal_header,
-            text="▼ Logs",
-            width=60,
+            text="▼ Spectral Output",
+            width=120,
             height=20,
             fg_color="transparent",
             text_color=("gray10", "gray90"),
@@ -368,55 +424,26 @@ class OASGenApp(ctk.CTk):
         )
         self.btn_toggle_log_h.pack(side="left", padx=5, pady=2)
 
-        self.tab_logs = ctk.CTkTabview(self.val_log_frame, height=150)
-        self.tab_logs.pack(
-            fill="both", expand=True, padx=2, pady=0
-        )  # reduced top padding
+        # Spectral Output (Directly in frame, no tabs)
+        self.val_log_frame_inner = ctk.CTkFrame(self.val_log_frame, fg_color="transparent")
+        self.val_log_frame_inner.pack(fill="both", expand=True, padx=2, pady=0)
 
-        self.tab_logs.add("Analysis Logs")
-        self.tab_logs.add("Spectral Output")
-
-        # Tab 1: Analysis Logs with theme from preferences
-        analysis_log_theme = self.prefs_manager.get("analysis_log_theme", "Light")
-        if analysis_log_theme == "Dark":
-            self.val_log = ctk.CTkTextbox(
-                self.tab_logs.tab("Analysis Logs"),
-                font=("Consolas", 11),
-                state="disabled",
-                fg_color="#1e1e1e",
-                text_color="#d4d4d4",
-            )
-        else:
-            self.val_log = ctk.CTkTextbox(
-                self.tab_logs.tab("Analysis Logs"),
-                font=("Consolas", 11),
-                state="disabled",
-                fg_color="#ffffff",
-                text_color="#333333",
-            )
-        self.val_log.pack(fill="both", expand=True)
-
-        # Tab 2: Spectral Output with theme from preferences
         spectral_log_theme = self.prefs_manager.get("spectral_log_theme", "Light")
-        if spectral_log_theme == "Dark":
-            self.val_json_log = ctk.CTkTextbox(
-                self.tab_logs.tab("Spectral Output"),
-                font=("Consolas", 11),
-                state="disabled",
-                wrap="none",
-                fg_color="#1e1e1e",
-                text_color="#d4d4d4",
-            )
-        else:
-            self.val_json_log = ctk.CTkTextbox(
-                self.tab_logs.tab("Spectral Output"),
-                font=("Consolas", 11),
-                state="disabled",
-                wrap="none",
-                fg_color="#ffffff",
-                text_color="#333333",
-            )
+        fg_col = "#1e1e1e" if spectral_log_theme == "Dark" else "#ffffff"
+        txt_col = "#d4d4d4" if spectral_log_theme == "Dark" else "#333333"
+
+        self.val_json_log = ctk.CTkTextbox(
+            self.val_log_frame_inner,
+            font=("Consolas", 11),
+            state="disabled",
+            wrap="none",
+            fg_color=fg_col,
+            text_color=txt_col,
+        )
         self.val_json_log.pack(fill="both", expand=True)
+
+        # Remove old val_log (Analysis Log) reference
+        self.val_log = None
 
         # Persistent Footer (Status Bar + Log Toggle) -> For Collapsed State
         self.footer_frame = ctk.CTkFrame(
@@ -426,8 +453,8 @@ class OASGenApp(ctk.CTk):
 
         self.btn_toggle_log_f = ctk.CTkButton(
             self.footer_frame,
-            text="▶ Logs",
-            width=60,
+            text="▶ Spectral Output",
+            width=120,
             height=24,
             fg_color="transparent",
             text_color=("gray10", "gray90"),
@@ -686,6 +713,10 @@ class OASGenApp(ctk.CTk):
         self.view_menu.add_command(label="Generation", command=self._view_generation)
         self.view_menu.add_command(label="Validation", command=self._view_validation)
         self.view_menu.add_command(label="YAML Viewer", command=self._view_yaml_viewer)
+        self.view_menu.add_separator()
+        self.view_menu.add_command(
+            label="Application Logs...", command=self.show_application_logs
+        )
         menubar.add_cascade(label="View", menu=self.view_menu)
 
         # Help Menu
@@ -694,7 +725,29 @@ class OASGenApp(ctk.CTk):
         help_menu.add_command(label="About", command=self.show_about_dialog)
         menubar.add_cascade(label="Help", menu=help_menu)
         
+        # Attach menu to root window (this will attach it to the ctk window)
+        # Note: ctk doesn't directly support standard menus well on all platforms,
+        # but configured it on the underlying tk root usually works on Windows.
         self.config(menu=menubar)
+
+    def show_application_logs(self):
+        """Open detached application logs window."""
+        if self.log_window is None or not self.log_window.winfo_exists():
+            theme = self.prefs_manager.get("app_log_theme", "Dark") # Default Dark
+            self.log_window = LogWindow(self, theme=theme)
+            self.log_window.on_close_callback = self._on_log_window_close
+
+            # Populate with history
+            for line in self.log_history:
+                self.log_window.append_log(line)
+
+        else:
+            self.log_window.lift()
+            self.log_window.focus()
+
+    def _on_log_window_close(self):
+        """Callback when log window is closed."""
+        self.log_window = None
 
     def _on_tab_change(self):
         """Handle tab changes to update menu state."""
@@ -805,8 +858,9 @@ class OASGenApp(ctk.CTk):
             
             # Configure About Layout
             description = (
-                "The OAS Integration Suite automates the generation\n"
-                "and validation of OpenAPI Specifications." # Removed (3.0, 3.1)
+                "The OAS Integration Suite is a toolset for the design,\n"
+                "generation, validation, and documentation of\n"
+                "OpenAPI Specifications."
             )
             splash.set_about_mode(f"v{VERSION}", description)
             
@@ -891,12 +945,10 @@ class OASGenApp(ctk.CTk):
             else:
                 self.log_area.configure(fg_color="#ffffff", text_color="#333333")
 
-        if "analysis_log_theme" in new_prefs:
-            theme = new_prefs["analysis_log_theme"]
-            if theme == "Dark":
-                self.val_log.configure(fg_color="#1e1e1e", text_color="#d4d4d4")
-            else:
-                self.val_log.configure(fg_color="#ffffff", text_color="#333333")
+        if "app_log_theme" in new_prefs:
+            theme = new_prefs["app_log_theme"]
+            if self.log_window:
+                self.log_window.apply_theme(theme)
 
         if "spectral_log_theme" in new_prefs:
             theme = new_prefs["spectral_log_theme"]
@@ -923,10 +975,19 @@ class OASGenApp(ctk.CTk):
             self.log_visible = True
 
     def val_log_print(self, msg):
-        self.val_log.configure(state="normal")
-        self.val_log.insert("end", f"> {msg}\n")
-        self.val_log.see("end")
-        self.val_log.configure(state="disabled")
+        # Redirect to global application log
+        full_msg = f"> {msg}"
+        
+        # Add to history
+        self.log_history.append(full_msg)
+        if len(self.log_history) > 1000:
+            self.log_history.pop(0)
+
+        # Update window if open
+        if self.log_window and self.log_window.winfo_exists():
+            self.log_window.append_log(full_msg)
+            
+        print(full_msg) # Keep stdout for debugging
 
     def browse_dir(self):
         current_path = self.entry_dir.get()
@@ -978,10 +1039,21 @@ class OASGenApp(ctk.CTk):
             self._sync_oas_folders(directory)
 
     def log(self, message):
+        # Update Generation Tab Log
         self.log_area.configure(state="normal")
         self.log_area.insert("end", message + "\n")
         self.log_area.see("end")
         self.log_area.configure(state="disabled")
+        
+        # Duplicate to Global Application Log
+        # Add to history
+        self.log_history.append(message)
+        if len(self.log_history) > 1000:
+            self.log_history.pop(0)
+
+        # Update window if open
+        if self.log_window and self.log_window.winfo_exists():
+            self.log_window.append_log(message)
 
     def start_generation(self):
         base_dir = self.entry_dir.get()
@@ -1218,68 +1290,81 @@ class OASGenApp(ctk.CTk):
             ).pack(pady=20)
         else:
             for item in details:
-                # Severity Color
-                color = "gray"
-                if item["severity"] == "error":
-                    color = "#FF4444"
-                elif item["severity"] == "warning":
-                    color = "#FFBB33"
-                elif item["severity"] == "info":
-                    color = "#33B5E5"
-
-                # Card Frame
+                # Card Frame - RESTORED BOX (Subtle & Elegant)
+                # Tuned for visual comfort: #E0E0E0 prevents the "glare" of pure white
                 card = ctk.CTkFrame(
-                    self.frame_list, border_width=1, border_color="gray"
+                    self.frame_list,
+                    border_width=1,
+                    border_color="#C0C0C0",  # Slightly darker border for definition
+                    fg_color=("#E0E0E0", "#2B2B2B"),  # Calm grey in light mode
+                    corner_radius=6,
                 )
-                card.pack(fill="x", pady=2, padx=2)
+                card.pack(fill="x", pady=3, padx=2)  # Balanced spacing
 
                 # Row 1: Code + Severity
                 r1 = ctk.CTkFrame(card, fg_color="transparent")
-                r1.pack(fill="x", padx=5, pady=2)
+                r1.pack(fill="x", padx=6, pady=6)
+
+                # SEVERITY BADGE (Colored Label)
+                badge_fg = "gray"
+                badge_text_color = "white"
+                if item["severity"] == "error":
+                    badge_fg = "#FF4444"
+                elif item["severity"] == "warning":
+                    badge_fg = "#FFBB33"
+                    badge_text_color = "black"  # Black text on Yellow for readability
+                elif item["severity"] == "info":
+                    badge_fg = "#33B5E5"
+
                 ctk.CTkLabel(
                     r1,
-                    text=f"[{item['severity'].upper()}]",
-                    text_color=color,
-                    font=("Arial", 11, "bold"),
+                    text=f" {item['severity'].upper()} ",  # Spaces for padding effect
+                    fg_color=badge_fg,
+                    text_color=badge_text_color,
+                    corner_radius=6,  # Rounded badge
+                    font=("Arial", 10, "bold"),
+                    height=20
                 ).pack(side="left")
-                ctk.CTkLabel(r1, text=item["code"], font=("Arial", 11, "bold")).pack(
-                    side="left", padx=5
+
+                ctk.CTkLabel(
+                    r1,
+                    text=item["code"],
+                    font=("Arial", 11, "bold"),
+                    text_color=("#333333", "#F0F0F0") # Dark in light mode
+                ).pack(
+                    side="left", padx=8
                 )
 
-                # Clickable line number - styled as button
+                # Clickable line number - styled as minimal button
                 line_num = item["line"]
                 line_btn = ctk.CTkButton(
                     r1,
-                    text=f"Line: {line_num}",
+                    text=f"Line {line_num}",
                     font=("Arial", 10),
-                    fg_color=("#E8E8E8", "#3D3D3D"),  # Light gray / dark gray
-                    text_color=("#333333", "#FFFFFF"),
-                    hover_color=("#D0D0D0", "#505050"),
+                    fg_color="transparent",
+                    text_color=("#666666", "#AAAAAA"),
+                    hover_color=("#D0D0D0", "#3A3A3A"), # Darker than bg for visibility
                     border_width=1,
-                    border_color=("#AAAAAA", "#666666"),
+                    border_color=("#BBBBBB", "#555555"),
                     corner_radius=4,
-                    width=70,
-                    height=22,
+                    width=60,
+                    height=20,
                     command=lambda ln=line_num: self._goto_line(ln),
                 )
                 line_btn.pack(side="right")
 
                 # Row 2: Path
                 if item["path"] and item["path"] != "Root":
-                    # High contrast for path
-                    path_color = (
-                        "#333333",
-                        "#CCCCCC",
-                    )  # Dark in light mode, Light in dark mode
+                    path_color = ("#555555", "#AAAAAA")
                     ctk.CTkLabel(
                         card,
                         text=f"Path: {item['path']}",
                         text_color=path_color,
-                        font=("Consolas", 10, "bold"),
+                        font=("Consolas", 10),
                         anchor="w",
                         justify="left",
                         wraplength=350,
-                    ).pack(fill="x", padx=5)
+                    ).pack(fill="x", padx=5, pady=2)
 
                 # Row 3: Message
                 ctk.CTkLabel(
@@ -1288,6 +1373,8 @@ class OASGenApp(ctk.CTk):
                     anchor="w",
                     justify="left",
                     wraplength=350,
+                    font=("Arial", 11),
+                    text_color=("#333333", "#FFFFFF") # Standard text color
                 ).pack(fill="x", padx=5, pady=(0, 5))
 
         # Refresh markers in View tab if viewing the same file

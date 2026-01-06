@@ -212,13 +212,13 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.cbo_gen_log_theme.grid(row=0, column=1, sticky="w", pady=2)
 
-        ctk.CTkLabel(self.frame_logs, text="Analysis Logs:").grid(
+        ctk.CTkLabel(self.frame_logs, text="Application Logs:").grid(
             row=1, column=0, sticky="w", padx=(0, 10), pady=2
         )
-        self.cbo_analysis_log_theme = ctk.CTkComboBox(
+        self.cbo_app_log_theme = ctk.CTkComboBox(
             self.frame_logs, values=["Light", "Dark"], width=100
         )
-        self.cbo_analysis_log_theme.grid(row=1, column=1, sticky="w", pady=2)
+        self.cbo_app_log_theme.grid(row=1, column=1, sticky="w", pady=2)
 
         ctk.CTkLabel(self.frame_logs, text="Spectral Output:").grid(
             row=2, column=0, sticky="w", padx=(0, 10), pady=2
@@ -357,7 +357,7 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # Logs
         self.cbo_gen_log_theme.set(prefs.get("gen_log_theme", "Light"))
-        self.cbo_analysis_log_theme.set(prefs.get("analysis_log_theme", "Light"))
+        self.cbo_app_log_theme.set(prefs.get("app_log_theme", "Dark"))  # Default Dark
         self.cbo_spectral_log_theme.set(prefs.get("spectral_log_theme", "Light"))
 
         # File Display
@@ -399,8 +399,9 @@ class PreferencesDialog(ctk.CTkToplevel):
             "yaml_font": self.cbo_font.get(),
             "yaml_font_size": int(self.slider_font.get()),
             "gen_log_theme": self.cbo_gen_log_theme.get(),
-            "analysis_log_theme": self.cbo_analysis_log_theme.get(),
+            "app_log_theme": self.cbo_app_log_theme.get(),
             "spectral_log_theme": self.cbo_spectral_log_theme.get(),
+            "file_sort_order": sort_value,
             "file_sort_order": sort_value,
             "default_tab": self.cbo_tab.get(),
             "remember_window_pos": self.chk_window_pos.get() == 1,
@@ -441,11 +442,11 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.cbo_theme.set("oas-dark")
         self.cbo_font.set("Consolas")
         self.cbo_gen_log_theme.set("Light")
-        self.cbo_analysis_log_theme.set("Light")
+        self.cbo_app_log_theme.set("Dark")  # Default Dark
         self.cbo_spectral_log_theme.set("Light")
         self.cbo_sort.set("Alphabetical")
         self.cbo_tab.set("Generation")
-
+ 
         # Slider
         self.slider_font.set(12)
         self.lbl_font_val.configure(text="12")
