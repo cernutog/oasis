@@ -325,6 +325,37 @@ class DockedDocViewer:
             current_width = self.parent.winfo_width()
             current_height = self.parent.winfo_height()
 
+            # --- Main Window Constraint (Prevent going under taskbar) ---
+            try:
+                wa_left, wa_top, wa_right, wa_bottom = _get_monitor_work_area()
+                
+                # Check Main Window Bottom (Visual approximation)
+                # winfo_rooty is top of client area.
+                client_top = self.parent.winfo_rooty()
+                # If client_top is weird (e.g. minimized), skip
+                if client_top > 0:
+                    client_bottom = client_top + current_height
+                    
+                    # Safe margin
+                    bottom_limit = wa_bottom 
+                    
+                    if client_bottom > bottom_limit:
+                         # Resize Parent
+                         # New Height = Limit - Client Top
+                         # Ensure a reasonable minimum
+                         new_parent_h = max(600, bottom_limit - client_top)
+                         
+                         if new_parent_h < current_height:
+                             debug_log(f"Resizing Main Window to fit Work Area: {new_parent_h}")
+                             self.parent.geometry(f"{current_width}x{new_parent_h}")
+                             # Return to let UI update and stabilize
+                             if not self._closed:
+                                 self.parent.after(50, self._sync_position)
+                             return 
+            except Exception as e:
+                pass 
+            # ---------------------------------------------------------
+
             # Position stability check
             if (
                 current_x == self._last_parent_x
@@ -385,9 +416,15 @@ class DockedDocViewer:
                     # Prevent going under taskbar
                     try:
                         _, wa_top, _, wa_bottom = _get_monitor_work_area()
-                        max_h = wa_bottom - target_y # Available height from Y position
-                        if outer_height > max_h:
-                             outer_height = max_h
+                        max_h = wa_bottom - target_y # Available workspace height
+                        
+                        # Windows 10/11 invisible border/shadow allowance (~8px)
+                        # Clamping strictly to max_h cuts off the shadow, causing a visual gap.
+                        # We allow slight overhang for the border to match Main Window's visual alignment.
+                        border_allowance = 8 
+                        
+                        if outer_height > (max_h + border_allowance):
+                             outer_height = max_h + border_allowance
                     except:
                         pass # Fallback to no clamping if error
 
