@@ -17,6 +17,10 @@ run_final.txt
 # Generated Files
 generated_oas_*.yaml
 
+# Generated HTML docs (Redoc)
+*.html
+!src/docs/*.html
+
 # IDE & Python
 __pycache__/
 *.pyc
@@ -25,3 +29,11 @@ __pycache__/
 # Temp Scripts
 debug_build.bat
 clean_icon_cache.bat
+temp_templates_ignore/
+
+# Test files
+test_*.py
+reproduce_*.py
+
+# Excel temp files
+~$*.xlsm
