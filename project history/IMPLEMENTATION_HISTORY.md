@@ -348,3 +348,76 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - Make generated HTML files temporary and clean up on viewer/app close
 - Remove `_redoc` suffix from generated filenames
 
+
+## v1.4: Refactoring, Logs & Rebranding (2026-01-06)
+
+### 1. Generator Refactoring
+**Goal**: Improve code maintainability and testability by splitting the monolithic `generator.py`.
+**Implementation**:
+- Extracted `GenerationContext` to `src/generator_pkg/context.py` (Registry for Headers, Links, Tags).
+- Extracted `SchemaBuilder` logic to `src/generator_pkg/schema_builder.py`.
+- Extracted `ResponseBuilder` logic to `src/generator_pkg/response_builder.py`.
+- Created `src/generator_pkg/row_helpers.py` for Excel row processing.
+- `generator.py` now acts as the high-level orchestrator.
+
+### 2. Enhanced Logging
+**Goal**: Clean up the UI and separate implementation logs from validation results.
+**Implementation**:
+- **Detached Window**: Created `LogWindow` (`CTkToplevel`) to show global application logs.
+- **Validation Tab**: Removed nested tabs. Now shows only "Spectral Output".
+- **Theme**: "Application Logs" window defaults to "Dark" theme for better readability.
+
+### 3. Docking & Regression Fixes
+**Issue**: Docked Documentation Viewer was extending behind the Windows Taskbar.
+**Fix**:
+- Implemented `src/doc_viewer.py::_get_monitor_work_area` using `ctypes` and `SystemParametersInfoW`.
+- **Logic**: Doc window height = `WorkArea.bottom - Window.y` + 8px (Shadow Allowance).
+- **Parity**: Main Window also constrained to Workspace Area.
+
+### 4. Rebranding (OASIS)
+**Goal**: Official product launch as OAS Integration Suite.
+**Changes**:
+- Renamed project to **OASIS**.
+- Repository renamed to `oasis`.
+- Created `setup_oasis.bat` for automated environment repair after folder rename.
+- Added `CHANGELOG.md` to track official releases.
+
+## v1.5: Selection Fixes, Docking & Source Mapping (2026-01-07)
+
+### 1. YAML Editor Selection Fix
+**Problem**: After double-clicking a word, Shift+Left/Right would incorrectly expand/contract the selection from the wrong end.
+**Root Cause**: Tkinter's internal word-selection mode was overriding manual anchor settings.
+**Solution**:
+- Implemented custom `_on_shift_left` and `_on_shift_right` handlers in `gui.py`.
+- Handlers manually adjust selection bounds and return `"break"` to bypass Tkinter's default behavior.
+- Logic: Cursor at end → Shift+Left contracts from right; Cursor at start → Shift+Left expands to left.
+- Added `_on_yaml_double_click` that always sets cursor to END after selection.
+
+### 2. Documentation Docking - Maximized Window Fix
+**Problem**: When main window was maximized, clicking "View Documentation" failed to dock properly (no resize).
+**Solution**:
+- Added check `if self.state() == "zoomed"` before creating `DockedDocViewer`.
+- Restores window to `"normal"` state with `update_idletasks()` before applying docking layout.
+
+### 3. Source Mapping for Excel Links
+**Feature**: Validation issues now include contextual links to source Excel templates.
+**Implementation**:
+- `main.py`: Creates `.oasis_excel_maps/` directory alongside OAS output.
+- `generator.py`: Tracks source file for each generated component via `build_components(source_file=...)`.
+- New method `get_source_map_json()` exports mapping data.
+- Orphan map cleanup added to generation flow.
+
+### 4. Repository Cleanup
+- Removed 10 generated HTML files from git tracking (~23K lines).
+- Removed 17 debug/test scripts from tracking.
+- Fixed `.gitignore` (added `*.html`, `test_*.py`, `reproduce_*.py`, `scripts/debug/`).
+- GitHub now correctly identifies Python as the primary language.
+- Deleted local test folders and obsolete files (~100MB freed).
+
+### Files Modified
+- `src/gui.py` - Selection handlers, docking fix
+- `src/main.py` - Source mapping, map cleanup
+- `src/generator.py` - Source tracking
+- `src/version.py` - Bumped to 1.5
+- `.gitignore` - Updated exclusions
+
