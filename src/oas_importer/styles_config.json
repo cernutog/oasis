@@ -1,0 +1,815 @@
+{
+  "index": {
+    "General Description": {
+      "sheet_name": "General Description",
+      "column_widths": {
+        "A": 20.28515625,
+        "B": 50.140625,
+        "C": 19.28515625,
+        "D": 37.7109375
+      },
+      "header_labels": [
+        "General Description"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 15.0,
+          "bold": true,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": "center",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "freeze_panes": null,
+      "row_height_header": 19.5,
+      "row_height_data": null
+    },
+    "Paths": {
+      "sheet_name": "Paths",
+      "column_widths": {
+        "A": 54.140625,
+        "B": 37.5703125,
+        "C": 27.0,
+        "D": 10.42578125,
+        "E": 98.85546875,
+        "F": 20.5703125,
+        "G": 50.7109375,
+        "H": 27.140625,
+        "I": 15.42578125,
+        "J": 51.0
+      },
+      "header_labels": [
+        "Excel file",
+        "Path",
+        "Name",
+        "Method",
+        "Description",
+        "Tag",
+        "Summary",
+        "OperationId",
+        "Custom Extensions",
+        "Track Changes"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "center",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 10.0,
+          "bold": false,
+          "italic": false,
+          "color": null
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": null,
+          "vertical": "center",
+          "wrap_text": true
+        }
+      },
+      "freeze_panes": null,
+      "row_height_header": 30.0,
+      "row_height_data": 99.95
+    },
+    "Tags": {
+      "sheet_name": "Tags",
+      "column_widths": {
+        "A": 18.85546875,
+        "B": 45.5703125
+      },
+      "header_labels": [
+        "Name",
+        "Description"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": false,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": null,
+          "vertical": null,
+          "wrap_text": false
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": false,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": null,
+          "vertical": null,
+          "wrap_text": false
+        }
+      },
+      "freeze_panes": null,
+      "row_height_header": null,
+      "row_height_data": null
+    },
+    "Parameters": {
+      "sheet_name": "Parameters",
+      "column_widths": {
+        "A": 17.85546875,
+        "B": 39.28515625,
+        "C": 7.28515625,
+        "D": 7.7109375,
+        "E": 17.28515625,
+        "F": 15.28515625,
+        "G": 7.28515625,
+        "H": 10.7109375,
+        "I": 18.28515625,
+        "K": 10.7109375,
+        "L": 6.42578125,
+        "M": 13.85546875,
+        "N": 37.42578125
+      },
+      "header_labels": [
+        "Name",
+        "Description",
+        "In",
+        "Type",
+        "Schema Name\n(if Type = schema)",
+        "Items Data Type \n(Array only)",
+        "Format",
+        "Mandatory",
+        "Min  \nValue/Length/Item",
+        "Max  \nValue/Length/Item",
+        "PatternEba",
+        "Regex",
+        "Allowed value",
+        "Example"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": false,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": false
+        }
+      },
+      "freeze_panes": null,
+      "row_height_header": 30.0,
+      "row_height_data": null
+    },
+    "Headers": {
+      "sheet_name": "Headers",
+      "column_widths": {
+        "A": 22.7109375,
+        "B": 35.7109375,
+        "C": 11.5703125,
+        "D": 18.85546875,
+        "E": 20.140625,
+        "F": 9.140625,
+        "G": 10.7109375,
+        "H": 21.0,
+        "I": 19.5703125,
+        "J": 14.28515625,
+        "K": 15.7109375,
+        "L": 17.28515625,
+        "M": 49.140625
+      },
+      "header_labels": [
+        "Name",
+        "Description",
+        "Type",
+        "Schema Name\n(if Type = schema)",
+        "Items Data Type \n(Array only)",
+        "Format",
+        "Mandatory",
+        "Min  \nValue/Length/Item",
+        "Max  \nValue/Length/Item",
+        "PatternEba",
+        "Regex",
+        "Allowed value",
+        "Example"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": false,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": null,
+          "vertical": "top",
+          "wrap_text": false
+        }
+      },
+      "freeze_panes": null,
+      "row_height_header": 30.0,
+      "row_height_data": 60.0
+    },
+    "Schemas": {
+      "sheet_name": "Schemas",
+      "column_widths": {
+        "A": 25.0,
+        "B": 20.0,
+        "C": 35.0,
+        "D": 12.0,
+        "E": 18.0,
+        "F": 20.0,
+        "G": 12.0,
+        "I": 15.0,
+        "M": 18.0,
+        "N": 20.0
+      },
+      "header_labels": [
+        "Name",
+        "Parent",
+        "Description",
+        "Type",
+        "Items Data Type \n(Array only)",
+        "Schema Name\n(if Type = schema)",
+        "Format",
+        "Mandatory",
+        "Min  \nValue/Length/Item",
+        "Max  \nValue/Length/Item",
+        "PatternEba",
+        "Regex",
+        "Allowed value",
+        "Example"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": false,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": null,
+          "vertical": null,
+          "wrap_text": true
+        }
+      },
+      "freeze_panes": null,
+      "row_height_header": 45.0,
+      "row_height_data": null
+    },
+    "Responses": {
+      "sheet_name": "Responses",
+      "column_widths": {
+        "A": 21.7109375,
+        "B": 23.140625,
+        "C": 24.5703125,
+        "D": 33.28515625,
+        "E": 15.28515625,
+        "G": 22.7109375,
+        "H": 7.28515625,
+        "I": 10.7109375,
+        "J": 18.28515625,
+        "L": 10.7109375,
+        "M": 6.42578125,
+        "N": 13.85546875,
+        "O": 23.5703125
+      },
+      "header_labels": [
+        "Section",
+        "Name",
+        "Parent",
+        "Description",
+        "Type",
+        "Items Data Type \n(Array only)",
+        "Schema Name\n(for Type or Items Data Type = 'schema'||'header')",
+        "Format",
+        "Mandatory",
+        "Min  \nValue/Length/Item",
+        "Max  \nValue/Length/Item",
+        "PatternEba",
+        "Regex",
+        "Allowed value",
+        "Example"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 10.0,
+          "bold": false,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": null,
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "freeze_panes": "A19",
+      "row_height_header": 60.0,
+      "row_height_data": null
+    }
+  },
+  "operation": {
+    "Parameters": {
+      "sheet_name": "Parameters",
+      "column_widths": {
+        "A": 18.85546875,
+        "B": 30.7109375,
+        "C": 11.7109375,
+        "E": 18.7109375,
+        "F": 19.28515625,
+        "G": 18.85546875,
+        "H": 10.7109375,
+        "I": 18.28515625,
+        "J": 18.28515625,
+        "K": 10.7109375,
+        "L": 9.140625,
+        "M": 17.28515625,
+        "N": 10.7109375
+      },
+      "header_labels": [
+        "Request Parameters"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 16.0,
+          "bold": true,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": null,
+          "top": null,
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "center",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "freeze_panes": "B3",
+      "row_height_header": 21.0,
+      "row_height_data": 57.6
+    },
+    "Body": {
+      "sheet_name": "Body",
+      "column_widths": {
+        "A": 18.85546875,
+        "B": 30.7109375,
+        "E": 16.140625,
+        "F": 11.7109375,
+        "G": 38.0,
+        "H": 11.5703125,
+        "I": 18.85546875,
+        "J": 9.140625,
+        "K": 9.140625
+      },
+      "header_labels": [
+        "Request Body",
+        "Structure of a FPAD account assessment request.",
+        "M"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 16.0,
+          "bold": true,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": null,
+          "top": null,
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "center",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "freeze_panes": "C3",
+      "row_height_header": 63.0,
+      "row_height_data": 43.15
+    },
+    "Body Example": {
+      "sheet_name": "Body Example",
+      "column_widths": {
+        "A": 26.5703125,
+        "B": 54.0
+      },
+      "header_labels": [
+        "Example Name",
+        "Body"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": false,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": null,
+          "right": null,
+          "top": null,
+          "bottom": null
+        },
+        "alignment": {
+          "horizontal": "center",
+          "vertical": "center",
+          "wrap_text": false
+        }
+      },
+      "freeze_panes": null,
+      "row_height_header": 21.0,
+      "row_height_data": 144.0
+    },
+    "Response": {
+      "sheet_name": "201",
+      "column_widths": {
+        "A": 21.7109375,
+        "B": 18.85546875,
+        "C": 26.85546875,
+        "D": 34.7109375,
+        "E": 8.7109375,
+        "F": 16.0,
+        "G": 22.0,
+        "H": 7.28515625,
+        "I": 10.7109375,
+        "J": 18.85546875,
+        "K": 18.7109375,
+        "L": 11.42578125,
+        "M": 9.140625,
+        "N": 14.85546875,
+        "O": 25.28515625
+      },
+      "header_labels": [
+        "Response",
+        "201",
+        "Created"
+      ],
+      "header_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 16.0,
+          "bold": true,
+          "italic": false,
+          "color": "Values must be of type <class 'str'>"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": null,
+          "top": null,
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": null,
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "data_row_style": {
+        "font": {
+          "name": "Calibri",
+          "size": 11.0,
+          "bold": true,
+          "italic": false,
+          "color": "FFFF0000"
+        },
+        "fill": {
+          "type": "solid",
+          "fg_color": "Values must be of type <class 'str'>",
+          "bg_color": "Values must be of type <class 'str'>"
+        },
+        "border": {
+          "left": "thin",
+          "right": "thin",
+          "top": "thin",
+          "bottom": "thin"
+        },
+        "alignment": {
+          "horizontal": "left",
+          "vertical": "top",
+          "wrap_text": true
+        }
+      },
+      "freeze_panes": "K5",
+      "row_height_header": 21.0,
+      "row_height_data": 43.15
+    }
+  },
+  "metadata": {
+    "extracted_from": [
+      "$index.xlsm",
+      "account_assessment.251111.xlsm"
+    ],
+    "version": "1.0"
+  }
+}
