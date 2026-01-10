@@ -90,10 +90,13 @@ class OASGenerator:
                 and isinstance(extensions_yaml, str)
                 and extensions_yaml.strip()
             ):
-                # Store raw text - use rstrip to remove trailing spaces only, preserve leading indent
-                op_obj["__RAW_EXTENSIONS__"] = extensions_yaml.rstrip()
+                # Trim common indentation - normalize to column 0
+                # This ensures consistent handling regardless of Excel formatting
+                trimmed_ext = self._trim_extension_indent(extensions_yaml)
+                op_obj["__RAW_EXTENSIONS__"] = trimmed_ext
 
             # Populate details from Operation File
+            details = {}
             if file_ref in operations_details:
                 details = operations_details[file_ref]
 
@@ -885,67 +888,117 @@ class OASGenerator:
             for item in obj:
                 self._recursive_schema_fix(item)
 
-    def _insert_raw_extensions(self, yaml_text, oas_dict):
-        """Replace __RAW_EXTENSIONS__ markers with raw YAML text"""
-        import re
+    def _trim_extension_indent(self, text: str) -> str:
+        """
+        Remove common leading indentation from extension text.
+        
+        This normalizes the text to start at column 0, regardless of how
+        it was formatted in the Excel source. The generator will add the
+        correct indentation when inserting into the YAML output.
+        
+        Args:
+            text: Raw extension text, possibly with leading spaces on each line
+            
+        Returns:
+            Text with common indentation removed (normalized to column 0)
+        """
+        if not text:
+            return text
+            
+        lines = text.split('\n')
+        
+        # Find minimum indentation (ignoring empty lines)
+        min_indent = float('inf')
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped:  # Non-empty line
+                indent = len(line) - len(stripped)
+                min_indent = min(min_indent, indent)
+        
+        if min_indent == float('inf'):
+            min_indent = 0
+        
+        # Remove common indentation
+        trimmed_lines = []
+        for line in lines:
+            if line.strip():
+                trimmed_lines.append(line[int(min_indent):])
+            else:
+                trimmed_lines.append('')
+        
+        return '\n'.join(trimmed_lines).rstrip()
 
-        # Find all __RAW_EXTENSIONS__ values
+    def _insert_raw_extensions(self, yaml_text: str, oas_dict: dict) -> str:
+        """
+        Replace __RAW_EXTENSIONS__ markers with raw YAML text.
+        
+        This uses a simple approach:
+        1. Find each __RAW_EXTENSIONS__: marker line in the YAML output
+        2. Replace it with the actual extension text, properly indented
+        3. Skip any continuation lines that yaml.dump added for the string value
+        
+        The extension text is already trimmed (normalized to column 0), so we
+        just need to add the operation-level indentation (6 spaces).
+        """
         if "paths" not in oas_dict:
             return yaml_text
 
-        for path_url, path_item in oas_dict["paths"].items():
-            for method, operation in path_item.items():
-                if isinstance(operation, dict) and "__RAW_EXTENSIONS__" in operation:
-                    raw_text = operation["__RAW_EXTENSIONS__"]
-                    # Don't dedent - Excel text already has correct relative indentation
-                    # Just need to add base operation-level indent
-
-                    # Find and replace the marker in YAML output
-                    # Pattern: __RAW_EXTENSIONS__: followed by quoted string (possibly multiline with |- or |)
-                    # Match variations: __RAW_EXTENSIONS__: 'text', "text", |- or |
-                    pattern = r"__RAW_EXTENSIONS__:(?:\s+(?:['\"].*?['\"]|\|-[\s\S]*?(?=\n\S)|\|[\s\S]*?(?=\n\S)))"
-
-                    # Simple approach: find the line with marker and replace it with raw text
-                    output_lines = yaml_text.split("\n")
-                    new_output = []
-                    i = 0
-                    while i < len(output_lines):
-                        line = output_lines[i]
-                        if "__RAW_EXTENSIONS__:" in line:
-                            # Excel text ALREADY has absolute indentation (6 spaces)
-                            # Don't add marker_indent - just use text as-is
-                            marker_indent = len(line) - len(
-                                line.lstrip()
-                            )  # Still need for skipping
-                            for raw_line in raw_text.split("\n"):
-                                new_output.append(
-                                    raw_line
-                                )  # Insert exactly as-is from Excel
-
-                            # Skip lines that are part of the __RAW_EXTENSIONS__ value
-                            # (YAML will dump it as |- multiline or quoted)
-                            i += 1
-                            # Skip continuation lines (indented more than current)
-                            while i < len(output_lines):
-                                next_line = output_lines[i]
-                                if next_line.strip() == "":
-                                    # Empty line, might be part of content
-                                    i += 1
-                                    continue
-                                next_indent = len(next_line) - len(next_line.lstrip())
-                                if next_indent > marker_indent:
-                                    # Continuation of the value, skip it
-                                    i += 1
-                                else:
-                                    # Next key at same or less indent, stop skipping
-                                    break
+        OPERATION_INDENT = "      "  # 6 spaces for operation-level content
+        
+        output_lines = yaml_text.split("\n")
+        new_output = []
+        i = 0
+        
+        while i < len(output_lines):
+            line = output_lines[i]
+            
+            if "__RAW_EXTENSIONS__:" in line:
+                # Found a marker - get the indentation level
+                marker_indent = len(line) - len(line.lstrip())
+                
+                # Find which operation this belongs to by scanning backwards
+                raw_text = None
+                for path_url, path_item in oas_dict["paths"].items():
+                    for method, operation in path_item.items():
+                        if isinstance(operation, dict) and "__RAW_EXTENSIONS__" in operation:
+                            # Check if we've already processed this one
+                            raw_text = operation.get("__RAW_EXTENSIONS__")
+                            if raw_text:
+                                # Mark as processed by removing from dict
+                                del operation["__RAW_EXTENSIONS__"]
+                                break
+                    if raw_text:
+                        break
+                
+                if raw_text:
+                    # Insert the extension text with proper indentation
+                    for ext_line in raw_text.split("\n"):
+                        if ext_line.strip():
+                            new_output.append(OPERATION_INDENT + ext_line)
                         else:
-                            new_output.append(line)
-                            i += 1
+                            new_output.append("")
+                
+                # Skip the marker line and any continuation (yaml.dump may have
+                # serialized the string as multiline |- or quoted)
+                i += 1
+                while i < len(output_lines):
+                    next_line = output_lines[i]
+                    if next_line.strip() == "":
+                        # Empty line could be part of the value or separator
+                        i += 1
+                        continue
+                    next_indent = len(next_line) - len(next_line.lstrip())
+                    if next_indent > marker_indent:
+                        # Continuation of the yaml value, skip it
+                        i += 1
+                    else:
+                        # Back to normal content
+                        break
+            else:
+                new_output.append(line)
+                i += 1
 
-                    yaml_text = "\n".join(new_output)
-
-        return yaml_text
+        return "\n".join(new_output)
 
     def _reorder_dict(self, d, keys_order):
         """
