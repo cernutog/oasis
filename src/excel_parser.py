@@ -148,6 +148,8 @@ def parse_info(df_info):
                     info["contact"]["email"] = val
                 if "name" in key:
                     info["contact"]["name"] = val
+                if "url" in key:
+                    info["contact"]["url"] = val
             elif "release" in key:
                 info["release"] = str(val)
             elif "filename" in key and "pattern" in key:

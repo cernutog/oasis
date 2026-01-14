@@ -53,6 +53,24 @@ class FlatRow:
         }
 
 
+def _python_type_to_oas(value: Any) -> str:
+    """Map Python type to OAS type name."""
+    if value is None:
+        return 'string'
+    type_map = {
+        'str': 'string',
+        'int': 'integer',
+        'float': 'number',
+        'bool': 'boolean',
+        'list': 'array',
+        'dict': 'object',
+        'datetime': 'string',
+        'date': 'string',
+    }
+    py_type = type(value).__name__
+    return type_map.get(py_type, py_type)
+
+
 class SchemaFlattener:
     """
     Flattens OAS schemas into table rows for Excel templates.
@@ -78,7 +96,8 @@ class SchemaFlattener:
     
     def flatten_schema(self, schema_name: str, 
                        root_name: Optional[str] = None,
-                       section: Optional[str] = None) -> List[FlatRow]:
+                       section: Optional[str] = None,
+                       include_root: bool = True) -> List[FlatRow]:
         """
         Flatten a schema by name into rows.
         
@@ -86,6 +105,7 @@ class SchemaFlattener:
             schema_name: Name of the schema in components/schemas
             root_name: Override for the root element name
             section: Section label for response sheets
+            include_root: Whether to include a root row for the schema
             
         Returns:
             List of FlatRow objects
@@ -93,14 +113,34 @@ class SchemaFlattener:
         if schema_name not in self.schemas:
             return []
         
+        rows = []
         schema = self.schemas[schema_name]
-        return self._flatten_schema_def(
+        name = root_name or schema_name
+        
+        # Add root row for top-level component schemas
+        if include_root:
+            schema_type = schema.get('type', 'object')
+            root_row = FlatRow(
+                section=section,
+                name=name,
+                parent=None,
+                type=schema_type,
+                description=schema.get('description'),
+                mandatory=None  # Root schemas don't have mandatory flag
+            )
+            rows.append(root_row)
+        
+        # Flatten the schema with this name as parent for all children
+        child_rows = self._flatten_schema_def(
             schema, 
-            name=root_name or schema_name,
-            parent=None,
+            name=name,
+            parent=name if include_root else None,
             required=True,
-            section=section
+            section=section,
+            is_root=True  # Signal that this is the root call
         )
+        rows.extend(child_rows)
+        return rows
     
     def flatten_inline_schema(self, schema: Dict[str, Any],
                               name: str = 'root',
@@ -126,22 +166,29 @@ class SchemaFlattener:
                             name: str,
                             parent: Optional[str],
                             required: bool,
-                            section: Optional[str] = None) -> List[FlatRow]:
-        """Internal method to flatten a schema definition."""
+                            section: Optional[str] = None,
+                            is_root: bool = False) -> List[FlatRow]:
+        """Internal method to flatten a schema definition.
+        
+        Args:
+            is_root: If True, this is the root call from flatten_schema() and we should
+                     skip emitting a row for the schema itself (already emitted by caller).
+        """
         rows = []
         
-        # Handle $ref
+        # Handle $ref - always emit if not root, or emit with parent if root
         if '$ref' in schema:
             ref_name = self._extract_ref_name(schema['$ref'])
-            row = FlatRow(
-                section=section,
-                name=name,
-                parent=parent,
-                type='schema',
-                schema_name=ref_name,
-                mandatory='M' if required else 'O'
-            )
-            rows.append(row)
+            if not is_root:
+                row = FlatRow(
+                    section=section,
+                    name=name,
+                    parent=parent,
+                    type='schema',
+                    schema_name=ref_name,
+                    mandatory='M' if required else 'O'
+                )
+                rows.append(row)
             return rows
         
         # Handle combinators
@@ -157,11 +204,12 @@ class SchemaFlattener:
         
         # Handle object type or properties directly
         if schema.get('type') == 'object' or 'properties' in schema:
-            return self._handle_object(schema, name, parent, required, section)
+            return self._handle_object(schema, name, parent, required, section, is_root)
         
-        # Handle primitive type
-        row = self._create_primitive_row(schema, name, parent, required, section)
-        rows.append(row)
+        # Handle primitive type - only emit if not root (root already emitted)
+        if not is_root:
+            row = self._create_primitive_row(schema, name, parent, required, section)
+            rows.append(row)
         return rows
     
     def _handle_combinator(self, schema: Dict[str, Any],
@@ -260,13 +308,14 @@ class SchemaFlattener:
                        name: str,
                        parent: Optional[str],
                        required: bool,
-                       section: Optional[str]) -> List[FlatRow]:
+                       section: Optional[str],
+                       is_root: bool = False) -> List[FlatRow]:
         """Handle object type schemas."""
         rows = []
         required_props = set(schema.get('required', []))
         
-        # Add object row only if it has a parent (not root)
-        if parent is not None:
+        # Add object row only if it has a parent AND is not root (root already emitted by flatten_schema)
+        if parent is not None and not is_root:
             row = FlatRow(
                 section=section,
                 name=name,
@@ -277,13 +326,13 @@ class SchemaFlattener:
             )
             rows.append(row)
         
-        # Flatten properties
+        # Flatten properties - children always have this schema as parent
         for prop_name, prop_schema in schema.get('properties', {}).items():
             prop_required = prop_name in required_props
             child_rows = self._flatten_schema_def(
                 prop_schema,
                 name=prop_name,
-                parent=name if parent is not None else None,
+                parent=name,  # Children always have parent set
                 required=prop_required,
                 section=section
             )
@@ -385,6 +434,239 @@ class SchemaFlattener:
         
         return rows
     
+    def flatten_component_response(self, resp_name: str, response: Dict[str, Any]) -> List[FlatRow]:
+        """
+        Flatten a named component response including a root row.
+        
+        Args:
+            resp_name: Name of the response component
+            response: The response object
+            
+        Returns:
+            List of FlatRow objects with root row first
+        """
+        rows = []
+        
+        # Handle $ref
+        if '$ref' in response:
+            response = self._resolve_ref(response['$ref'])
+        
+        # Root row for the response
+        root_row = FlatRow(
+            section=None,
+            name=resp_name,
+            parent=None,
+            description=response.get('description'),
+            type=None,
+            mandatory=None
+        )
+        rows.append(root_row)
+        
+        # Iterate over response keys to preserve definition order
+        # This fixes ordering mismatches between xlsm and xlsx (e.g. content vs extensions)
+        for key, val in response.items():
+            if key == 'headers':
+                # Headers with parent set to response name
+                for header_name, header_def in val.items():
+                    header_rows = self._flatten_header(header_name, header_def)
+                    for row in header_rows:
+                        row.section = 'headers'
+                        row.parent = resp_name
+                    rows.extend(header_rows)
+            
+            elif key.startswith('x-'):
+                # Response-level x-sandbox extensions
+                self._flatten_response_extension(rows, key, val, resp_name)
+            
+            elif key == 'content':
+                # Content
+                for media_type, media_obj in val.items():
+                    schema = media_obj.get('schema', {})
+                    
+                    # Content row with media type
+                    content_row = FlatRow(
+                        section='content',
+                        name=media_type,
+                        parent=resp_name,
+                        type='schema' if '$ref' in schema else schema.get('type'),
+                        description=schema.get('description', '').strip() if schema.get('description') else None  # Get description from schema and strip
+                    )
+                    if '$ref' in schema:
+                        content_row.schema_name = self._extract_ref_name(schema['$ref'])
+                    rows.append(content_row)
+                    
+                    # Examples - parent is the content type (media_type)
+                    examples = media_obj.get('examples', {})
+                    for example_name, example_def in examples.items():
+                        ex_row = FlatRow(
+                            section='examples',
+                            name=example_name,
+                            parent=media_type,  # Parent is content type like 'text/plain'
+                            description=example_def.get('summary') if isinstance(example_def, dict) else None
+                        )
+                        rows.append(ex_row)
+                        
+                        # Flatten all example properties
+                        if isinstance(example_def, dict):
+                            for k, v in example_def.items():
+                                if k == 'summary':
+                                    continue
+                                self._flatten_example_child(rows, k, v, example_name)
+            
+            # Process all content types, not just the first one
+        
+        return rows
+    
+    def _flatten_example_value(self, rows: List[FlatRow], name: str, 
+                               value: Any, parent: str) -> None:
+        """Flatten an example value into rows."""
+        if isinstance(value, dict):
+            row = FlatRow(
+                section='examples',
+                name=name,
+                parent=parent,
+                type='object'
+            )
+            rows.append(row)
+            
+            for key, val in value.items():
+                if isinstance(val, dict):
+                    self._flatten_example_value(rows, key, val, name)
+                elif isinstance(val, list):
+                    rows.append(FlatRow(
+                        section='examples',
+                        name=key,
+                        parent=name,
+                        type='array',
+                        items_type=type(val[0]).__name__ if val else None
+                    ))
+                else:
+                    rows.append(FlatRow(
+                        section='examples',
+                        name=key,
+                        parent=name,
+                        type=type(val).__name__ if val is not None else 'string',
+                        example=str(val) if val is not None else None
+                    ))
+        elif isinstance(value, list):
+            rows.append(FlatRow(
+                section='examples',
+                name=name,
+                parent=parent,
+                type='array'
+            ))
+        else:
+            # Simple scalar values (string, number, etc.)
+            rows.append(FlatRow(
+                section='examples',
+                name=name,
+                parent=parent,
+                type=_python_type_to_oas(value),
+                example=str(value) if value is not None else None
+            ))
+    
+    def _flatten_example_child(self, rows: List[FlatRow], name: str,
+                               value: Any, parent: str) -> None:
+        """Flatten example child values into rows with section='examples'.
+        
+        Child values of examples (like 'value', x-sandbox extensions inside examples)
+        have section='examples' in the reference xlsm.
+        """
+        if isinstance(value, dict):
+            row = FlatRow(
+                section='examples',  # Child of example, section='examples'
+                name=name,
+                parent=parent,
+                type=None  # Set type to None (empty) for dicts, matching xlsm
+            )
+            rows.append(row)
+            
+            for key, val in value.items():
+                self._flatten_example_child(rows, key, val, name)
+        elif isinstance(value, list):
+            items_type = _python_type_to_oas(value[0]) if value else None
+            # If items are objects (dicts), we don't know the schema name from the example value alone.
+            # Reference xlsm has specific types (e.g. 'ErrorResponse') which are likely manual entries 
+            # or derived from schema context not available here.
+            # We leave it empty (None) to avoid incorrect 'object' type.
+            if items_type == 'object':
+                items_type = None 
+                
+            rows.append(FlatRow(
+                section='examples',
+                name=name,
+                parent=parent,
+                type='array',
+                items_type=items_type
+            ))
+            # Flatten array items - use array name as parent for item properties, not '-'
+            for i, item in enumerate(value):
+                if isinstance(item, dict):
+                    # Flatten dict properties directly with parent=array_name (e.g. 'errors')
+                    for key, val in item.items():
+                        self._flatten_example_child(rows, key, val, name)
+        else:
+            # Simple scalar values (string, number, etc.)
+            rows.append(FlatRow(
+                section='examples',
+                name=name,
+                parent=parent,
+                type=_python_type_to_oas(value),
+                example=str(value) if value is not None else None
+            ))
+    
+    def _flatten_response_extension(self, rows: List[FlatRow], name: str,
+                                    value: Any, parent: str) -> None:
+        """Flatten a response-level extension into rows with section=None.
+        
+        Unlike _flatten_example_value, this preserves section=None since
+        response-level extensions are direct descendants of the response root.
+        """
+        if isinstance(value, dict):
+            row = FlatRow(
+                section=None,  # Direct descendant of response, no section
+                name=name,
+                parent=parent,
+                type=None  # Container object has no type in xlsm (empty cell)
+            )
+            rows.append(row)
+            
+            for key, val in value.items():
+                if isinstance(val, dict):
+                    self._flatten_response_extension(rows, key, val, name)
+                elif isinstance(val, list):
+                    rows.append(FlatRow(
+                        section=None,
+                        name=key,
+                        parent=name,
+                        type='array',
+                        items_type=_python_type_to_oas(val[0]) if val else None
+                    ))
+                else:
+                    rows.append(FlatRow(
+                        section=None,
+                        name=key,
+                        parent=name,
+                        type=_python_type_to_oas(val),
+                        example=str(val) if val is not None else None
+                    ))
+        elif isinstance(value, list):
+            rows.append(FlatRow(
+                section=None,
+                name=name,
+                parent=parent,
+                type='array'
+            ))
+        else:
+            # Simple scalar values (string, number, etc.)
+            rows.append(FlatRow(
+                section=None,
+                name=name,
+                parent=parent,
+                type=_python_type_to_oas(value),
+                example=str(value) if value is not None else None
+            ))
+    
     def flatten_response(self, response: Dict[str, Any]) -> List[FlatRow]:
         """
         Flatten a response definition including headers and content.
@@ -438,11 +720,18 @@ class SchemaFlattener:
     
     def _flatten_header(self, name: str, header_def: Dict[str, Any]) -> List[FlatRow]:
         """Flatten a header definition."""
-        # Handle $ref
+        ref_name = None
+        
+        # Handle top-level $ref (common for headers)
         if '$ref' in header_def:
+            ref_name = self._extract_ref_name(header_def['$ref'])
             header_def = self._resolve_ref(header_def['$ref'])
         
         schema = header_def.get('schema', {})
+        
+        # Also handle schema-level $ref if present
+        if not ref_name and '$ref' in schema:
+            ref_name = self._extract_ref_name(schema['$ref'])
         
         row = FlatRow(
             name=name,
@@ -450,12 +739,16 @@ class SchemaFlattener:
             mandatory='M' if header_def.get('required') else 'O'
         )
         
-        if '$ref' in schema:
-            row.type = 'schema'
-            row.schema_name = self._extract_ref_name(schema['$ref'])
+        # Headers always have type='header'
+        row.type = 'header'
+        
+        if ref_name:
+            # If it's a reference (e.g. FpadResponseIdentifier), set schema name and clear format
+             row.schema_name = ref_name
+             row.format = None
         else:
-            row.type = schema.get('type')
-            row.format = schema.get('format')
+             # Inline definition
+             row.format = schema.get('format')
         
         return [row]
     

@@ -108,7 +108,8 @@ class OASParser:
     def _load(self) -> None:
         """Load and parse the OAS YAML file."""
         with open(self.filepath, 'r', encoding='utf-8') as f:
-            self.oas = yaml.safe_load(f)
+            self._raw_content = f.read()
+        self.oas = yaml.safe_load(self._raw_content)
     
     @property
     def version(self) -> str:
@@ -141,6 +142,8 @@ class OASParser:
                 result['contact_email'] = contact['email']
             if 'name' in contact:
                 result['contact_name'] = contact['name']
+            if 'url' in contact:
+                result['contact_url'] = contact['url']
         
         # License
         if 'license' in info:
@@ -334,6 +337,117 @@ class OASParser:
         """
         return self.oas.get('components', {})
     
+    def get_raw_extensions(self, path: str, method: str) -> str:
+        """
+        Extract raw custom extensions text from OAS file for a specific operation.
+        
+        This extracts the exact text from the file to preserve formatting (literal blocks),
+        but removes the common indentation so it fits cleanly into Excel.
+        """
+        if not hasattr(self, '_raw_content'):
+            return ""
+
+        lines = self._raw_content.split('\n')
+        
+        # State machine to find the specific operation
+        in_path = False
+        in_method = False
+        extensions_lines = []
+        collecting = False
+        base_indent = None
+        
+        path_indent = -1
+        method_indent = -1
+        
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                if collecting:
+                     extensions_lines.append(line)
+                continue
+                
+            indent = len(line) - len(line.lstrip())
+            
+            # Find Path
+            if not in_path and stripped.startswith(f"'{path}':"): # YAML path keys are often quoted
+                 path_indent = indent
+                 in_path = True
+                 continue
+            if not in_path and stripped.startswith(f"{path}:"):
+                 path_indent = indent
+                 in_path = True
+                 continue
+            
+            if in_path:
+                # Check if we left the path
+                if indent <= path_indent and not collecting:
+                    in_path = False
+                    continue
+                
+                # Find Method
+                if not in_method:
+                    target_method = method.lower()
+                    if stripped.startswith(f"{target_method}:") or stripped.startswith(f"'{target_method}':"):
+                        method_indent = indent
+                        in_method = True
+                        continue
+                
+                if in_method:
+                    # Check if we left the method
+                    if indent <= method_indent and not collecting:
+                         in_method = False
+                         # If we left the method we wanted, we are done
+                         break
+                    
+                    # Look for extensions
+                    if stripped.startswith('x-'):
+                        if not collecting:
+                            collecting = True
+                            base_indent = indent
+                        extensions_lines.append(line)
+                        continue
+                    
+                    if collecting:
+                        # If we are collecting, we continue until indentation drops below extension level
+                        # OR we encounter a new key at the same level as extensions (that isn't an extension)
+                        if indent < base_indent:
+                            collecting = False
+                            # Only break if we are sure we left the method? 
+                            # Actually extensions usually come at the end or together. 
+                            # But we might have other keys after. 
+                            # If indentation matches method_indent, it's a sibling key.
+                            if indent <= method_indent:
+                                break
+                        elif indent == base_indent and not stripped.startswith('x-'):
+                            collecting = False
+                            continue # Sibling key, not extension
+                        else:
+                             extensions_lines.append(line)
+
+        if not extensions_lines:
+            return ""
+            
+        # Normalize indentation (remove common prefix)
+        # Calculate min common indent (ignoring empty lines)
+        common_indent = 1000
+        for line in extensions_lines:
+            if line.strip():
+                ind = len(line) - len(line.lstrip())
+                if ind < common_indent:
+                    common_indent = ind
+        
+        if common_indent == 1000:
+            return "\n".join(extensions_lines)
+            
+        trimmed_lines = []
+        for line in extensions_lines:
+            if len(line) >= common_indent:
+                trimmed_lines.append(line[common_indent:])
+            else:
+                trimmed_lines.append(line)
+                
+        return "\n".join(trimmed_lines).strip()
+
     def get_schemas(self) -> Dict[str, Dict[str, Any]]:
         """Get all schemas from components."""
         return self.get_components().get('schemas', {})
