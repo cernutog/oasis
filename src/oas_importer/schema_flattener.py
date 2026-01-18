@@ -136,8 +136,8 @@ class SchemaFlattener:
             example = schema['example']
             if isinstance(example, (dict, list)):
                 import yaml
-                # Use YAML format (not JSON) for Excel - default_flow_style=False for readable format
-                row.example = yaml.dump(example, default_flow_style=False, allow_unicode=True).strip()
+                # Use YAML format (not JSON) for Excel - preserve original key order
+                row.example = yaml.dump(example, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
             else:
                 row.example = str(example)
         
@@ -149,7 +149,7 @@ class SchemaFlattener:
                 first = examples[0]
                 if isinstance(first, (dict, list)):
                     import yaml
-                    row.example = yaml.dump(first, default_flow_style=False, allow_unicode=True).strip()
+                    row.example = yaml.dump(first, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
                 else:
                     row.example = str(first)
 
