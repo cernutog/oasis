@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.11] - 2026-01-18
+- Fix: Preserved original property order in schema examples (Gold OAS order instead of alphabetical)
+- Fix: Regenerated templates now use correct YAML format for examples
+
 ## [v1.4] - 2026-01-06
 ### Rebranding
 - **Project Renamed**: Officially rebranded to **OASIS** (OAS Integration Suite).

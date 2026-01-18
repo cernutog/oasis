@@ -148,10 +148,18 @@ class SchemaFlattener:
                 # Take first example if it's a list
                 first = examples[0]
                 if isinstance(first, (dict, list)):
-                    import yaml
-                    row.example = yaml.dump(first, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
+                    row.example = self._serialize_example(first)
                 else:
                     row.example = str(first)
+
+    def _serialize_example(self, value: Any) -> Optional[str]:
+        """Helper to serialize example value to YAML string."""
+        if value is None:
+            return None
+        if isinstance(value, (dict, list)):
+            import yaml
+            return yaml.dump(value, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
+        return str(value)
 
     def flatten_schema(self, schema_name: str, 
                        root_name: Optional[str] = None,
@@ -250,7 +258,8 @@ class SchemaFlattener:
                     type='schema',
                     schema_name=ref_name,
                     mandatory='M' if required else 'O',
-                    example=str(schema.get('example')) if schema.get('example') else None  # Capture sibling example
+                    items_type=None,
+                    example=self._serialize_example(schema.get('example')) if schema.get('example') is not None else None  # Capture sibling example
                 )
                 rows.append(row)
             return rows
@@ -592,41 +601,15 @@ class SchemaFlattener:
     def _flatten_example_value(self, rows: List[FlatRow], name: str, 
                                value: Any, parent: str) -> None:
         """Flatten an example value into rows."""
-        if isinstance(value, dict):
+        if isinstance(value, (dict, list)):
             row = FlatRow(
                 section='examples',
                 name=name,
                 parent=parent,
-                type='object'
+                type='object' if isinstance(value, dict) else 'array',
+                example=self._serialize_example(value)
             )
             rows.append(row)
-            
-            for key, val in value.items():
-                if isinstance(val, dict):
-                    self._flatten_example_value(rows, key, val, name)
-                elif isinstance(val, list):
-                    rows.append(FlatRow(
-                        section='examples',
-                        name=key,
-                        parent=name,
-                        type='array',
-                        items_type=type(val[0]).__name__ if val else None
-                    ))
-                else:
-                    rows.append(FlatRow(
-                        section='examples',
-                        name=key,
-                        parent=name,
-                        type=type(val).__name__ if val is not None else 'string',
-                        example=str(val) if val is not None else None
-                    ))
-        elif isinstance(value, list):
-            rows.append(FlatRow(
-                section='examples',
-                name=name,
-                parent=parent,
-                type='array'
-            ))
         else:
             # Simple scalar values (string, number, etc.)
             rows.append(FlatRow(
@@ -644,6 +627,18 @@ class SchemaFlattener:
         Child values of examples (like 'value', x-sandbox extensions inside examples)
         have section='examples' in the reference xlsm.
         """
+        # Fix: Serialize 'value' property as YAML block if it's a complex object/array
+        if name == 'value' and isinstance(value, (dict, list)):
+             row = FlatRow(
+                 section='examples',
+                 name=name,
+                 parent=parent,
+                 type='object' if isinstance(value, dict) else 'array',
+                 example=self._serialize_example(value)
+             )
+             rows.append(row)
+             return
+
         if isinstance(value, dict):
             row = FlatRow(
                 section='examples',  # Child of example, section='examples'
