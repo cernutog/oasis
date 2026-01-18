@@ -58,11 +58,17 @@ def handle_schema_reference(type_val: str, schema_ref: str, desc, version: str) 
         return {"type": "array", "items": {"$ref": ref_path}}
 
     # OAS 3.0 Workaround: $ref + description requires allOf wrapper
+    # OAS 3.1: $ref + description can coexist as siblings
     has_desc = pd.notna(desc)
     is_oas30 = version.startswith("3.0")
 
-    if is_oas30 and has_desc:
-        return {"allOf": [{"$ref": ref_path}], "description": str(desc)}
+    if has_desc:
+        if is_oas30:
+            # OAS 3.0: use allOf workaround
+            return {"allOf": [{"$ref": ref_path}], "description": str(desc)}
+        else:
+            # OAS 3.1: description as sibling of $ref
+            return {"$ref": ref_path, "description": str(desc)}
     else:
         return {"$ref": ref_path}
 
@@ -246,12 +252,15 @@ def map_type_to_schema(row, version: str, is_node: bool = False) -> dict:
             schema["items"] = {}
 
     # Add examples (at the end for YAML formatting)
+    # Both OAS 3.0 and 3.1 support examples at schema level
+    # OAS 3.1 uses `examples` array, OAS 3.0 uses singular `example`
     ex = get_col_value(row, ["Example", "Examples"])
     if pd.notna(ex):
         parsed_ex = parse_example_string(ex)
         if version.startswith("3.1"):
             schema["examples"] = [parsed_ex]
         else:
+            # OAS 3.0: use singular example
             schema["example"] = parsed_ex
 
     return schema

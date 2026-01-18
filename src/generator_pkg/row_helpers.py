@@ -80,10 +80,15 @@ def parse_example_string(ex_str):
     :param ex_str: String to parse
     :return: Parsed value (dict, list, or original string if parsing fails)
     """
-    if not ex_str:
+    # Return None for actual None, but preserve empty string ''
+    if ex_str is None:
         return None
-
+    
     ex_str = str(ex_str).strip()
+    
+    # Preserve empty string (e.g., for 204 No Content responses)
+    if ex_str == '':
+        return ''
 
     # 1. Try JSON if it looks like JSON
     if ex_str.startswith("{") or ex_str.startswith("["):

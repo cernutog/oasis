@@ -46,9 +46,16 @@ def build_response_tree(df, get_name_fn, get_parent_fn, get_col_value_fn):
         nodes[idx] = node
 
         # Linking Logic
-        if section in ["header", "headers", "content"]:
+        # Headers always go to root (they're top-level response properties)
+        # Content nodes without parent go to root (they're media types)
+        # Content nodes WITH parent should be linked to their parent (they're schema properties)
+        if section in ["header", "headers"]:
+            roots[0]["children"].append(node)
+        elif section == "content" and not parent_str:
+            # Media type node (no parent) - add to root
             roots[0]["children"].append(node)
         else:
+            # Has a parent or non-header/content section - link to parent
             target_idx = -1
             if parent_str in last_seen:
                 target_idx = last_seen[parent_str]
@@ -282,7 +289,13 @@ def build_examples_from_rows(df):
     def build_node(node):
         if not node["children"]:
             val = node["value"]
-            return parse_example_string(val) if pd.notna(val) else None
+            node_type = str(node.get("type", "")).strip().lower() if pd.notna(node.get("type")) else ""
+            if pd.notna(val):
+                return parse_example_string(val)
+            else:
+                # For string types, return empty string instead of None
+                # This handles 204 No Content responses with value: '' 
+                return "" if node_type == "string" else None
 
         list_grouped = {}
         has_indexed_children = False
@@ -369,7 +382,76 @@ def process_response_headers(header_nodes, headers_components: dict, version: st
     return headers
 
 
-def process_response_content(content_nodes, schema_nodes, root_node, version: str):
+def coerce_example_types(value, schema, components_schemas=None):
+    """
+    Recursively coerce example value types to match schema expectations.
+    
+    When schema type is 'string' but value is a number, converts to quoted string.
+    This ensures proper YAML serialization while respecting the schema.
+    
+    Args:
+        value: The example value to check
+        schema: The schema definition for this value
+        components_schemas: Dict of component schemas for $ref resolution
+        
+    Returns:
+        Coerced value with proper types
+    """
+    if schema is None or not isinstance(schema, dict):
+        return value
+    
+    # Resolve $ref if present (direct $ref)
+    if '$ref' in schema and components_schemas:
+        ref_path = schema['$ref']
+        if ref_path.startswith('#/components/schemas/'):
+            ref_name = ref_path.split('/')[-1]
+            schema = components_schemas.get(ref_name, {})
+    
+    # For allOf with single $ref + description (common pattern), follow the $ref
+    # to get schema info, but DON'T modify the original schema structure
+    effective_schema = schema
+    if 'allOf' in schema and components_schemas:
+        for sub_schema in schema['allOf']:
+            if isinstance(sub_schema, dict) and '$ref' in sub_schema:
+                ref_path = sub_schema['$ref']
+                if ref_path.startswith('#/components/schemas/'):
+                    ref_name = ref_path.split('/')[-1]
+                    resolved = components_schemas.get(ref_name, {})
+                    # Use resolved schema for type checking only, don't modify original
+                    effective_schema = resolved
+                    break
+    
+    schema_type = effective_schema.get('type')
+    
+    # Handle object: recurse into properties
+    if isinstance(value, dict):
+        properties = effective_schema.get('properties', {})
+        # Also check allOf/anyOf/oneOf for properties in effective_schema
+        for combinator in ['allOf', 'anyOf', 'oneOf']:
+            if combinator in effective_schema:
+                for sub_schema in effective_schema[combinator]:
+                    if isinstance(sub_schema, dict):
+                        properties.update(sub_schema.get('properties', {}))
+        
+        result = {}
+        for k, v in value.items():
+            prop_schema = properties.get(k, {})
+            result[k] = coerce_example_types(v, prop_schema, components_schemas)
+        return result
+    
+    # Handle array: recurse into items
+    if isinstance(value, list):
+        items_schema = effective_schema.get('items', {})
+        return [coerce_example_types(item, items_schema, components_schemas) for item in value]
+    
+    # Handle scalar: coerce numeric to string if schema expects string  
+    if schema_type == 'string' and isinstance(value, (int, float)):
+        # Convert number to string - YAML dumper will add appropriate quotes
+        return str(value)
+    
+    return value
+
+def process_response_content(content_nodes, schema_nodes, root_node, version: str, components_schemas=None):
     """
     Processes content nodes (explicit) or schema nodes (implicit) into OAS content dict.
     
@@ -377,6 +459,7 @@ def process_response_content(content_nodes, schema_nodes, root_node, version: st
     :param schema_nodes: List of schema node dicts
     :param root_node: Root node dict
     :param version: OAS version string
+    :param components_schemas: Dict of component schemas for $ref resolution
     :return: Content dict or None
     """
     if content_nodes:
@@ -429,10 +512,12 @@ def process_response_content(content_nodes, schema_nodes, root_node, version: st
             if examples:
                 content_entry["examples"] = {}
                 for k, v in examples.items():
-                    if isinstance(v, dict) and "value" in v:
-                        content_entry["examples"][k] = v
+                    # Coerce example types based on schema
+                    coerced_v = coerce_example_types(v, schema, components_schemas)
+                    if isinstance(coerced_v, dict) and "value" in coerced_v:
+                        content_entry["examples"][k] = coerced_v
                     else:
-                        content_entry["examples"][k] = {"value": v}
+                        content_entry["examples"][k] = {"value": coerced_v}
 
             content[content_type] = content_entry
 

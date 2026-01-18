@@ -26,7 +26,7 @@ try:
     from .preferences import PreferencesManager
     from .preferences_dialog import PreferencesDialog
     from .doc_viewer import DockedDocViewer
-    from .version import VERSION
+    from .version import VERSION, FULL_VERSION
     from .splash_screen import SplashScreen
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
@@ -37,7 +37,7 @@ except ImportError:
     from preferences import PreferencesManager
     from preferences_dialog import PreferencesDialog
     from doc_viewer import DockedDocViewer
-    from version import VERSION
+    from version import VERSION, FULL_VERSION
     from splash_screen import SplashScreen
 
 from chlorophyll import CodeView
@@ -128,7 +128,7 @@ class OASGenApp(ctk.CTk):
         super().__init__()
 
         # Window Setup
-        self.title(f"OASIS - OAS Integration Suite v{VERSION}")
+        self.title(f"OASIS - OAS Integration Suite v{FULL_VERSION}")
         self.geometry("1100x700")
 
         # Icon Setup
@@ -298,7 +298,24 @@ class OASGenApp(ctk.CTk):
         # ==========================
         # TAB 2: VALIDATION
         # ==========================
-        self.linter = SpectralRunner()
+        # TAB 2: VALIDATION
+        # ==========================
+        # Resolve Spectral Binary (Standalone)
+        spectral_cmd = "spectral" # Fallback
+        
+        # 1. Check Bundled (Frozen)
+        if getattr(sys, 'frozen', False):
+            bundled_path = os.path.join(sys._MEIPASS, "src", "bin", "spectral.exe")
+            if os.path.exists(bundled_path):
+                spectral_cmd = bundled_path
+        # 2. Check Local (Dev)
+        else:
+            base_path = os.path.dirname(os.path.abspath(__file__))
+            local_path = os.path.join(base_path, "bin", "spectral.exe")
+            if os.path.exists(local_path):
+                spectral_cmd = local_path
+                
+        self.linter = SpectralRunner(spectral_cmd=spectral_cmd)
         self.last_lint_result = None
         self.last_generated_files = []  # Track files from generation
         self.validated_file = None  # Track which file was validated

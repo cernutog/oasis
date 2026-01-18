@@ -35,9 +35,17 @@ def generate_oas(
 
     # 1. Setup Paths
     files_in_dir = os.listdir(base_dir)
-    index_path = find_best_match_file("$index.xlsm", base_dir, files_in_dir)
+    
+    # Look for $index.xlsx directly (project standard is .xlsx, not .xlsm)
+    index_filename = "$index.xlsx"
+    if index_filename in files_in_dir:
+        index_path = os.path.join(base_dir, index_filename)
+    else:
+        # Fallback to fuzzy match for legacy support
+        index_path = find_best_match_file("$index.xlsx", base_dir, files_in_dir)
+    
     if not index_path:
-        log_callback("Error: $index.xlsm not found in the specified directory.")
+        log_callback("Error: $index.xlsx not found in the specified directory.")
         return
 
     # 2. Parse Master Index

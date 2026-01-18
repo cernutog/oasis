@@ -94,6 +94,65 @@ class SchemaFlattener:
         self.schemas = oas_dict.get('components', {}).get('schemas', {})
         self._visited: Set[str] = set()  # Prevent infinite recursion
     
+    def _populate_row_from_schema(self, row: FlatRow, schema: Dict[str, Any]) -> None:
+        """
+        Populate a FlatRow with ALL available properties from a schema.
+        This ensures complete data capture for min/max, enum, examples, pattern, etc.
+        
+        Args:
+            row: The FlatRow to populate
+            schema: The schema dictionary to extract data from
+        """
+        # Format
+        if schema.get('format'):
+            row.format = schema['format']
+        
+        # Min constraints (value, length, or items)
+        if schema.get('minimum') is not None:
+            row.min_value = str(schema['minimum'])
+        elif schema.get('minLength') is not None:
+            row.min_value = str(schema['minLength'])
+        elif schema.get('minItems') is not None:
+            row.min_value = str(schema['minItems'])
+        
+        # Max constraints (value, length, or items)
+        if schema.get('maximum') is not None:
+            row.max_value = str(schema['maximum'])
+        elif schema.get('maxLength') is not None:
+            row.max_value = str(schema['maxLength'])
+        elif schema.get('maxItems') is not None:
+            row.max_value = str(schema['maxItems'])
+        
+        # Pattern/Regex
+        if schema.get('pattern'):
+            row.regex = schema['pattern']
+        
+        # Enum values
+        if schema.get('enum'):
+            row.allowed_values = ', '.join(str(v) for v in schema['enum'])
+        
+        # Example (singular)
+        if schema.get('example') is not None:
+            example = schema['example']
+            if isinstance(example, (dict, list)):
+                import yaml
+                # Use YAML format (not JSON) for Excel - default_flow_style=False for readable format
+                row.example = yaml.dump(example, default_flow_style=False, allow_unicode=True).strip()
+            else:
+                row.example = str(example)
+        
+        # Examples (plural - OAS 3.1 style array)
+        if schema.get('examples') and not row.example:
+            examples = schema['examples']
+            if isinstance(examples, list) and examples:
+                # Take first example if it's a list
+                first = examples[0]
+                if isinstance(first, (dict, list)):
+                    import yaml
+                    row.example = yaml.dump(first, default_flow_style=False, allow_unicode=True).strip()
+                else:
+                    row.example = str(first)
+
     def flatten_schema(self, schema_name: str, 
                        root_name: Optional[str] = None,
                        section: Optional[str] = None,
@@ -128,6 +187,8 @@ class SchemaFlattener:
                 description=schema.get('description'),
                 mandatory=None  # Root schemas don't have mandatory flag
             )
+            # Populate all other fields (enum, examples, min/max, pattern, format, etc.)
+            self._populate_row_from_schema(root_row, schema)
             rows.append(root_row)
         
         # Flatten the schema with this name as parent for all children
@@ -177,6 +238,7 @@ class SchemaFlattener:
         rows = []
         
         # Handle $ref - always emit if not root, or emit with parent if root
+        # Also capture sibling fields like description and example (valid in OAS 3.1)
         if '$ref' in schema:
             ref_name = self._extract_ref_name(schema['$ref'])
             if not is_root:
@@ -184,9 +246,11 @@ class SchemaFlattener:
                     section=section,
                     name=name,
                     parent=parent,
+                    description=schema.get('description'),  # Capture sibling description
                     type='schema',
                     schema_name=ref_name,
-                    mandatory='M' if required else 'O'
+                    mandatory='M' if required else 'O',
+                    example=str(schema.get('example')) if schema.get('example') else None  # Capture sibling example
                 )
                 rows.append(row)
             return rows
@@ -200,7 +264,7 @@ class SchemaFlattener:
         
         # Handle array type
         if schema.get('type') == 'array':
-            return self._handle_array(schema, name, parent, required, section)
+            return self._handle_array(schema, name, parent, required, section, is_root)
         
         # Handle object type or properties directly
         if schema.get('type') == 'object' or 'properties' in schema:
@@ -260,46 +324,64 @@ class SchemaFlattener:
                       name: str,
                       parent: Optional[str],
                       required: bool,
-                      section: Optional[str]) -> List[FlatRow]:
-        """Handle array type schemas."""
+                      section: Optional[str],
+                      is_root: bool = False) -> List[FlatRow]:
+        """Handle array type schemas.
+        
+        Args:
+            is_root: If True, skip emitting the array row (already emitted by flatten_schema)
+        """
         rows = []
         items = schema.get('items', {})
         
-        row = FlatRow(
-            section=section,
-            name=name,
-            parent=parent,
-            type='array',
-            description=schema.get('description'),
-            mandatory='M' if required else 'O',
-            min_value=str(schema.get('minItems')) if schema.get('minItems') is not None else None,
-            max_value=str(schema.get('maxItems')) if schema.get('maxItems') is not None else None
-        )
-        
-        # Handle items type
-        if '$ref' in items:
-            row.items_type = 'schema'
-            row.schema_name = self._extract_ref_name(items['$ref'])
-        elif items.get('type'):
-            row.items_type = items.get('type')
-            if items.get('format'):
-                row.format = items['format']
-        
-        rows.append(row)
-        
-        # If items is an inline object, flatten it as children
-        if items.get('type') == 'object' or 'properties' in items:
-            child_rows = self._flatten_schema_def(
-                items,
-                name='items',
-                parent=name,
-                required=True,
-                section=section
+        # Only emit array row if not root (root row already emitted by flatten_schema)
+        if not is_root:
+            row = FlatRow(
+                section=section,
+                name=name,
+                parent=parent,
+                type='array',
+                description=schema.get('description'),
+                mandatory='M' if required else 'O',
+                min_value=str(schema.get('minItems')) if schema.get('minItems') is not None else None,
+                max_value=str(schema.get('maxItems')) if schema.get('maxItems') is not None else None
             )
-            # Skip the first row (the object row itself) - we already have the array row
-            if child_rows and child_rows[0].type in ('object', None):
-                rows.extend(child_rows[1:])
-            else:
+            
+            # Handle items type
+            combinator = next((k for k in ['oneOf', 'allOf', 'anyOf'] if k in items), None)
+            
+            if combinator:
+                 row.items_type = combinator
+                 # Collect refs
+                 refs = []
+                 for item in items[combinator]:
+                     if '$ref' in item:
+                         refs.append(self._extract_ref_name(item['$ref']))
+                 if refs:
+                     row.schema_name = ', '.join(refs)
+            elif '$ref' in items:
+                row.items_type = 'schema'
+                row.schema_name = self._extract_ref_name(items['$ref'])
+            elif items.get('type'):
+                row.items_type = items.get('type')
+                if items.get('format'):
+                    row.format = items['format']
+            
+            rows.append(row)
+        
+        # If items is an inline object, flatten its properties directly with array as parent
+        if items.get('type') == 'object' or 'properties' in items:
+            # Flatten the object's properties directly, using the array name as parent
+            # This way the generator knows these are properties of the array's items
+            for prop_name, prop_schema in items.get('properties', {}).items():
+                is_required = prop_name in items.get('required', [])
+                child_rows = self._flatten_schema_def(
+                    prop_schema,
+                    name=prop_name,
+                    parent=name,  # Use array name as parent, not 'items'
+                    required=is_required,
+                    section=section
+                )
                 rows.extend(child_rows)
         
         return rows
@@ -363,35 +445,12 @@ class SchemaFlattener:
             name=name,
             parent=parent,
             type=schema.get('type'),
-            format=schema.get('format'),
             description=schema.get('description'),
             mandatory='M' if required else 'O'
         )
         
-        # Constraints
-        if schema.get('minimum') is not None:
-            row.min_value = str(schema['minimum'])
-        elif schema.get('minLength') is not None:
-            row.min_value = str(schema['minLength'])
-        
-        if schema.get('maximum') is not None:
-            row.max_value = str(schema['maximum'])
-        elif schema.get('maxLength') is not None:
-            row.max_value = str(schema['maxLength'])
-        
-        if schema.get('pattern'):
-            row.regex = schema['pattern']
-        
-        if schema.get('enum'):
-            row.allowed_values = ', '.join(str(v) for v in schema['enum'])
-        
-        if schema.get('example') is not None:
-            example = schema['example']
-            if isinstance(example, (dict, list)):
-                import json
-                row.example = json.dumps(example)
-            else:
-                row.example = str(example)
+        # Use helper to populate all other fields consistently
+        self._populate_row_from_schema(row, schema)
         
         return row
     
@@ -417,15 +476,28 @@ class SchemaFlattener:
         for media_type, media_obj in content.items():
             schema = media_obj.get('schema', {})
             
+            # 1. Content Root Row (Media Type)
+            # Reference has explicit row for 'application/json' with Section='content'
+            root_row = FlatRow(
+                section='content' if section is None else section, # usually section is None for Body sheet
+                name=media_type,
+                type=schema.get('type') or 'object',
+                description=schema.get('description'),
+                mandatory='M'
+            )
+            rows.append(root_row)
+            
+            # 2. Flatten Schema
             if '$ref' in schema:
                 ref_name = self._extract_ref_name(schema['$ref'])
-                # Flatten the referenced schema
-                rows.extend(self.flatten_schema(ref_name, section=section))
+                # Use Reference directly instead of flattening
+                # This ensures Generator uses $ref to Global Component
+                root_row.schema_name = ref_name
+                root_row.type = 'schema'
             else:
-                # Inline schema
                 rows.extend(self.flatten_inline_schema(
                     schema, 
-                    name='body',
+                    name=media_type,
                     section=section
                 ))
             
@@ -599,12 +671,13 @@ class SchemaFlattener:
                 type='array',
                 items_type=items_type
             ))
-            # Flatten array items - use array name as parent for item properties, not '-'
+            # Flatten array items - use array name[i] as parent for item properties
             for i, item in enumerate(value):
                 if isinstance(item, dict):
-                    # Flatten dict properties directly with parent=array_name (e.g. 'errors')
+                    # Flatten dict properties directly with parent=array_name[i]
+                    parent_indexed = f"{name}[{i}]"
                     for key, val in item.items():
-                        self._flatten_example_child(rows, key, val, name)
+                        self._flatten_example_child(rows, key, val, parent_indexed)
         else:
             # Simple scalar values (string, number, etc.)
             rows.append(FlatRow(
@@ -695,17 +768,56 @@ class SchemaFlattener:
         for media_type, media_obj in content.items():
             schema = media_obj.get('schema', {})
             
+            # Check for $ref
+            ref_name = None
             if '$ref' in schema:
                 ref_name = self._extract_ref_name(schema['$ref'])
-                content_rows = self.flatten_schema(ref_name, section='content')
-            else:
-                content_rows = self.flatten_inline_schema(
+
+            # 1. Content Root Row (Media Type)
+            content_row = FlatRow(
+                section='content',
+                name=media_type,
+                type='schema' if ref_name else (schema.get('type') or 'object'),
+                description=schema.get('description'),
+                mandatory='M',  # Content is usually mandatory if present
+                schema_name=ref_name
+            )
+            rows.append(content_row)
+            
+            # 2. Flatten Schema Children
+            # Only flatten if NOT a Ref (preserves usage of Global Components)
+            if not ref_name:
+                child_rows = self._flatten_schema_def(
                     schema,
-                    name='body',
-                    section='content'
+                    name=media_type,
+                    parent=None, # Parent of root is None
+                    required=True,
+                    section='content',
+                    is_root=True # Skip re-emitting media_type row
                 )
-            rows.extend(content_rows)
-            break  # Only first media type
+                rows.extend(child_rows)
+            
+            # 3. Examples
+            examples = media_obj.get('examples', {})
+            for example_name, example_def in examples.items():
+                ex_row = FlatRow(
+                    section='examples',
+                    name=example_name,
+                    parent=media_type,  # Parent is content type
+                    description=example_def.get('summary') if isinstance(example_def, dict) else None
+                )
+                rows.append(ex_row)
+                
+                # Flatten all example properties
+                if isinstance(example_def, dict):
+                    for k, v in example_def.items():
+                        if k == 'summary':
+                            continue
+                        self._flatten_example_child(rows, k, v, example_name)
+            
+            # Only process first media type? Reference supports only one usually.
+            # But loop implies support. Let's not break.
+            break
         
         # Links
         for link_name, link_def in response.get('links', {}).items():

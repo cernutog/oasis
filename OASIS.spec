@@ -1,18 +1,24 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
+import sys
 from PyInstaller.utils.hooks import collect_all
-# Explicit paths for Python 3.13 Tcl/Tk
-PYTHON_HOME = r"C:\Users\giuse\AppData\Local\Programs\Python\Python313"
+
+# Dynamic paths for Tcl/Tk - uses Python's base prefix
+PYTHON_HOME = sys.base_prefix
 TCL_ROOT = os.path.join(PYTHON_HOME, "tcl")
 DLLS_ROOT = os.path.join(PYTHON_HOME, "DLLs")
+TKINTER_LIB = os.path.join(PYTHON_HOME, "Lib", "tkinter")
 
 datas = [
     ('src/resources/redoc.standalone.js', 'src/resources'),
     ('src/colorschemes', 'src/colorschemes'),  # Custom color schemes
     ('src', 'src'),  # Include entire src directory to ensure all modules are available
     ('icon.ico', '.'),
-    (os.path.join(TCL_ROOT, "tcl8.6"), "tcl"),
-    (os.path.join(TCL_ROOT, "tk8.6"), "tk"),
+    (os.path.join(TCL_ROOT, "tcl8.6"), "tcl/tcl8.6"),
+    (os.path.join(TCL_ROOT, "tk8.6"), "tcl/tk8.6"),
+    ('src/bin/spectral.exe', 'src/bin'),
+    # Explicitly include tkinter Python module
+    (TKINTER_LIB, "tkinter"),
 ]
 binaries = [
     (os.path.join(DLLS_ROOT, "tcl86t.dll"), "."),
@@ -36,6 +42,9 @@ datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 # tkinterweb for embedded HTML viewer
 tmp_ret = collect_all('tkinterweb')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
+# Tkinter - ensure all Python files are included
+tmp_ret = collect_all('tkinter')
+datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
 a = Analysis(
     ['run_gui.py'],
@@ -45,7 +54,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['rthook_tcl.py'],
     excludes=[],
     noarchive=False,
     optimize=0,

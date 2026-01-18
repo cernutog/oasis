@@ -226,10 +226,11 @@ class OASToExcelConverter:
             # Column 9: Custom Extensions as raw YAML text (preserves original formatting)
             if op.extensions:
                 ext_text = self.parser.get_raw_extensions(op.path, op.method)
-                # Re-indent lines 2+ by 6 spaces to match Excel template style
-                if ext_text and '\n' in ext_text:
+                # Add 6-space indent to ALL lines to match Excel template style
+                # (original templates have top-level x-sandbox keys at 6-space indent)
+                if ext_text:
                     lines = ext_text.split('\n')
-                    indented_lines = [lines[0]] + [('      ' + line) if line else line for line in lines[1:]]
+                    indented_lines = [('      ' + line) if line.strip() else line for line in lines]
                     ext_text = '\n'.join(indented_lines)
                 ws.cell(row=row_idx, column=9, value=ext_text)
             
@@ -287,8 +288,10 @@ class OASToExcelConverter:
             # Allowed values (enum) - col 13
             enum = schema.get('enum', [])
             ws.cell(row=row_idx, column=13, value=', '.join(str(e) for e in enum) if enum else '')
-            # Example: try schema.example, then schema.examples[0], then resolve $ref
-            example = schema.get('example')
+            # Example: try param_def.example first (parameter level), then schema.example, then schema.examples[0], then resolve $ref
+            example = param_def.get('example')
+            if example is None:
+                example = schema.get('example')
             if example is None:
                 examples_list = schema.get('examples')
                 if examples_list and isinstance(examples_list, list) and len(examples_list) > 0:
@@ -340,8 +343,10 @@ class OASToExcelConverter:
             ws.cell(row=row_idx, column=11, value=schema.get('pattern', ''))  # Regex
             enum = schema.get('enum', [])
             ws.cell(row=row_idx, column=12, value=', '.join(str(e) for e in enum) if enum else '')  # Allowed value
-            # Example: try schema.example, then schema.examples[0], then resolve $ref
-            example = schema.get('example')
+            # Example: try header_def.example first, then schema.example, then schema.examples[0], then resolve $ref
+            example = header_def.get('example')
+            if example is None:
+                example = schema.get('example')
             if example is None:
                 examples_list = schema.get('examples')
                 if examples_list and isinstance(examples_list, list) and len(examples_list) > 0:
@@ -495,41 +500,58 @@ class OASToExcelConverter:
                           default_flow_style=False, allow_unicode=True, 
                           sort_keys=False, width=10000)
         
-        # Add indentation to match template format (6 spaces prefix)
-        lines = result.split('\n')
-        indented_lines = []
-        for i, line in enumerate(lines):
-            if i == 0:
-                # First line gets 6 spaces prefix
-                indented_lines.append('      ' + line)
-            elif line.strip():
-                # Subsequent lines keep their relative indentation plus 6 spaces base
-                indented_lines.append('      ' + line)
-            else:
-                indented_lines.append(line)
-        
-        return '\n'.join(indented_lines).rstrip()
+        return result.rstrip()
 
     def _convert_parameters(self, parameters: List) -> List[Dict[str, Any]]:
         """Convert OAS parameters to Parameters sheet format."""
         rows = []
         for param in parameters:
-            rows.append({
-                'Name': param.name,
-                'Description': param.description or '',
-                'In': param.location,
-                'Type': param.schema_type or param.schema_ref or '',
-                'Items Data Type (Array only)': param.items_type or '',
-                "Schema Name\n(for Type or Items Data Type = 'schema')": param.schema_ref or '',
-                'Format': param.schema_format or '',
-                'Mandatory': 'M' if param.required else 'O',
-                'Min  \nValue/Length/Item': self._format_min(param),
-                'Max  \nValue/Length/Item': self._format_max(param),
-                'PatternEba': '',
-                'Regex': param.pattern or '',
-                'Allowed values': ', '.join(param.enum) if param.enum else '',
-                'Example': str(param.example) if param.example else ''
-            })
+            # check for top-level ref
+            is_ref = getattr(param, 'ref', None) is not None
+            
+            if is_ref:
+                # Ref with possible description override (valid in OAS 3.1)
+                ref_name = param.ref.split('/')[-1]
+                # Use description if present (override), else empty
+                param_desc = param.description or ''
+                rows.append({
+                    'Name': ref_name,
+                    'Description': param_desc,  # Include if present (enables x-comment inline resolution)
+                    'In': '',  # Empty for refs
+                    'Type': 'parameter',  # Singular form
+                    'Items Data Type (Array only)': '',
+                    "Schema Name\n(for Type or Items Data Type = 'schema')": ref_name,
+                    'Format': '',
+                    'Mandatory': '',  # Empty - not specified at this level
+                    'Min  \nValue/Length/Item': '',
+                    'Max  \nValue/Length/Item': '',
+                    'PatternEba': '',
+                    'Regex': '',
+                    'Allowed values': '',
+                    'Example': ''  # Empty - not specified at this level
+                })
+            else:
+                # Inline parameter: include all data
+                schema_name = param.schema_ref or ''
+                type_val = param.schema_type or param.schema_ref or ''
+                param_desc = param.description or ''
+                
+                rows.append({
+                    'Name': param.name,
+                    'Description': param_desc,
+                    'In': param.location,
+                    'Type': type_val,
+                    'Items Data Type (Array only)': param.items_type or '',
+                    "Schema Name\n(for Type or Items Data Type = 'schema')": schema_name,
+                    'Format': param.schema_format or '',
+                    'Mandatory': 'M' if param.required else 'O',
+                    'Min  \nValue/Length/Item': self._format_min(param),
+                    'Max  \nValue/Length/Item': self._format_max(param),
+                    'PatternEba': '',
+                    'Regex': param.pattern or '',
+                    'Allowed values': ', '.join(param.enum) if param.enum else '',
+                    'Example': str(param.example) if param.example else ''
+                })
         return rows
     
     def _flatten_request_body(self, request_body: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -539,6 +561,29 @@ class OASToExcelConverter:
     
     def _flatten_response(self, response) -> List[Dict[str, Any]]:
         """Flatten response to Response sheet format."""
+        # Check for top-level ref
+        if getattr(response, 'ref', None):
+             ref_name = response.ref.split('/')[-1]
+             # Create a single row for the Reference
+             # Matches Reference Excel format: Section='content', Name=Description, Type='response', SchemaName=RefName
+             return [{
+                 'Section': 'content',
+                 'Name': response.description or 'Response',
+                 'Parent': '',
+                 'Description': response.description or '',
+                 'Type': 'response',
+                 'Items Data Type \n(Array only)': '',
+                 "Schema Name\n(for Type or Items Data Type = 'schema')": ref_name,
+                 'Format': '',
+                 'Mandatory': '',
+                 'Min  \nValue/Length/Item': '',
+                 'Max  \nValue/Length/Item': '',
+                 'PatternEba': '',
+                 'Regex': '',
+                 'Allowed value': '',
+                 'Example': ''
+             }]
+
         # Convert ResponseInfo to dict format expected by flattener
         response_dict = {
             'description': response.description,
@@ -597,21 +642,75 @@ class OASToExcelConverter:
         """Extract description from request body."""
         return request_body.get('description', '')
     
+    def _coerce_example_types(self, value: Any, schema: Dict[str, Any]) -> Any:
+        """
+        Recursively coerce example value types to match schema expectations.
+        
+        If schema type is 'string' but value is a number/date, converts to string.
+        This ensures proper YAML serialization with quotes preserved.
+        
+        Args:
+            value: The example value to check
+            schema: The schema definition for this value
+            
+        Returns:
+            Coerced value with proper types
+        """
+        if schema is None:
+            return value
+            
+        # Resolve $ref if present
+        if '$ref' in schema:
+            ref_path = schema['$ref']
+            if ref_path.startswith('#/components/schemas/'):
+                ref_name = ref_path.split('/')[-1]
+                schema = self.parser.oas.get('components', {}).get('schemas', {}).get(ref_name, {})
+        
+        schema_type = schema.get('type')
+        
+        # Handle object: recurse into properties
+        if isinstance(value, dict):
+            properties = schema.get('properties', {})
+            result = {}
+            for k, v in value.items():
+                prop_schema = properties.get(k, {})
+                result[k] = self._coerce_example_types(v, prop_schema)
+            return result
+        
+        # Handle array: recurse into items
+        if isinstance(value, list):
+            items_schema = schema.get('items', {})
+            return [self._coerce_example_types(item, items_schema) for item in value]
+        
+        # Handle scalar: coerce numeric to string if schema expects string
+        if schema_type == 'string' and isinstance(value, (int, float)):
+            # Convert number to string - YAML dumper will add quotes as needed
+            return str(value)
+        
+        return value
+
     def _extract_body_examples(self, request_body: Dict[str, Any]) -> List[Dict[str, str]]:
-        """Extract examples from request body in YAML format."""
+        """Extract examples from request body in YAML format, preserving string types."""
         import yaml
         
         examples = []
         content = request_body.get('content', {})
         for media_type, media_def in content.items():
+            # Get schema for type coercion
+            schema = media_def.get('schema', {})
+            
             if 'examples' in media_def:
                 for name, example in media_def['examples'].items():
                     value = example.get('value', example)
+                    # Coerce types based on schema
+                    value = self._coerce_example_types(value, schema)
                     if isinstance(value, (dict, list)):
                         value = yaml.dump(value, default_flow_style=False, allow_unicode=True)
                     examples.append({'name': name, 'body': str(value)})
             elif 'example' in media_def:
                 value = media_def['example']
+                # Coerce types based on schema
+                value = self._coerce_example_types(value, schema)
                 if isinstance(value, (dict, list)):
                     value = yaml.dump(value, default_flow_style=False, allow_unicode=True)
                 examples.append({'name': 'default', 'body': str(value)})
@@ -629,7 +728,12 @@ class OASToExcelConverter:
         
         # Sanitize filename
         name = "".join(c for c in name if c.isalnum() or c in '-_')
-        return f"{name}.xlsx"
+        
+        # Append current date (YYMMDD) as per user requirement
+        from datetime import datetime
+        date_str = datetime.now().strftime("%y%m%d")
+        
+        return f"{name}.{date_str}.xlsx"
 
 
 def main():

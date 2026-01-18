@@ -38,6 +38,7 @@ class ParameterInfo:
     pattern: Optional[str] = None
     enum: Optional[List[str]] = None
     example: Optional[Any] = None
+    ref: Optional[str] = None  # Top-level $ref if present
 
 
 @dataclass
@@ -70,6 +71,7 @@ class ResponseInfo:
     headers: List[Dict[str, Any]] = field(default_factory=list)
     content: Dict[str, Any] = field(default_factory=dict)
     links: Dict[str, Any] = field(default_factory=dict)
+    ref: Optional[str] = None  # Top-level $ref if present
 
 
 @dataclass
@@ -234,12 +236,20 @@ class OASParser:
                 operation.extensions[key] = value
         
         return operation
-    
+
     def _parse_parameter(self, param_data: Dict) -> ParameterInfo:
         """Parse a parameter definition."""
-        # Handle $ref
-        if '$ref' in param_data:
-            param_data = self._resolve_ref(param_data['$ref'])
+        # Handle $ref - Capture ref path AND any sibling overrides (valid in OAS 3.1)
+        top_ref = param_data.get('$ref')
+        if top_ref:
+            # Ref with possible sibling overrides
+            ref_name = self._extract_ref_name(top_ref)
+            return ParameterInfo(
+                name=ref_name,
+                location='',  # Will be filled from component when generating
+                description=param_data.get('description'),  # Capture description override if present
+                ref=top_ref
+            )
         
         schema = param_data.get('schema', {})
         
@@ -247,7 +257,7 @@ class OASParser:
             name=param_data.get('name', ''),
             location=param_data.get('in', ''),
             description=param_data.get('description'),
-            required=param_data.get('required', False)
+            required=param_data.get('required', False),
         )
         
         # Schema properties
@@ -280,13 +290,20 @@ class OASParser:
     
     def _parse_response(self, status_code: str, resp_data: Dict) -> ResponseInfo:
         """Parse a response definition."""
-        # Handle $ref
-        if '$ref' in resp_data:
-            resp_data = self._resolve_ref(resp_data['$ref'])
+        # Handle $ref - preserve inline description before resolving
+        top_ref = resp_data.get('$ref')
+        inline_description = resp_data.get('description')  # Preserve inline description
+        
+        if top_ref:
+            resp_data = self._resolve_ref(top_ref)
+        
+        # Use inline description if present, otherwise use resolved description
+        final_description = inline_description if inline_description else resp_data.get('description')
         
         response = ResponseInfo(
             status_code=status_code,
-            description=resp_data.get('description')
+            description=final_description,
+            ref=top_ref  # Store top-level ref
         )
         
         # Headers
@@ -358,6 +375,7 @@ class OASParser:
         
         path_indent = -1
         method_indent = -1
+        op_indent = -1
         
         for i, line in enumerate(lines):
             stripped = line.strip()
@@ -399,9 +417,18 @@ class OASParser:
                          # If we left the method we wanted, we are done
                          break
                     
+                    # Capture first property indent (standard indentation for this operation)
+                    if op_indent == -1 and indent > method_indent:
+                         op_indent = indent
+
                     # Look for extensions
                     if stripped.startswith('x-'):
                         if not collecting:
+                            # Only collect if this is a top-level extension (same level as other properties)
+                            # If indent is greater than op_indent, it's a nested extension (e.g. inside example) -> Ignore
+                            if op_indent != -1 and indent > op_indent:
+                                continue
+                                
                             collecting = True
                             base_indent = indent
                         extensions_lines.append(line)

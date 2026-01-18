@@ -202,6 +202,16 @@ class TemplateExcelWriter:
         self.finalize()
         
         self.workbook.save(filepath)
+        
+        # Close workbook to release file handles
+        self.workbook.close()
+        self.workbook = None
+    
+    def close(self) -> None:
+        """Close the workbook and release resources."""
+        if self.workbook is not None:
+            self.workbook.close()
+            self.workbook = None
     
     def _fill_sheet_data(self, ws: Worksheet, data_rows: List[Dict[str, Any]], 
                          start_row: int) -> None:

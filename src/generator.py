@@ -33,6 +33,7 @@ from src.generator_pkg.response_builder import (
     build_examples_from_rows as _build_examples_from_rows_fn,
     process_response_headers as _process_response_headers_fn,
     process_response_content as _process_response_content_fn,
+    coerce_example_types as _coerce_example_types_fn,
 )
 
 
@@ -299,8 +300,21 @@ class OASGenerator:
                     self._get_col_value(row, ["Mandatory", "Required"]) or ""
                 ).lower()
                 in ["yes", "y", "true", "m"],
-                "schema": self._map_type_to_schema(row),
             }
+            # Build schema but remove description and examples (they go at param level)
+            schema = self._map_type_to_schema(row)
+            schema.pop("description", None)
+            # Extract example from schema if present (put at param level instead)
+            example = schema.pop("example", None)
+            examples = schema.pop("examples", None)
+            param["schema"] = schema
+            
+            # Add example at param level (singular form)
+            if example is not None:
+                param["example"] = example
+            elif examples and len(examples) > 0:
+                param["example"] = examples[0]
+            
             params.append(param)
         return params
 
@@ -388,25 +402,30 @@ class OASGenerator:
 
     def _process_response_content(self, content_nodes, schema_nodes, root_node):
         """Delegate to response_builder.process_response_content."""
+        # Pass components schemas for $ref resolution in example type coercion
+        components_schemas = self.oas.get("components", {}).get("schemas", {})
         return _process_response_content_fn(
-            content_nodes, schema_nodes, root_node, self.version
+            content_nodes, schema_nodes, root_node, self.version, components_schemas
         )
 
-    def _build_single_response(self, df, body_examples=None, code=""):
+    def _build_single_response(self, df, body_examples=None, code="", description_override=None):
         """
         Builds a single OAS response object from DataFrame.
         Delegates to helper methods for tree building, headers, and content.
         """
         if df is None or df.empty:
-            return {"description": "Response"}
+            return {"description": description_override or "Response"}
 
         # Build tree structure from flat rows
         root_node = self._build_response_tree(df)
         if not root_node:
-            return {"description": "Response"}
+            return {"description": description_override or "Response"}
 
         # Extract response description
-        desc = self._extract_response_description(df, root_node)
+        if description_override:
+            desc = description_override
+        else:
+            desc = self._extract_response_description(df, root_node)
         resp_obj = {"description": desc}
 
         # Classify children nodes
@@ -424,7 +443,15 @@ class OASGenerator:
             if r_type == "response":
                 schema_ref = self._get_schema_name(row)
                 if pd.notna(schema_ref):
-                    return {"$ref": f"#/components/responses/{schema_ref}"}
+                    ref_path = f"#/components/responses/{schema_ref}"
+                    child_desc = self._get_description(row)
+                    
+                    # OAS 3.0 does not allow $ref with any siblings - description is in the component
+                    # OAS 3.1 allows $ref with siblings like description
+                    if pd.notna(child_desc) and child_desc and not self.version.startswith("3.0"):
+                        return {"$ref": ref_path, "description": child_desc}
+                    else:
+                        return {"$ref": ref_path}
 
             # Classify node
             if section in ["header", "headers"] or r_type == "header":
@@ -432,10 +459,24 @@ class OASGenerator:
             elif section == "content":
                 content_nodes.append(child)
             elif c_name.startswith("x-"):
-                # Extension on Response Object
-                ex_val = self._get_col_value(row, ["Example", "Examples"])
-                if pd.notna(ex_val):
-                    resp_obj[c_name] = self._parse_example_string(ex_val)
+                # Extension on Response Object (Direct child of Synthetic Root)
+                # Check if this extension has children (like x-sandbox-request-headers)
+                if child.get("children"):
+                    # Build object from children's Example values
+                    ext_obj = {}
+                    for ext_child in child["children"]:
+                        ext_child_row = ext_child["row"]
+                        ext_child_name = ext_child["name"]
+                        ext_val = self._get_col_value(ext_child_row, ["Example", "Examples"])
+                        if pd.notna(ext_val):
+                            ext_obj[ext_child_name] = self._parse_example_string(ext_val)
+                    if ext_obj:
+                        resp_obj[c_name] = ext_obj
+                else:
+                    # Simple extension with a single value
+                    ex_val = self._get_col_value(row, ["Example", "Examples"])
+                    if pd.notna(ex_val):
+                        resp_obj[c_name] = self._parse_example_string(ex_val)
             else:
                 schema_nodes.append(child)
 
@@ -522,15 +563,27 @@ class OASGenerator:
                 name = self._get_name(row)
                 if pd.notna(name):
                     name = str(name).strip()
-                    # Build Schema Inline
+                    # Build Schema Inline but remove description and examples (they go at header level)
                     schema = self._map_type_to_schema(row)
+                    schema.pop("description", None)
+                    schema.pop("examples", None)
+                    schema.pop("example", None)
 
                     header_desc = self._get_description(row)
+                    
+                    # Get required and example from row
+                    mandatory = self._get_col_value(row, ["Mandatory", "Required"])
+                    is_required = str(mandatory).lower() in ["yes", "y", "true", "m"] if pd.notna(mandatory) else False
+                    example = self._get_col_value(row, ["Example", "Examples"])
 
                     # Create Header Object with INLINE schema
                     header_obj = {"schema": schema}
                     if header_desc:
                         header_obj["description"] = str(header_desc)
+                    if is_required:
+                        header_obj["required"] = True
+                    if pd.notna(example):
+                        header_obj["example"] = self._parse_example_string(example)
 
                     self.oas["components"]["headers"][name] = header_obj
 
@@ -581,7 +634,18 @@ class OASGenerator:
                         p_idx = last_seen[parent_str]
                         nodes[p_idx]["children"].append(node)
                     else:
-                        roots.append(node)
+                        # Try regex match for arrays (e.g. errors[0])
+                        target_idx = -1
+                        m = re.match(r"(.+)\[(\d+)\]$", parent_str)
+                        if m:
+                            base = m.group(1)
+                            if base in last_seen:
+                                target_idx = last_seen[base]
+                        
+                        if target_idx != -1:
+                            nodes[target_idx]["children"].append(node)
+                        else:
+                            roots.append(node)
 
                 # Update last_seen
                 if name and name.lower() != "nan":
@@ -593,21 +657,34 @@ class OASGenerator:
                 root_name = root_node["name"]
 
                 # Flatten tree
+                # Extract Description from Root Row (first priority)
+                root_description = self._get_description(root_row)
+
+                # Flatten tree AND Reparent children to Top Level (Empty Parent)
+                # We exclude the root_row itself from the DataFrame, effectively promoting children
                 collected_rows = []
 
-                def collect(n):
-                    collected_rows.append(n["row"])
-                    for c in n["children"]:
-                        collect(c)
-
-                collect(root_node)
+                # Iterate immediate children of the root and promote them
+                for child in root_node["children"]:
+                    c_row = child["row"].copy()
+                    if "Parent" in c_row:
+                        c_row["Parent"] = ""
+                    collected_rows.append(c_row)
+                    
+                    # Recursively add descendants (preserving their hierarchy relative to the promoted child)
+                    def collect_descendants(n):
+                        for c in n["children"]:
+                            collected_rows.append(c["row"])
+                            collect_descendants(c)
+                    
+                    collect_descendants(child)
 
                 if not root_name or root_name.lower() == "nan":
                     continue
 
                 response_df = pd.DataFrame(collected_rows)
                 self.oas["components"]["responses"][str(root_name)] = (
-                    self._build_single_response(response_df)
+                    self._build_single_response(response_df, description_override=root_description)
                 )
 
         # Rule 10: Check for missing critical schemas and report them
@@ -722,9 +799,7 @@ class OASGenerator:
             parent_name = node["parent"]
             if pd.isna(parent_name):
                 roots.append(node)
-                # Assign Title to Root if missing?
-                if "title" not in node["schema_obj"]:
-                    node["schema_obj"]["title"] = name
+                # Note: We don't auto-add 'title' as it's redundant when equal to schema name
             elif str(parent_name).strip() in node_map:
                 parent = node_map[str(parent_name).strip()]
                 parent_schema = parent["schema_obj"]
@@ -831,6 +906,10 @@ class OASGenerator:
 
         # FINAL FIX: Recursively enforce 'example'/'examples' at the bottom of every object
         self._recursive_schema_fix(ordered_oas)
+        
+        # Post-process: Coerce example types based on schema
+        # (e.g., convert numeric values to strings when schema expects string)
+        self._coerce_all_example_types(ordered_oas)
 
         # Generate YAML
         yaml_output = yaml.dump(
@@ -853,24 +932,33 @@ class OASGenerator:
 
     def _recursive_schema_fix(self, obj):
         """
-        Recursively traverses the OAS structure and enforces that 'example' and 'examples'
-        keys are strictly at the end of any dictionary containing them.
+        Recursively traverses the OAS structure and enforces key ordering:
+        - 'description' is always first (for human readability)
+        - 'example' and 'examples' are always last (for YAML formatting)
         """
         if isinstance(obj, dict):
             # 1. Process children first
             for k, v in obj.items():
                 self._recursive_schema_fix(v)
 
-            # 2. Re-order current dict if needed
-            if "example" in obj or "examples" in obj:
-                # Use destructive update to change order in-place
+            # 2. Re-order current dict if description or example/examples present
+            has_desc = "description" in obj
+            has_example = "example" in obj or "examples" in obj
+            
+            if has_desc or has_example:
                 from collections import OrderedDict
-
+                
+                # Extract special keys
+                desc = obj.pop("description", None)
                 ex = obj.pop("example", None)
                 exs = obj.pop("examples", None)
 
-                # Reconstruct dict order (remaining keys are already in order)
+                # Reconstruct with correct order: description first
                 new_d = OrderedDict()
+                if desc is not None:
+                    new_d["description"] = desc
+                
+                # Add remaining keys
                 for k, v in obj.items():
                     new_d[k] = v
 
@@ -887,6 +975,66 @@ class OASGenerator:
         elif isinstance(obj, list):
             for item in obj:
                 self._recursive_schema_fix(item)
+
+    def _coerce_all_example_types(self, oas: dict) -> None:
+        """
+        Post-process all examples in the OAS to coerce types based on schema.
+        
+        When schema type is 'string' but example value is numeric, converts to string.
+        This is called after the entire OAS is built so all $refs can be resolved.
+        
+        Args:
+            oas: Complete OAS dictionary
+        """
+        components_schemas = oas.get("components", {}).get("schemas", {})
+        paths = oas.get("paths", {})
+        
+        for path_url, path_item in paths.items():
+            for method, operation in path_item.items():
+                if not isinstance(operation, dict):
+                    continue
+                    
+                # Process request body examples
+                request_body = operation.get("requestBody", {})
+                if request_body:
+                    self._coerce_content_examples(request_body.get("content", {}), components_schemas)
+                
+                # Process response examples
+                responses = operation.get("responses", {})
+                for code, response in responses.items():
+                    if isinstance(response, dict) and "content" in response:
+                        self._coerce_content_examples(response.get("content", {}), components_schemas)
+        
+        # Also process component response examples
+        component_responses = oas.get("components", {}).get("responses", {})
+        for resp_name, response in component_responses.items():
+            if isinstance(response, dict) and "content" in response:
+                self._coerce_content_examples(response.get("content", {}), components_schemas)
+
+    def _coerce_content_examples(self, content: dict, components_schemas: dict) -> None:
+        """
+        Coerce example types in a content dictionary based on schema.
+        
+        Args:
+            content: Dict mapping media types to content definitions
+            components_schemas: Dict of component schemas for $ref resolution
+        """
+        for media_type, media_def in content.items():
+            if not isinstance(media_def, dict):
+                continue
+                
+            schema = media_def.get("schema", {})
+            examples = media_def.get("examples", {})
+            
+            if examples and schema:
+                for example_name, example_def in examples.items():
+                    if isinstance(example_def, dict) and "value" in example_def:
+                        coerced_value = _coerce_example_types_fn(
+                            example_def["value"], 
+                            schema, 
+                            components_schemas
+                        )
+                        example_def["value"] = coerced_value
 
     def _trim_extension_indent(self, text: str) -> str:
         """

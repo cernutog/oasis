@@ -308,6 +308,7 @@ def parse_operation_file(file_path):
     try:
         xl = pd.ExcelFile(file_path)
         response_sheets = [s for s in xl.sheet_names if s.isdigit()]
+        xl.close()  # Close Excel file to release file handle
         op_details["responses"] = {}
         for code in response_sheets:
             op_details["responses"][code] = load_excel_sheet(file_path, code)
