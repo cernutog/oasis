@@ -3094,62 +3094,119 @@ class OASGenApp(ctk.CTk):
         """Shows a custom dialog to ask user how to handle non-empty folder.
            Returns: 'clear_all', 'clear_excel', 'keep', or 'cancel'
         """
-        dialog = ctk.CTkToplevel(self)
-        dialog.title("Folder Not Empty")
-        dialog.geometry("550x180")  # Wider
-        dialog.resizable(False, False)
-        
-        # Remove default icon
-        try:
-            dialog.iconbitmap("")
-        except:
-            pass
-        
-        # Center dialog
-        dialog.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - 275
-        y = self.winfo_y() + (self.winfo_height() // 2) - 90
-        dialog.geometry(f"+{x}+{y}")
-        
-        dialog.transient(self)
-        dialog.grab_set()
-        
-        ctk.CTkLabel(dialog, text="The Excel Output Folder is not empty.", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 15))
-        
-        self.clean_folder_choice = "cancel"
-        
-        def set_choice(c):
-            self.clean_folder_choice = c
-            dialog.destroy()
-            
-        # Row 1: Action Buttons
-        row1_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        row1_frame.pack(fill="x", padx=20, pady=(0, 5))
-        
-        # Reduced padding between buttons (padx=2)
-        ctk.CTkButton(row1_frame, text="Keep Files", width=100,
-                      command=lambda: set_choice("keep")).pack(side="left", padx=2, expand=True)
-                      
-        ctk.CTkButton(row1_frame, text="Clear Excel Files", width=120,
-                      command=lambda: set_choice("clear_excel")).pack(side="left", padx=2, expand=True)
-                       
-        ctk.CTkButton(row1_frame, text="Clear ALL", width=100,
-                      fg_color="#A00000", hover_color="#800000",
-                      command=lambda: set_choice("clear_all")).pack(side="left", padx=2, expand=True)
+        # Inner class to handle the dialog properly and fix icon issue
+        class CleanFolderDialog(ctk.CTkToplevel):
+            def __init__(self, parent):
+                super().__init__(parent)
+                self.title("Folder Not Empty")
+                self.geometry("550x220") # Reduced height for balance
+                self.resizable(False, False)
+                self.choice = "cancel"
 
-        # Row 2: Cancel Button (Blue, Centered)
-        row2_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        row2_frame.pack(fill="x", padx=20, pady=(0, 10)) # Minimized bottom padding
+                # Center relative to parent
+                self.update_idletasks()
+                x = parent.winfo_x() + (parent.winfo_width() // 2) - 275
+                y = parent.winfo_y() + (parent.winfo_height() // 2) - 110
+                try:
+                    self.geometry(f"+{int(x)}+{int(y)}")
+                except:
+                    pass
 
-        ctk.CTkButton(row2_frame, text="Cancel", width=100, 
-                      command=lambda: set_choice("cancel")).pack(side="top", pady=5) # Standard Blue
+                self.transient(parent)
+                self.grab_set()
 
-        dialog.wait_window()
-        return self.clean_folder_choice
+                # Icon application with robust path handling
+                self.after(200, self._set_icon)
+                
+                self._build_ui()
 
-        dialog.wait_window()
-        return self.clean_folder_choice
+            def _get_resource_path(self, relative_path):
+                """Get absolute path to resource, works for dev and for PyInstaller"""
+                try:
+                    # PyInstaller creates a temp folder and stores path in _MEIPASS
+                    base_path = sys._MEIPASS
+                except Exception:
+                    base_path = os.path.abspath(".")
 
+                return os.path.join(base_path, relative_path)
+
+            def _set_icon(self):
+                try:
+                    # Check both local and bundled path
+                    icon_path = "icon.ico"
+                    if not os.path.exists(icon_path):
+                        icon_path = self._get_resource_path("icon.ico")
+                    
+                    if os.path.exists(icon_path):
+                        try:
+                            self.iconbitmap(icon_path)
+                        except:
+                            pass
+                        try:
+                            self.wm_iconbitmap(icon_path)
+                        except:
+                            pass
+                except:
+                    pass
+
+            def _build_ui(self):
+                # Main Container - No top padding to push content up
+                main_container = ctk.CTkFrame(self, fg_color="transparent")
+                main_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+                # 1. Content Block (Icon + Text) - Centered Vertically
+                content_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+                content_frame.pack(fill="x", expand=True) # expand=True centers it in available space
+
+                # Icon - Darker Gold using unicode
+                icon_label = ctk.CTkLabel(content_frame, text="\u26A0", 
+                                          text_color="#FBC02D", 
+                                          font=ctk.CTkFont(size=52)) # Slightly larger
+                icon_label.pack(side="left", padx=(10, 20))
+
+                # Message Area
+                msg_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                msg_frame.pack(side="left", fill="both", expand=True)
+
+                msg_label = ctk.CTkLabel(msg_frame, text="The Excel Output Folder is not empty.", 
+                                         font=ctk.CTkFont(size=18, weight="bold"),
+                                         text_color=("#000000", "#FFFFFF"),
+                                         anchor="w", justify="left")
+                msg_label.pack(fill="x", pady=(0, 0)) # Tighten
+
+                detail_label = ctk.CTkLabel(msg_frame, text="What would you like to do with the existing files?", 
+                                         font=ctk.CTkFont(size=12),
+                                         text_color="gray",
+                                         anchor="w", justify="left")
+                detail_label.pack(fill="x", pady=(5, 0))
+
+                # 2. Buttons Area - Bottom Aligned
+                btn_container = ctk.CTkFrame(main_container, fg_color="transparent")
+                btn_container.pack(fill="x", side="bottom", pady=(0, 5))
+
+                # Row 1: Action Buttons
+                row1 = ctk.CTkFrame(btn_container, fg_color="transparent")
+                row1.pack(side="top", pady=(0, 10))
+
+                ctk.CTkButton(row1, text="Keep Files", width=120, height=32,
+                              command=lambda: self._set_choice("keep")).pack(side="left", padx=5)
+                ctk.CTkButton(row1, text="Clear Excel Files", width=140, height=32,
+                              command=lambda: self._set_choice("clear_excel")).pack(side="left", padx=5)
+                ctk.CTkButton(row1, text="Clear ALL", width=120, height=32, # Red
+                              fg_color="#D32F2F", hover_color="#B71C1C",
+                              command=lambda: self._set_choice("clear_all")).pack(side="left", padx=5)
+
+                # Row 2: Cancel - Same height, reduced padding
+                ctk.CTkButton(btn_container, text="Cancel", width=120, height=32, # Height 32 match
+                              command=lambda: self._set_choice("cancel")).pack(side="top", pady=(0, 5))
+
+            def _set_choice(self, choice):
+                self.choice = choice
+                self.destroy()
+
+        dialog = CleanFolderDialog(self)
+        self.wait_window(dialog)
+        self.clean_folder_choice = dialog.choice
 
     def _run_oas_import(self, src_path, dst_folder):
         try:
@@ -3171,10 +3228,15 @@ class OASGenApp(ctk.CTk):
             self._log_import(f"Success! Generated {len(files)} files.")
             self._log_import("Import Completed.")
             
+        except PermissionError:
+            err_msg = "Permission Denied: Please close any open Excel files (e.g., $index.xlsx) and try again."
+            self._log_import(f"ERROR: {err_msg}")
+            messagebox.showerror("Permission Error", err_msg)
         except Exception as e:
             self._log_import(f"ERROR: {e}")
             import traceback
             self._log_import(traceback.format_exc())
+            messagebox.showerror("Error", f"An unexpected error occurred:\n{e}")
         finally:
             self.after(0, lambda: self.btn_import.configure(state="normal"))
 
@@ -3286,11 +3348,22 @@ class OASGenApp(ctk.CTk):
                 self._log_import(f"Generated Lines: {gen_lines}")
                 self._log_import(f"Delta:           {delta_str}")
             
-            # Detailed Breakdown (only if Line Diff is enabled)
-            if line_diff:
-                breakdown = comparator.get_detailed_structure_breakdown()
+            # Detailed Breakdown (Calculated Always for Structure Components)
+            breakdown = comparator.get_detailed_structure_breakdown()
 
-                # 1. PATHS BREAKDOWN (Line Content Differences) - MOVED FIRST
+            # 1. COMPONENTS BREAKDOWN (Summary Item Counts) - Always Show
+            if 'components' in breakdown and breakdown['components']:
+                self._log_import("\n=== COMPONENTS BREAKDOWN (Item Counts) ===")
+                comp_fmt = "{:<25} | {:<10} | {:<10} | {:<10}"
+                self._log_import(comp_fmt.format("Subsection", "Source", "Generated", "Delta"))
+                self._log_import("-" * 65)
+                
+                for subsection, (src, gen, delta) in breakdown['components'].items():
+                    delta_str = f"+{delta}" if delta > 0 else str(delta)
+                    self._log_import(comp_fmt.format(subsection, str(src), str(gen), delta_str))
+
+            if line_diff:
+                # 2. PATHS BREAKDOWN (Line Content Differences)
                 if 'paths' in breakdown and breakdown['paths']:
                     self._log_import("\n=== PATHS BREAKDOWN (Line Content Differences) ===")
                     path_fmt = "{:<50} | {:<10} | {:<10} | {:<10}"
@@ -3303,31 +3376,20 @@ class OASGenApp(ctk.CTk):
                         display_path = path_name if len(path_name) <= 50 else path_name[:47] + "..."
                         self._log_import(path_fmt.format(display_path, str(src), str(gen), delta_str))
 
-                # 2. COMPONENTS BREAKDOWN (Summary Item Counts)
-                if 'components' in breakdown and breakdown['components']:
-                    self._log_import("\n=== COMPONENTS BREAKDOWN (Item Counts) ===")
-                    comp_fmt = "{:<25} | {:<10} | {:<10} | {:<10}"
-                    self._log_import(comp_fmt.format("Subsection", "Source", "Generated", "Delta"))
-                    self._log_import("-" * 65)
-                    
-                    for subsection, (src, gen, delta) in breakdown['components'].items():
-                        delta_str = f"+{delta}" if delta > 0 else str(delta)
-                        self._log_import(comp_fmt.format(subsection, str(src), str(gen), delta_str))
-
                 # 3. DETAILED COMPONENT DISCREPANCIES (New Section)
                 comp_discrepancies = comparator.get_component_discrepancies()
                 has_issues = any(len(v) > 0 for v in comp_discrepancies.values())
                 
                 if has_issues:
-                     self._log_import("\n=== DETAILED COMPONENT DISCREPANCIES (Content/Line Differences) ===")
-                     for comp_type, items in comp_discrepancies.items():
-                         if not items: continue
-                         self._log_import(f"\n--- {comp_type.upper()} ---")
-                         self._log_import(f"{'Name':<50} | {'Source':<7} | {'Gen':<7} | {'Delta':<5}")
-                         for name, s_l, g_l, d in items: # Showing ALL Discrepancies
-                             d_str = f"+{d}" if d > 0 else str(d)
-                             disp_name = name if len(name) < 50 else name[:47] + "..."
-                             self._log_import(f"{disp_name:<50} | {s_l:<7} | {g_l:<7} | {d_str:<5}")
+                        self._log_import("\n=== DETAILED COMPONENT DISCREPANCIES (Content/Line Differences) ===")
+                        for comp_type, items in comp_discrepancies.items():
+                            if not items: continue
+                            self._log_import(f"\n--- {comp_type.upper()} ---")
+                            self._log_import(f"{'Name':<50} | {'Source':<7} | {'Gen':<7} | {'Delta':<5}")
+                            for name, s_l, g_l, d in items: # Showing ALL Discrepancies
+                                d_str = f"+{d}" if d > 0 else str(d)
+                                disp_name = name if len(name) < 50 else name[:47] + "..."
+                                self._log_import(f"{disp_name:<50} | {s_l:<7} | {g_l:<7} | {d_str:<5}")
             
             # REMOVED DETAILED DIFF PER USER REQUEST
             # if line_diff and (diff_stats['Added Lines'] > 0 or diff_stats['Removed Lines'] > 0):

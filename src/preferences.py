@@ -49,11 +49,11 @@ class PreferencesManager:
         if os.name == "nt":
             app_data = os.environ.get("APPDATA", "")
             if app_data:
-                config_dir = Path(app_data) / "OAS_Generation_Tool"
+                config_dir = Path(app_data) / "OASIS"
             else:
-                config_dir = Path.home() / ".oas_generation_tool"
+                config_dir = Path.home() / ".oasis"
         else:
-            config_dir = Path.home() / ".oas_generation_tool"
+            config_dir = Path.home() / ".oasis"
 
         config_dir.mkdir(parents=True, exist_ok=True)
         return config_dir / "preferences.json"

@@ -198,8 +198,9 @@ class OASToExcelConverter:
         # Row 9: release
         set_cell(9, 2, info.get('release', ''))
         
-        # Row 10: filename pattern
-        set_cell(10, 2, info.get('filename_pattern', ''))
+
+        
+
     
     def _fill_paths_sheet(self, writer: TemplateExcelWriter) -> None:
         """

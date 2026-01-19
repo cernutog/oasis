@@ -14,13 +14,14 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
     :param oas: The OAS dictionary to modify in-place.
     :param source_filename: Optional filename of the base OAS file to reference in description.
     """
-    # 0. Append source reference to Description
-    if source_filename:
-        if "info" not in oas:
-            oas["info"] = {}
-        if "description" not in oas["info"]:
-            oas["info"]["description"] = ""
-        oas["info"]["description"] += f"\n\nBased on {source_filename}"
+    # 0. Custom Extension for SWIFT (Replaces 'Based on' in description)
+    if "info" not in oas:
+        oas["info"] = {}
+    
+    oas["info"]["x-info-customization"] = "SWIFT"
+    
+    # If source_filename was passed, we might want to log it or ignore it based on request.
+    # User specifically asked to REMOVE "Based on <filename>".
 
     # 1. SERVERS
     oas["servers"] = [

@@ -62,6 +62,18 @@ class OASGenerator:
 
     def build_info(self, info_data):
         self.oas["info"] = copy.deepcopy(info_data)
+        
+        # Inject Creation Date (YYYY-MM-DD)
+        self.oas["info"]["x-info-creation-date"] = datetime.now().strftime("%Y-%m-%d")
+        
+        # Move 'release' to 'x-info-release' if present
+        if "release" in self.oas["info"]:
+            self.oas["info"]["x-info-release"] = self.oas["info"]["release"]
+            del self.oas["info"]["release"]
+            
+        # Clean up internal fields if present
+        if "filename_pattern" in self.oas["info"]:
+            del self.oas["info"]["filename_pattern"]
 
     def build_paths(self, paths_list, operations_details):
         for op_meta in paths_list:
@@ -1075,20 +1087,26 @@ class OASGenerator:
             for k, v in obj.items():
                 self._recursive_schema_fix(v)
 
-            # 2. Re-order current dict if description or example/examples present
+            # 2. Re-order current dict if strictly required keys are present
+            has_name = "name" in obj
             has_desc = "description" in obj
             has_example = "example" in obj or "examples" in obj
             
-            if has_desc or has_example:
+            if has_name or has_desc or has_example:
                 from collections import OrderedDict
                 
                 # Extract special keys
+                name = obj.pop("name", None)
                 desc = obj.pop("description", None)
                 ex = obj.pop("example", None)
                 exs = obj.pop("examples", None)
 
-                # Reconstruct with correct order: description first
+                # Reconstruct with correct order: Name -> Description -> Rest -> Examples
                 new_d = OrderedDict()
+                
+                if name is not None:
+                    new_d["name"] = name
+                    
                 if desc is not None:
                     new_d["description"] = desc
                 
