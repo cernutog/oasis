@@ -11,6 +11,7 @@ import customtkinter as ctk
 import tkinter as tk
 from tkinter import filedialog
 import threading
+import datetime
 import os
 import sys
 import json
@@ -28,6 +29,8 @@ try:
     from .doc_viewer import DockedDocViewer
     from .version import VERSION, FULL_VERSION
     from .splash_screen import SplashScreen
+    from .oas_importer.oas_converter import OASToExcelConverter
+    from .oas_importer.oas_comparator import OASComparator
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
     import main as main_script
@@ -39,6 +42,8 @@ except ImportError:
     from doc_viewer import DockedDocViewer
     from version import VERSION, FULL_VERSION
     from splash_screen import SplashScreen
+    from oas_importer.oas_converter import OASToExcelConverter
+    from oas_importer.oas_comparator import OASComparator
 
 from chlorophyll import CodeView
 import pygments.lexers
@@ -172,17 +177,24 @@ class OASGenApp(ctk.CTk):
         self.tabview = ctk.CTkTabview(self, command=self._on_tab_change)
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
 
-        self.tab_gen = self.tabview.add("Generation")
+        # Define Tabs Order
+        self.tab_import = self.tabview.add("OAS to Excel")
+        self.tab_gen = self.tabview.add("Excel to OAS")
         self.tab_val = self.tabview.add("Validation")
+        
+        # Setup OAS to Excel Tab
+        self._setup_import_tab()
         
         # Bind Ctrl+F globally to the tabview to catch it even if focus is not on text
         self.bind("<Control-f>", self._handle_global_search)
 
         # ==========================
-        # TAB 1: GENERATION
+        # TAB 2: EXCEL TO OAS (Formerly Generation)
         # ==========================
+
         self.tab_gen.grid_columnconfigure(0, weight=1)
-        self.tab_gen.grid_rowconfigure(2, weight=1)  # Log expands
+        self.tab_gen.grid_rowconfigure(1, weight=0)  # Actions (Row 1) do NOT expand
+        self.tab_gen.grid_rowconfigure(2, weight=1)  # Log (Row 2) DOES expand
 
         # Controls
         self.frame_controls = ctk.CTkFrame(self.tab_gen, fg_color="transparent")
@@ -246,53 +258,58 @@ class OASGenApp(ctk.CTk):
         )
         self.btn_browse_oas.grid(row=1, column=2, padx=10, pady=10)
 
-        # Options
-        self.frame_opts = ctk.CTkFrame(self.tab_gen, fg_color="transparent")
-        self.frame_opts.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 10))
-
+        # Store checkbox variables (moved to action bar below)
         self.var_31 = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_31", True))
-        self.chk_31 = ctk.CTkCheckBox(
-            self.frame_opts, text="OAS 3.1", variable=self.var_31
-        )
-        self.chk_31.pack(side="left", padx=(0, 20))
-
         self.var_30 = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_30", True))
+        self.var_swift = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_swift", False))
+
+        # Actions Frame (Row 1 - previously Row 2) - Unified Toolbar with Options
+        self.frame_gen_act = ctk.CTkFrame(self.tab_gen, fg_color="transparent")
+        self.frame_gen_act.grid(row=1, column=0, sticky="ew", padx=10, pady=(0,10))
+        
+        # Left Side: OAS Version Checkboxes
+        self.chk_31 = ctk.CTkCheckBox(
+            self.frame_gen_act, text="OAS 3.1", variable=self.var_31
+        )
+        self.chk_31.pack(side="left", padx=(0, 15))
+
         self.chk_30 = ctk.CTkCheckBox(
-            self.frame_opts, text="OAS 3.0", variable=self.var_30
+            self.frame_gen_act, text="OAS 3.0", variable=self.var_30
         )
-        self.chk_30.pack(side="left", padx=(0, 20))
+        self.chk_30.pack(side="left", padx=(0, 15))
 
-        self.var_swift = ctk.BooleanVar(
-            value=self.prefs_manager.get("gen_oas_swift", False)
-        )
         self.chk_swift = ctk.CTkCheckBox(
-            self.frame_opts, text="OAS SWIFT", variable=self.var_swift
+            self.frame_gen_act, text="OAS SWIFT", variable=self.var_swift
         )
-        self.chk_swift.pack(side="left")
-
-        # Generate Button layout on the right of opts? Or below? Below logs?
-        # Let's keep it prominent.
+        self.chk_swift.pack(side="left", padx=(0, 20))
+        
+        # Generate Button
         self.btn_gen = ctk.CTkButton(
-            self.frame_opts,
-            text="GENERATE",
-            font=ctk.CTkFont(weight="bold"),
+            self.frame_gen_act, 
+            text="Generate OAS",
             width=150,
+            font=ctk.CTkFont(weight="bold"),
             command=self.start_generation,
         )
-        self.btn_gen.pack(side="left", padx=40)
+        self.btn_gen.pack(side="left", padx=0)
 
-        # Log Area with theme from preferences
-        gen_log_theme = self.prefs_manager.get("gen_log_theme", "Light")
-        if gen_log_theme == "Dark":
-            self.log_area = ctk.CTkTextbox(
-                self.tab_gen, fg_color="#1e1e1e", text_color="#d4d4d4"
-            )
-        else:
-            self.log_area = ctk.CTkTextbox(
-                self.tab_gen, fg_color="#ffffff", text_color="#333333"
-            )
+        # Right Side: Font Size Control (Corrected for Tab 2)
+        self.frame_gen_font = ctk.CTkFrame(self.frame_gen_act, fg_color="transparent")
+        self.frame_gen_font.pack(side="right") # Pack to right of the Action Frame
+
+        self.lbl_font_size_gen_val = ctk.CTkLabel(self.frame_gen_font, text="11", width=20)
+        self.lbl_font_size_gen_val.pack(side="right")
+
+        self.slider_font_gen = ctk.CTkSlider(self.frame_gen_font, from_=8, to=24, number_of_steps=16, width=150, command=self.update_font_size_gen)
+        self.slider_font_gen.set(11)
+        self.slider_font_gen.pack(side="right", padx=(5,5))
+
+        ctk.CTkLabel(self.frame_gen_font, text="Font Size:", font=("Arial", 12)).pack(side="right", padx=5)
+
+        # Log Area (Row 2)
+        self.log_area = ctk.CTkTextbox(self.tab_gen, font=("Consolas", 11), wrap="word")
         self.log_area.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-        self.log_area.insert("0.0", "Ready to generate.\n")
+        self.log_area.insert("0.0", "Ready.\n")
         self.log_area.configure(state="disabled")
 
         # ==========================
@@ -737,6 +754,7 @@ class OASGenApp(ctk.CTk):
         self.file_menu = tk.Menu(menubar, tearoff=0)  # Save reference for enabling/disabling
         
         # File Menu
+        self.file_menu.add_command(label="Select Import Source...", command=self._smart_select_import)
         self.file_menu.add_command(label="Select Template Folder...", command=self._smart_select_template)
         self.file_menu.add_command(label="Select Output Folder...", command=self._smart_select_output)
         self.file_menu.add_separator()
@@ -750,7 +768,8 @@ class OASGenApp(ctk.CTk):
 
         # View Menu (Generation, Validation, YAML Viewer)
         self.view_menu = tk.Menu(menubar, tearoff=0)
-        self.view_menu.add_command(label="Generation", command=self._view_generation)
+        self.view_menu.add_command(label="OAS to Excel", command=self._view_import)
+        self.view_menu.add_command(label="Excel to OAS", command=self._view_generation)
         self.view_menu.add_command(label="Validation", command=self._view_validation)
         self.view_menu.add_command(label="YAML Viewer", command=self._view_yaml_viewer)
         self.view_menu.add_separator()
@@ -794,30 +813,42 @@ class OASGenApp(ctk.CTk):
         current_tab = self.tabview.get()
         
         # Enable 'Select Template Folder' only in Generation tab
-        if current_tab == "Generation":
+        # Enable 'Select Template Folder' only in Generation tab
+        if current_tab == "Excel to OAS":
             self.file_menu.entryconfig("Select Template Folder...", state="normal")
+            self.file_menu.entryconfig("Select Import Source...", state="disabled")
+        elif current_tab == "OAS to Excel":
+            self.file_menu.entryconfig("Select Template Folder...", state="disabled")
+            self.file_menu.entryconfig("Select Import Source...", state="normal")
         else:
             self.file_menu.entryconfig("Select Template Folder...", state="disabled")
+            self.file_menu.entryconfig("Select Import Source...", state="disabled")
 
     def _view_yaml_viewer(self):
         self.tabview.set("View")
 
+    def _smart_select_import(self):
+        """Switch to OAS to Excel tab and open source selector."""
+        self.tabview.set("OAS to Excel")
+        self.after(500, lambda: self.browse_import_source_folder())
+
     def _smart_select_template(self):
         """Switch to Generation tab and open template selector."""
-        self.tabview.set("Generation")
+        self.tabview.set("Excel to OAS")
         # Use delay to ensure tab switch renders and state updates
         self.after(1000, lambda: self.browse_dir()) # Increased delay just in case
 
-
-
     def _smart_select_output(self):
         """Switch to Generation tab and open output folder selector."""
-        self.tabview.set("Generation")
+        self.tabview.set("Excel to OAS")
         self.update_idletasks()
         self.browse_oas_folder()
 
+    def _view_import(self):
+        self.tabview.set("OAS to Excel")
+
     def _view_generation(self):
-        self.tabview.set("Generation")
+        self.tabview.set("Excel to OAS")
 
     def _view_validation(self):
         self.tabview.set("Validation")
@@ -1077,6 +1108,11 @@ class OASGenApp(ctk.CTk):
         directory = filedialog.askdirectory(initialdir=initial_dir)
         if directory:
             self._sync_oas_folders(directory)
+
+    def update_font_size_gen(self, value):
+        val = int(value)
+        self.log_area.configure(font=("Consolas", val))
+        self.lbl_font_size_gen_val.configure(text=str(val))
 
     def log(self, message):
         # Update Generation Tab Log
@@ -2895,6 +2931,396 @@ class OASGenApp(ctk.CTk):
                 tk.messagebox.showerror("Error", f"Could not open file: {e}")
         else:
              tk.messagebox.showerror("Error", f"File '{filename}' not found in Template Directory.")
+
+    def _setup_import_tab(self):
+        """Setup UI for Tab 1: OAS to Excel (Import/Roundtrip)."""
+        self.tab_import.grid_columnconfigure(0, weight=1)
+        self.tab_import.grid_rowconfigure(1, weight=0) # Actions (no expansion)
+        self.tab_import.grid_rowconfigure(2, weight=1) # Log expands
+
+        # Consolidate Inputs into Single Frame for Alignment
+        self.frame_imp_inputs = ctk.CTkFrame(self.tab_import, fg_color="transparent")
+        self.frame_imp_inputs.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
+        self.frame_imp_inputs.grid_columnconfigure(1, weight=1)
+
+        # Row 0: OAS Source File
+        ctk.CTkLabel(self.frame_imp_inputs, text="OAS Source File:", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, padx=10, pady=10, sticky="w")
+        self.entry_imp_file = ctk.CTkEntry(self.frame_imp_inputs, placeholder_text="Path to OAS file...")
+        self.entry_imp_file.grid(row=0, column=1, padx=(0,10), pady=10, sticky="ew")
+        
+        saved_imp_file = self.prefs_manager.get("import_source_file", "")
+        if saved_imp_file and os.path.exists(saved_imp_file):
+            self.entry_imp_file.insert(0, saved_imp_file)
+            
+        self.btn_browse_imp_file = ctk.CTkButton(self.frame_imp_inputs, text="Browse", width=100, command=self.browse_import_file)
+        self.btn_browse_imp_file.grid(row=0, column=2, padx=10, pady=10)
+
+        # Row 1: Excel Output Folder
+        ctk.CTkLabel(self.frame_imp_inputs, text="Excel Output Folder:", font=ctk.CTkFont(weight="bold")).grid(row=1, column=0, padx=10, pady=10, sticky="w")
+        self.entry_imp_dst = ctk.CTkEntry(self.frame_imp_inputs, placeholder_text="Path to Excel Output Folder...")
+        self.entry_imp_dst.grid(row=1, column=1, padx=(0,10), pady=10, sticky="ew")
+        
+        saved_imp_dst = self.prefs_manager.get("template_directory", "")
+        if saved_imp_dst and os.path.exists(saved_imp_dst):
+             self.entry_imp_dst.insert(0, saved_imp_dst)
+             
+        self.btn_browse_imp_dst = ctk.CTkButton(self.frame_imp_inputs, text="Browse", width=100, command=self.browse_import_template_folder)
+        self.btn_browse_imp_dst.grid(row=1, column=2, padx=10, pady=10)
+        
+        # Actions Row (Row 1 - aligned with Tab 2)
+        self.frame_imp_act = ctk.CTkFrame(self.tab_import, fg_color="transparent")
+        self.frame_imp_act.grid(row=1, column=0, sticky="ew", padx=10, pady=(0,10)) # Match Tab 2 padding
+        
+        # Import Button
+        self.btn_import = ctk.CTkButton(self.frame_imp_act, text="Import to Excel", width=150, font=ctk.CTkFont(weight="bold"), command=self.start_oas_import)
+        self.btn_import.pack(side="left", padx=(0, 20))
+        
+        # Roundtrip Controls (no separator)
+        self.btn_roundtrip = ctk.CTkButton(self.frame_imp_act, text="Roundtrip Check", width=150, font=ctk.CTkFont(weight="bold"), command=self.start_roundtrip_check)
+        self.btn_roundtrip.pack(side="left", padx=(0, 10))
+        
+        self.var_line_diff = ctk.BooleanVar(value=False)
+        self.chk_line_diff = ctk.CTkCheckBox(self.frame_imp_act, text="Line Diff", variable=self.var_line_diff)
+        self.chk_line_diff.pack(side="left", padx=(0, 20))
+
+        # Font Size Control (Cleaned for Tab 1)
+        self.frame_imp_font = ctk.CTkFrame(self.frame_imp_act, fg_color="transparent")
+        self.frame_imp_font.pack(side="right")
+
+        self.lbl_font_size_imp_val = ctk.CTkLabel(self.frame_imp_font, text="11", width=20)
+        self.lbl_font_size_imp_val.pack(side="right")
+
+        self.slider_font_imp = ctk.CTkSlider(self.frame_imp_font, from_=8, to=24, number_of_steps=16, width=150, command=self.update_font_size_imp)
+        self.slider_font_imp.set(11)
+        self.slider_font_imp.pack(side="right", padx=(5,5))
+
+        ctk.CTkLabel(self.frame_imp_font, text="Font Size:", font=("Arial", 12)).pack(side="right", padx=5)
+
+        # Log Area
+        self.import_log_area = ctk.CTkTextbox(self.tab_import, font=("Consolas", 11), wrap="word") 
+        self.import_log_area.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.import_log_area.insert("0.0", "Ready for Import/Roundtrip.\n")
+        self.import_log_area.configure(state="disabled")
+
+
+
+
+
+    def update_font_size_imp(self, value):
+        val = int(value)
+        self.import_log_area.configure(font=("Consolas", val))
+        self.lbl_font_size_imp_val.configure(text=str(val))
+
+    def browse_import_file(self):
+        f = filedialog.askopenfilename(filetypes=[("OAS Files", "*.yaml *.yml *.json")])
+        if f:
+            self.entry_imp_file.delete(0, "end")
+            self.entry_imp_file.insert(0, f)
+            self.prefs_manager.set("import_source_file", f)
+
+    def browse_import_template_folder(self):
+        d = filedialog.askdirectory()
+        if d:
+            self.entry_imp_dst.delete(0, "end")
+            self.entry_imp_dst.insert(0, d)
+            # This is effectively the template directory for Generation too
+            self.entry_dir.delete(0, "end")
+            self.entry_dir.insert(0, d)
+            self.prefs_manager.set("template_directory", d)
+
+
+
+    def _log_import(self, msg):
+        def _append():
+            self.import_log_area.configure(state="normal")
+            self.import_log_area.insert("end", f"{msg}\n")
+            self.import_log_area.see("end")
+            self.import_log_area.configure(state="disabled")
+        self.after(0, _append)
+
+    def start_oas_import(self):
+        src_path = self.entry_imp_file.get()
+        dst_folder = self.entry_imp_dst.get()
+        
+        if not src_path or not os.path.exists(src_path):
+            tk.messagebox.showerror("Error", "Invalid OAS File")
+            return
+        if not dst_folder:
+            tk.messagebox.showerror("Error", "Invalid Output Folder")
+            return
+
+        # Check for non-empty output folder
+        if os.path.exists(dst_folder) and os.listdir(dst_folder):
+             choice = self.show_clean_folder_dialog(dst_folder)
+             if choice == "cancel":
+                 return
+             
+             try:
+                 if choice == "clear_all":
+                     self._log_import(f"Cleaning ALL files in {dst_folder}...")
+                     for filename in os.listdir(dst_folder):
+                         file_path = os.path.join(dst_folder, filename)
+                         try:
+                             if os.path.isfile(file_path) or os.path.islink(file_path):
+                                 os.unlink(file_path)
+                             elif os.path.isdir(file_path):
+                                 shutil.rmtree(file_path)
+                         except Exception as e:
+                             print(f"Failed to delete {file_path}. Reason: {e}")
+                             
+                 elif choice == "clear_excel":
+                     self._log_import(f"Cleaning Excel files in {dst_folder}...")
+                     import glob
+                     for pat in ["*.xlsx", "*.xlsm"]:
+                         for f in glob.glob(os.path.join(dst_folder, pat)):
+                             try:
+                                 os.remove(f)
+                             except Exception as e:
+                                 print(f"Failed to delete {f}: {e}")
+             except Exception as e:
+                 tk.messagebox.showerror("Error", f"Failed to clean directory: {e}")
+                 return
+
+            
+        self.btn_import.configure(state="disabled")
+        self.import_log_area.configure(state="normal")
+        # Do NOT clear log to preserve history if requested
+        # self.import_log_area.delete("1.0", "end") 
+        self.import_log_area.configure(state="disabled")
+        
+        threading.Thread(target=self._run_oas_import, args=(src_path, dst_folder)).start()
+
+    def show_clean_folder_dialog(self, folder_path):
+        """Shows a custom dialog to ask user how to handle non-empty folder.
+           Returns: 'clear_all', 'clear_excel', 'keep', or 'cancel'
+        """
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Folder Not Empty")
+        dialog.geometry("400x200")  # Reduced height from 220 to 200
+        dialog.resizable(False, False)
+        
+        # Remove default icon (cannot set custom icon reliably in CTkToplevel)
+        try:
+            dialog.iconbitmap("")
+        except:
+            pass  # Silently ignore if iconbitmap fails
+        
+        # Center dialog
+        dialog.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 200
+        y = self.winfo_y() + (self.winfo_height() // 2) - 110
+        dialog.geometry(f"+{x}+{y}")
+        
+        # Modal
+        dialog.transient(self)
+        dialog.grab_set()
+        
+        ctk.CTkLabel(dialog, text="The Excel Output Folder is not empty.", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 20))
+        
+        self.clean_folder_choice = "cancel"
+        
+        def set_choice(c):
+            self.clean_folder_choice = c
+            dialog.destroy()
+            
+        # Buttons (Reordered: Keep Files as default/first option)
+        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        btn_frame.pack(fill="x", padx=20, pady=10)
+        
+        # Keep Files (Default, safe option) - Standard style
+        ctk.CTkButton(btn_frame, text="Keep Files", 
+                      command=lambda: set_choice("keep")).pack(fill="x", pady=5)
+                      
+        # Clear Excel Files - Standard style  
+        ctk.CTkButton(btn_frame, text="Clear Excel Files", 
+                      command=lambda: set_choice("clear_excel")).pack(fill="x", pady=5)
+                       
+        # Clear ALL - Danger style (red)
+        ctk.CTkButton(btn_frame, text="Clear ALL", 
+                      fg_color="#A00000", hover_color="#800000",
+                      command=lambda: set_choice("clear_all")).pack(fill="x", pady=5)
+
+        dialog.wait_window()
+        return self.clean_folder_choice
+
+
+    def _run_oas_import(self, src_path, dst_folder):
+        try:
+            self._log_import(f"Starting Import...")
+            self._log_import(f"Source: {src_path}")
+            self._log_import(f"Destination: {dst_folder}")
+            
+            converter = OASToExcelConverter(src_path)
+            
+            self._log_import("Generating Index File...")
+            converter.generate_index_file(os.path.join(dst_folder, "$index.xlsx"))
+            
+            self._log_import("Generating Endpoint Files (this may take time)...")
+            files = converter.generate_all_endpoint_files(dst_folder)
+            
+            for f in files:
+                 self._log_import(f"   [Created] {os.path.basename(f)}")
+            
+            self._log_import(f"Success! Generated {len(files)} files.")
+            self._log_import("Import Completed.")
+            
+        except Exception as e:
+            self._log_import(f"ERROR: {e}")
+            import traceback
+            self._log_import(traceback.format_exc())
+        finally:
+            self.after(0, lambda: self.btn_import.configure(state="normal"))
+
+    def start_roundtrip_check(self):
+        src_path = self.entry_imp_file.get()
+        dst_folder = self.entry_imp_dst.get()
+        line_diff = self.var_line_diff.get()
+        
+        if not src_path or not os.path.exists(src_path):
+            tk.messagebox.showerror("Error", "Invalid OAS File")
+            return
+        if not dst_folder:
+            tk.messagebox.showerror("Error", "Invalid Output Folder")
+            return
+
+        self.btn_roundtrip.configure(state="disabled")
+        self.import_log_area.configure(state="normal")
+        # Do NOT clear log
+        # self.import_log_area.delete("1.0", "end")
+        self.import_log_area.configure(state="disabled")
+        
+        threading.Thread(target=self._run_roundtrip_check, args=(src_path, dst_folder, line_diff)).start()
+
+    def _run_roundtrip_check(self, src_path, dst_folder, line_diff):
+        try:
+            self._log_import("\n=== STARTING ROUNDTRIP CHECK ===")
+            
+            # Detect OAS Version from Source
+            import yaml
+            # Use safe parse to get version
+            gen_30 = False
+            gen_31 = False
+            try:
+                with open(src_path, 'r', encoding='utf-8') as f:
+                    # Simple check to avoid parsing huge files fully if not needed
+                    # But safe_load is robust.
+                    data = yaml.safe_load(f)
+                    version = data.get('openapi', '')
+                    if version.startswith('3.1'):
+                        gen_31 = True
+                        self._log_import(f"[Setup] Detected OAS 3.1 (Version: {version})")
+                    elif version.startswith('3.0'):
+                        gen_30 = True
+                        self._log_import(f"[Setup] Detected OAS 3.0 (Version: {version})")
+                    else:
+                        # Fallback or Error
+                        self._log_import(f"[Setup] Unknown OAS version '{version}'. Defaulting to 3.0 Generation.")
+                        gen_30 = True
+            except Exception as e:
+                self._log_import(f"[Setup] Could not detect version: {e}. Defaulting to 3.0.")
+                gen_30 = True
+
+            # 2. Setup Output Dir
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            rt_dir = os.path.join(dst_folder, "_roundtrip_history", timestamp)
+            os.makedirs(rt_dir, exist_ok=True)
+            self._log_import(f"[Gen] Generating OAS from Templates...")
+            self._log_import(f"Target: {rt_dir}")
+            
+            # Define Log Callback for generator
+            def gen_log(msg):
+                self._log_import(f"  [Gen] {msg}")
+                
+            # 3. Generate (Only detected version)
+            main_script.generate_oas(dst_folder, gen_30=gen_30, gen_31=gen_31, gen_swift=False, output_dir=rt_dir, log_callback=gen_log)
+            self._log_import("[Gen] Generation Complete.")
+            
+            # Select Generated File
+            gen_path = ""
+            if gen_31:
+                gen_path = os.path.join(rt_dir, "generated_oas_3.1.yaml")
+            else:
+                gen_path = os.path.join(rt_dir, "generated_oas_3.0.yaml")
+            
+            if not os.path.exists(gen_path):
+                 self._log_import("ERROR: Generated OAS file not found for comparison.")
+                 return
+
+            self._log_import(f"[Compare] Comparing Source ({os.path.basename(src_path)}) vs Generated ({os.path.basename(gen_path)})...")
+            
+            comparator = OASComparator(src_path, gen_path)
+            
+            # Structure Diff
+            struct_stats = comparator.get_structure_comparison()
+            
+            self._log_import("\n=== STRUCTURE SUMMARY ===")
+            header_fmt = "{:<30} | {:<10} | {:<10} | {:<7} | {:<10}"
+            row_fmt = "{:<30} | {:<10} | {:<10} | {:<7} | {:<10}"
+            
+            self._log_import(header_fmt.format("Metric", "Source", "Generated", "Match", "Delta"))
+            self._log_import("-" * 75)
+            
+            for metric, (source_val, gen_val) in struct_stats.items():
+                delta = gen_val - source_val  # Generated - Source (positive = more in generated)
+                match_symbol = "✓" if delta == 0 else "✗"
+                delta_str = f"+{delta}" if delta > 0 else str(delta)
+                self._log_import(row_fmt.format(metric, str(source_val), str(gen_val), match_symbol, delta_str))
+            
+            # Line Difference Stats (Global Delta)
+            self._log_import("\n=== LINE COUNT SUMMARY ===")
+            line_stats = comparator.get_line_comparison()
+            # {'Total Lines': (source_lines, gen_lines)}
+            if 'Total Lines' in line_stats:
+                src_lines, gen_lines = line_stats['Total Lines']
+                delta = gen_lines - src_lines
+                delta_str = f"+{delta}" if delta > 0 else str(delta)
+                
+                self._log_import(f"Source Lines:    {src_lines}")
+                self._log_import(f"Generated Lines: {gen_lines}")
+                self._log_import(f"Delta:           {delta_str}")
+            
+            # Detailed Breakdown (only if Line Diff is enabled)
+            if line_diff:
+                breakdown = comparator.get_detailed_structure_breakdown()
+                
+                # Components breakdown
+                if 'components' in breakdown and breakdown['components']:
+                    self._log_import("\n=== COMPONENTS BREAKDOWN ===")
+                    comp_fmt = "{:<25} | {:<10} | {:<10} | {:<10}"
+                    self._log_import(comp_fmt.format("Subsection", "Source", "Generated", "Delta"))
+                    self._log_import("-" * 65)
+                    
+                    for subsection, (src, gen, delta) in breakdown['components'].items():
+                        delta_str = f"+{delta}" if delta > 0 else str(delta)
+                        self._log_import(comp_fmt.format(subsection, str(src), str(gen), delta_str))
+                
+                # Paths breakdown (top discrepancies)
+                if 'paths' in breakdown and breakdown['paths']:
+                    self._log_import("\n=== PATHS BREAKDOWN (Top 10 Discrepancies) ===")
+                    path_fmt = "{:<50} | {:<10} | {:<10} | {:<10}"
+                    self._log_import(path_fmt.format("Path", "Source", "Generated", "Delta"))
+                    self._log_import("-" * 90)
+                    
+                    for path_name, src, gen, delta in breakdown['paths']:
+                        delta_str = f"+{delta}" if delta > 0 else str(delta)
+                        # Truncate path if too long
+                        display_path = path_name if len(path_name) <= 50 else path_name[:47] + "..."
+                        self._log_import(path_fmt.format(display_path, str(src), str(gen), delta_str))
+            
+            # REMOVED DETAILED DIFF PER USER REQUEST
+            # if line_diff and (diff_stats['Added Lines'] > 0 or diff_stats['Removed Lines'] > 0):
+                # ...
+            
+            self._log_import("\n=== ROUNDTRIP CHECK COMPLETED ===")
+            
+        except Exception as e:
+            self._log_import(f"CRITICAL ERROR: {e}")
+            import traceback
+            self._log_import(traceback.format_exc())
+            
+        finally:
+            self.after(0, lambda: self.btn_roundtrip.configure(state="normal"))
+
 
 
 if __name__ == "__main__":
