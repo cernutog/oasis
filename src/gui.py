@@ -3335,34 +3335,34 @@ class OASGenApp(ctk.CTk):
                 delta_str = f"+{delta}" if delta > 0 else str(delta)
                 self._log_import(row_fmt.format(metric, str(source_val), str(gen_val), match_symbol, delta_str))
             
-            # Line Difference Stats (Global Delta)
-            self._log_import("\n=== LINE COUNT SUMMARY ===")
-            line_stats = comparator.get_line_comparison()
-            # {'Total Lines': (source_lines, gen_lines)}
-            if 'Total Lines' in line_stats:
-                src_lines, gen_lines = line_stats['Total Lines']
-                delta = gen_lines - src_lines
-                delta_str = f"+{delta}" if delta > 0 else str(delta)
-                
-                self._log_import(f"Source Lines:    {src_lines}")
-                self._log_import(f"Generated Lines: {gen_lines}")
-                self._log_import(f"Delta:           {delta_str}")
-            
-            # Detailed Breakdown (Calculated Always for Structure Components)
-            breakdown = comparator.get_detailed_structure_breakdown()
-
-            # 1. COMPONENTS BREAKDOWN (Summary Item Counts) - Always Show
-            if 'components' in breakdown and breakdown['components']:
-                self._log_import("\n=== COMPONENTS BREAKDOWN (Item Counts) ===")
-                comp_fmt = "{:<25} | {:<10} | {:<10} | {:<10}"
-                self._log_import(comp_fmt.format("Subsection", "Source", "Generated", "Delta"))
-                self._log_import("-" * 65)
-                
-                for subsection, (src, gen, delta) in breakdown['components'].items():
-                    delta_str = f"+{delta}" if delta > 0 else str(delta)
-                    self._log_import(comp_fmt.format(subsection, str(src), str(gen), delta_str))
-
             if line_diff:
+                # Line Difference Stats (Global Delta)
+                self._log_import("\n=== LINE COUNT SUMMARY ===")
+                line_stats = comparator.get_line_comparison()
+                # {'Total Lines': (source_lines, gen_lines)}
+                if 'Total Lines' in line_stats:
+                    src_lines, gen_lines = line_stats['Total Lines']
+                    delta = gen_lines - src_lines
+                    delta_str = f"+{delta}" if delta > 0 else str(delta)
+                    
+                    self._log_import(f"Source Lines:    {src_lines}")
+                    self._log_import(f"Generated Lines: {gen_lines}")
+                    self._log_import(f"Delta:           {delta_str}")
+                
+                # Detailed Breakdown (Calculated only if diff is requested)
+                breakdown = comparator.get_detailed_structure_breakdown()
+
+                # 1. COMPONENTS BREAKDOWN (Summary Item Counts)
+                if 'components' in breakdown and breakdown['components']:
+                    self._log_import("\n=== COMPONENTS BREAKDOWN (Item Counts) ===")
+                    comp_fmt = "{:<25} | {:<10} | {:<10} | {:<10}"
+                    self._log_import(comp_fmt.format("Subsection", "Source", "Generated", "Delta"))
+                    self._log_import("-" * 65)
+                    
+                    for subsection, (src, gen, delta) in breakdown['components'].items():
+                        delta_str = f"+{delta}" if delta > 0 else str(delta)
+                        self._log_import(comp_fmt.format(subsection, str(src), str(gen), delta_str))
+
                 # 2. PATHS BREAKDOWN (Line Content Differences)
                 if 'paths' in breakdown and breakdown['paths']:
                     self._log_import("\n=== PATHS BREAKDOWN (Line Content Differences) ===")
