@@ -3096,14 +3096,14 @@ class OASGenApp(ctk.CTk):
         """
         dialog = ctk.CTkToplevel(self)
         dialog.title("Folder Not Empty")
-        dialog.geometry("550x180")  # Wider for horizontal buttons
+        dialog.geometry("550x180")  # Wider
         dialog.resizable(False, False)
         
-        # Remove default icon (cannot set custom icon reliably in CTkToplevel)
+        # Remove default icon
         try:
             dialog.iconbitmap("")
         except:
-            pass  # Silently ignore if iconbitmap fails
+            pass
         
         # Center dialog
         dialog.update_idletasks()
@@ -3111,11 +3111,10 @@ class OASGenApp(ctk.CTk):
         y = self.winfo_y() + (self.winfo_height() // 2) - 90
         dialog.geometry(f"+{x}+{y}")
         
-        # Modal
         dialog.transient(self)
         dialog.grab_set()
         
-        ctk.CTkLabel(dialog, text="The Excel Output Folder is not empty.", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(25, 20))
+        ctk.CTkLabel(dialog, text="The Excel Output Folder is not empty.", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 15))
         
         self.clean_folder_choice = "cancel"
         
@@ -3123,26 +3122,30 @@ class OASGenApp(ctk.CTk):
             self.clean_folder_choice = c
             dialog.destroy()
             
-        # Buttons (Horizontal Layout)
-        btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-        btn_frame.pack(fill="x", padx=20, pady=10)
+        # Row 1: Action Buttons
+        row1_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        row1_frame.pack(fill="x", padx=20, pady=(0, 5))
         
-        # Keep Files (Default)
-        ctk.CTkButton(btn_frame, text="Keep Files", width=100,
-                      command=lambda: set_choice("keep")).pack(side="left", padx=5, expand=True)
+        # Reduced padding between buttons (padx=2)
+        ctk.CTkButton(row1_frame, text="Keep Files", width=100,
+                      command=lambda: set_choice("keep")).pack(side="left", padx=2, expand=True)
                       
-        # Clear Excel
-        ctk.CTkButton(btn_frame, text="Clear Excel Files", width=120,
-                      command=lambda: set_choice("clear_excel")).pack(side="left", padx=5, expand=True)
+        ctk.CTkButton(row1_frame, text="Clear Excel Files", width=120,
+                      command=lambda: set_choice("clear_excel")).pack(side="left", padx=2, expand=True)
                        
-        # Clear ALL
-        ctk.CTkButton(btn_frame, text="Clear ALL", width=100,
+        ctk.CTkButton(row1_frame, text="Clear ALL", width=100,
                       fg_color="#A00000", hover_color="#800000",
-                      command=lambda: set_choice("clear_all")).pack(side="left", padx=5, expand=True)
+                      command=lambda: set_choice("clear_all")).pack(side="left", padx=2, expand=True)
 
-        # Cancel
-        ctk.CTkButton(btn_frame, text="Cancel", width=80, fg_color="gray", hover_color="#505050",
-                      command=lambda: set_choice("cancel")).pack(side="left", padx=5, expand=True)
+        # Row 2: Cancel Button (Blue, Centered)
+        row2_frame = ctk.CTkFrame(dialog, fg_color="transparent")
+        row2_frame.pack(fill="x", padx=20, pady=(0, 10)) # Minimized bottom padding
+
+        ctk.CTkButton(row2_frame, text="Cancel", width=100, 
+                      command=lambda: set_choice("cancel")).pack(side="top", pady=5) # Standard Blue
+
+        dialog.wait_window()
+        return self.clean_folder_choice
 
         dialog.wait_window()
         return self.clean_folder_choice

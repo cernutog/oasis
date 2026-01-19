@@ -216,6 +216,8 @@ def parse_paths_index(df_paths):
     return operations
 
 
+from collections import OrderedDict
+
 def parse_tags(df_tags):
     """
     Parses 'Tags' sheet.
@@ -224,8 +226,11 @@ def parse_tags(df_tags):
     tags = []
     if df_tags is not None:
         for _, row in df_tags.iterrows():
-            # Explicit key order: name, then description
-            tag = {"name": row.get("Name"), "description": row.get("Description")}
+            # Use OrderedDict to enforce YAML output order via OASDumper
+            tag = OrderedDict([
+                ("name", row.get("Name")),
+                ("description", row.get("Description"))
+            ])
             if tag["name"]:
                 tags.append(tag)
     return tags
