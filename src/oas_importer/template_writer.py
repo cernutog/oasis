@@ -17,6 +17,7 @@ Usage:
 """
 
 import os
+import sys
 import copy
 from typing import Dict, List, Any, Optional
 from openpyxl import load_workbook, Workbook
@@ -37,7 +38,16 @@ class TemplateExcelWriter:
     """
     
     # Template paths
-    TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'Templates Master')
+    # Template paths
+    def _get_template_path():
+        if getattr(sys, 'frozen', False):
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = sys._MEIPASS
+            return os.path.join(base_path, 'Templates Master')
+        else:
+             return os.path.join(os.path.dirname(__file__), '..', '..', 'Templates Master')
+
+    TEMPLATES_DIR = _get_template_path()
     INDEX_TEMPLATE = '$index.xlsx'
     ENDPOINT_TEMPLATE = 'endpoint.xlsx'
     

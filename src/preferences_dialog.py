@@ -38,7 +38,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         ("Newest First", "newest_first"),
         ("Oldest First", "oldest_first"),
     ]
-    TAB_OPTIONS = ["Generation", "Validation", "View"]
+    TAB_OPTIONS = ["OAS to Excel", "Excel to OAS", "Validation", "View"]
 
     def __init__(self, parent, prefs_manager, on_save_callback=None):
         super().__init__(parent)
@@ -92,6 +92,22 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # === PATHS SECTION ===
         self._create_section_header("Paths")
+
+        # Import Source Directory
+        self.frame_import = ctk.CTkFrame(self.main_frame, fg_color="transparent")
+        self.frame_import.pack(fill="x", pady=5)
+        self.frame_import.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(self.frame_import, text="Import Source Folder:").grid(
+            row=0, column=0, sticky="w", padx=(0, 10)
+        )
+        self.entry_import = ctk.CTkEntry(
+            self.frame_import, placeholder_text="Leave empty for default"
+        )
+        self.entry_import.grid(row=0, column=1, sticky="ew", padx=(0, 10))
+        ctk.CTkButton(
+            self.frame_import, text="Browse", width=70, command=self._browse_import
+        ).grid(row=0, column=2)
 
         # Template Directory
         self.frame_template = ctk.CTkFrame(self.main_frame, fg_color="transparent")
@@ -305,6 +321,15 @@ class PreferencesDialog(ctk.CTkToplevel):
             anchor="w"
         )
 
+    def _browse_import(self):
+        """Browse for import source directory."""
+        current = self.entry_import.get()
+        initial = current if current and os.path.exists(current) else os.getcwd()
+        directory = filedialog.askdirectory(initialdir=initial)
+        if directory:
+            self.entry_import.delete(0, "end")
+            self.entry_import.insert(0, directory)
+
     def _browse_template(self):
         """Browse for template directory."""
         current = self.entry_template.get()
@@ -328,6 +353,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         prefs = self.prefs_manager.get_all()
 
         # Paths
+        self.entry_import.insert(0, prefs.get("import_source_dir", ""))
         self.entry_template.insert(0, prefs.get("template_directory", ""))
         self.entry_oas.insert(0, prefs.get("oas_folder", ""))
 
@@ -389,6 +415,7 @@ class PreferencesDialog(ctk.CTkToplevel):
                 break
 
         return {
+            "import_source_dir": self.entry_import.get().strip(),
             "template_directory": self.entry_template.get().strip(),
             "oas_folder": self.entry_oas.get().strip(),
             "gen_oas_30": self.chk_oas30.get() == 1,
@@ -428,6 +455,7 @@ class PreferencesDialog(ctk.CTkToplevel):
     def _on_reset(self):
         """Reset UI to default values."""
         # Clear all
+        self.entry_import.delete(0, "end")
         self.entry_template.delete(0, "end")
         self.entry_oas.delete(0, "end")
 
@@ -445,7 +473,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.cbo_app_log_theme.set("Dark")  # Default Dark
         self.cbo_spectral_log_theme.set("Light")
         self.cbo_sort.set("Alphabetical")
-        self.cbo_tab.set("Generation")
+        self.cbo_tab.set("OAS to Excel")
  
         # Slider
         self.slider_font.set(12)
