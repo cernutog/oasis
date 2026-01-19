@@ -3078,7 +3078,7 @@ class OASGenApp(ctk.CTk):
                              except Exception as e:
                                  print(f"Failed to delete {f}: {e}")
              except Exception as e:
-                 tk.messagebox.showerror("Error", f"Failed to clean directory: {e}")
+                 self.show_custom_error_dialog("Error", f"Failed to clean directory: {e}")
                  return
 
             
@@ -3089,6 +3089,89 @@ class OASGenApp(ctk.CTk):
         self.import_log_area.configure(state="disabled")
         
         threading.Thread(target=self._run_oas_import, args=(src_path, dst_folder)).start()
+
+    def show_custom_error_dialog(self, title, message):
+        """Shows a custom error dialog with consistent styling."""
+        class CustomErrorDialog(ctk.CTkToplevel):
+            def __init__(self, parent, title, message):
+                super().__init__(parent)
+                self.title(title)
+                self.geometry("450x200") 
+                self.resizable(False, False)
+                
+                # Center relative to parent
+                self.update_idletasks()
+                x = parent.winfo_x() + (parent.winfo_width() // 2) - 225
+                y = parent.winfo_y() + (parent.winfo_height() // 2) - 100
+                try:
+                    self.geometry(f"+{int(x)}+{int(y)}")
+                except:
+                    pass
+
+                self.transient(parent)
+                self.grab_set()
+
+                # Icon setup
+                self.after(200, self._set_icon)
+                
+                self._build_ui(message)
+
+            def _get_resource_path(self, relative_path):
+                try:
+                    base_path = sys._MEIPASS
+                except Exception:
+                    base_path = os.path.abspath(".")
+                return os.path.join(base_path, relative_path)
+
+            def _set_icon(self):
+                try:
+                    icon_path = "icon.ico"
+                    if not os.path.exists(icon_path):
+                        icon_path = self._get_resource_path("icon.ico")
+                    if os.path.exists(icon_path):
+                        try:
+                            self.iconbitmap(icon_path)
+                            self.wm_iconbitmap(icon_path)
+                        except:
+                            pass
+                except:
+                    pass
+
+            def _build_ui(self, message):
+                # Main Container
+                main_container = ctk.CTkFrame(self, fg_color="transparent")
+                main_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+                # Content Block (Icon + Text)
+                content_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+                content_frame.pack(fill="x", expand=True)
+
+                # Icon - Red X
+                icon_label = ctk.CTkLabel(content_frame, text="\u274C", 
+                                          text_color="#D32F2F", 
+                                          font=ctk.CTkFont(size=48))
+                icon_label.pack(side="left", padx=(10, 20))
+
+                # Message Area
+                msg_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+                msg_frame.pack(side="left", fill="both", expand=True)
+
+                msg_label = ctk.CTkLabel(msg_frame, text=message, 
+                                         font=ctk.CTkFont(size=14, weight="bold"),
+                                         text_color=("black", "white"),
+                                         wraplength=280,
+                                         anchor="w", justify="left")
+                msg_label.pack(fill="x", expand=True)
+
+                # Button Area
+                btn_container = ctk.CTkFrame(main_container, fg_color="transparent")
+                btn_container.pack(fill="x", side="bottom", pady=10)
+
+                ctk.CTkButton(btn_container, text="OK", width=100, height=32,
+                              command=self.destroy).pack(side="top")
+
+        dialog = CustomErrorDialog(self, title, message)
+        self.wait_window(dialog)
 
     def show_clean_folder_dialog(self, folder_path):
         """Shows a custom dialog to ask user how to handle non-empty folder.
@@ -3231,12 +3314,12 @@ class OASGenApp(ctk.CTk):
         except PermissionError:
             err_msg = "Permission Denied: Please close any open Excel files (e.g., $index.xlsx) and try again."
             self._log_import(f"ERROR: {err_msg}")
-            messagebox.showerror("Permission Error", err_msg)
+            self.show_custom_error_dialog("Permission Error", err_msg)
         except Exception as e:
             self._log_import(f"ERROR: {e}")
             import traceback
             self._log_import(traceback.format_exc())
-            messagebox.showerror("Error", f"An unexpected error occurred:\n{e}")
+            self.show_custom_error_dialog("Error", f"An unexpected error occurred:\n{e}")
         finally:
             self.after(0, lambda: self.btn_import.configure(state="normal"))
 
