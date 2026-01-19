@@ -15,76 +15,52 @@ class OASComparator:
         
     def get_structure_comparison(self) -> dict:
         """
-        Returns a dictionary comparing LINE COUNTS of top-level OAS sections.
-        Counts actual lines from source files to ensure sum of parts = total.
-        Format: {'Section': (Source_LineCount, Generated_LineCount)}
+        Returns a dictionary comparing ITEM COUNTS of top-level OAS sections.
         """
-        def count_section_lines(file_path: str) -> dict:
-            """Count lines for each top-level YAML section in file."""
-            if not os.path.exists(file_path):
-                return {}
-            
-            section_lines = {}
-            current_section = None
-            section_start = 0
-            
-            with open(file_path, 'r', encoding='utf-8') as f:
-                lines = f.readlines()
-            
-            for i, line in enumerate(lines, start=1):
-                stripped = line.lstrip()
-                
-                # Skip empty lines and comments
-                if not stripped or stripped.startswith('#'):
-                    continue
-                
-                # Detect top-level keys (no indentation before key)
-                if line[0] not in (' ', '\t', '-') and ':' in line:
-                    # Save previous section
-                    if current_section:
-                        section_lines[current_section] = i - section_start
-                    
-                    # Start new section
-                    current_section = line.split(':')[0].strip()
-                    section_start = i
-            
-            # Save last section
-            if current_section:
-                section_lines[current_section] = len(lines) - section_start + 1
-            
-            return section_lines
-        
-        source_sections = count_section_lines(self.gold_path)
-        gen_sections = count_section_lines(self.gen_path)
-        
-        # Get union of all sections from both files
-        all_sections = set(source_sections.keys()) | set(gen_sections.keys())
-        
-        # Standard OAS sections in display order
-        ordered_sections = ['openapi', 'info', 'servers', 'paths', 'components', 
-                           'security', 'tags', 'externalDocs']
-        
         metrics = {}
-        for section in ordered_sections:
-            if section in all_sections:
-                source_count = source_sections.get(section, 0)
-                gen_count = gen_sections.get(section, 0)
-                metrics[section.capitalize()] = (source_count, gen_count)
         
-        # Add any other sections found
-        for section in sorted(all_sections):
-            if section not in ordered_sections:
-                source_count = source_sections.get(section, 0)
-                gen_count = gen_sections.get(section, 0)
-                metrics[section.capitalize()] = (source_count, gen_count)
+        # 1. Info (Single object)
+        metrics['Info'] = (1 if self.gold_oas.get('info') else 0, 1 if self.gen_oas.get('info') else 0)
+        
+        # 2. Servers (List count)
+        g_servers = self.gold_oas.get('servers', [])
+        t_servers = self.gen_oas.get('servers', [])
+        metrics['Servers'] = (len(g_servers), len(t_servers))
+        
+        # 3. Tags (List count)
+        g_tags = self.gold_oas.get('tags', [])
+        t_tags = self.gen_oas.get('tags', [])
+        metrics['Tags'] = (len(g_tags), len(t_tags))
+        
+        # 4. Paths (Key count)
+        g_paths = self.gold_oas.get('paths', {})
+        t_paths = self.gen_oas.get('paths', {})
+        metrics['Paths'] = (len(g_paths), len(t_paths))
+        
+        # 5. Components (Total count of all sub-components)
+        g_comps = self.gold_oas.get('components', {})
+        t_comps = self.gen_oas.get('components', {})
+        
+        def count_components(comp_dict):
+            total = 0
+            for k, v in comp_dict.items():
+                if isinstance(v, dict):
+                    total += len(v)
+            return total
+
+        metrics['Components'] = (count_components(g_comps), count_components(t_comps))
+        
+        # 6. Security (List count)
+        g_sec = self.gold_oas.get('security', [])
+        t_sec = self.gen_oas.get('security', [])
+        metrics['Security'] = (len(g_sec), len(t_sec))
         
         return metrics
     
     def get_detailed_structure_breakdown(self) -> dict:
         """
-        Returns detailed breakdown for Components and Paths sections showing where lines are lost.
+        Returns detailed ITEMS count breakdown.
         """
-        import yaml
         breakdown = {}
         
         # Components breakdown by subsection
@@ -92,35 +68,64 @@ class OASComparator:
         t_comps = self.gen_oas.get('components', {})
         
         comp_details = {}
-        for key in ['schemas', 'parameters', 'responses', 'headers', 'requestBodies', 'securitySchemes']:
-            g_section = g_comps.get(key, {})
-            t_section = t_comps.get(key, {})
+        # Expand list to include ALL component types
+        comp_types = ['schemas', 'parameters', 'responses', 'headers', 
+                      'requestBodies', 'securitySchemes', 'links', 'callbacks', 'examples']
+                      
+        for key in comp_types:
+            g_section = g_comps.get(key, {}) or {}
+            t_section = t_comps.get(key, {}) or {}
             
-            def count_yaml_lines(obj):
-                if not obj:
-                    return 0
-                return len(yaml.dump(obj, default_flow_style=False, sort_keys=False).strip().split('\n'))
+            g_count = len(g_section)
+            t_count = len(t_section)
             
-            g_lines = count_yaml_lines(g_section)
-            t_lines = count_yaml_lines(t_section)
-            
-            if g_lines > 0 or t_lines > 0:
-                comp_details[key] = (g_lines, t_lines, t_lines - g_lines)
+            if g_count > 0 or t_count > 0:
+                comp_details[key] = (g_count, t_count, t_count - g_count)
         
         breakdown['components'] = comp_details
         
-        # Paths breakdown - find paths with biggest discrepancies
+        # Paths breakdown - Still useful to find BIGGEST discrepancies in loops/logic
+        # For paths, we might want to check OPERATION counts per path?
+        # Or stick to Line Diff for "Top 10 Discrepancies" because that highlights content changes?
+        # User asked for "breakdown... anche per tutte le altre strutture".
+        # Let's keep Paths Discrepancy based on Line Count (proxy for modification) 
+        # but explicitly label it as "Line Delta" in the UI if possible, or just keep it as is
+        # since it's a "Top 10 Discrepancies" list.
+        
+        # Actually, let's switch Paths breakdown to be purely about "Missing/Added" paths if possible?
+        # No, "discrepancies" usually implies content mismatch.
+        # Let's keep the Line Count Delta logic for Paths Breakdown as it acts as a heuristic for content change,
+        # BUT we must clarify it.
+        # Wait, the user said "tutte le altre strutture".
+        # I have added full components breakdown.
+        
         g_paths = self.gold_oas.get('paths', {})
         t_paths = self.gen_oas.get('paths', {})
         
         path_details = []
-        for path_name in set(list(g_paths.keys()) + list(t_paths.keys())):
-            g_path_obj = g_paths.get(path_name, {})
-            t_path_obj = t_paths.get(path_name, {})
+        import yaml
+        
+        # Union of all paths
+        all_paths = set(list(g_paths.keys()) + list(t_paths.keys()))
+        
+        for path_name in all_paths:
+            g_path_obj = g_paths.get(path_name)
+            t_path_obj = t_paths.get(path_name)
             
+            # If path is missing
+            if g_path_obj is None:
+                # Added
+                t_lines = len(str(t_path_obj).splitlines()) # Approximate or use yaml dump
+                path_details.append((path_name, 0, 1, 1)) # 0 vs 1 (Present)
+                continue
+            if t_path_obj is None:
+                # Removed
+                path_details.append((path_name, 1, 0, -1))
+                continue
+                
+            # Both exist - compare content size (lines) to find changes
             def count_yaml_lines(obj):
-                if not obj:
-                    return 0
+                if not obj: return 0
                 return len(yaml.dump(obj, default_flow_style=False, sort_keys=False).strip().split('\n'))
             
             g_lines = count_yaml_lines(g_path_obj)
@@ -130,9 +135,9 @@ class OASComparator:
             if delta != 0:
                 path_details.append((path_name, g_lines, t_lines, delta))
         
-        # Sort by absolute delta (biggest losses first)
+        # Sort by absolute delta
         path_details.sort(key=lambda x: abs(x[3]), reverse=True)
-        breakdown['paths'] = path_details[:10]  # Top 10 discrepancies
+        breakdown['paths'] = path_details  # All discrepancies
         
         return breakdown
 
@@ -194,6 +199,61 @@ class OASComparator:
             n=0 # Minimal context
         )
         return list(diff)
+
+    def get_component_discrepancies(self) -> dict:
+        """
+        Returns a dictionary of discrepancies for EACH component type.
+        Format: {'schemas': [(name, src_lines, gen_lines, delta), ...], ...}
+        Only includes items with non-zero delta.
+        """
+        import yaml
+        discrepancies = {}
+        
+        g_comps = self.gold_oas.get('components', {})
+        t_comps = self.gen_oas.get('components', {})
+        
+        comp_types = ['schemas', 'parameters', 'responses', 'headers', 
+                      'requestBodies', 'securitySchemes', 'links', 'callbacks', 'examples']
+                      
+        for c_type in comp_types:
+            g_section = g_comps.get(c_type, {}) or {}
+            t_section = t_comps.get(c_type, {}) or {}
+            
+            type_diffs = []
+            all_keys = set(list(g_section.keys()) + list(t_section.keys()))
+            
+            for name in all_keys:
+                g_obj = g_section.get(name)
+                t_obj = t_section.get(name)
+                
+                if g_obj is None:
+                    # Added
+                    t_lines = len(yaml.dump(t_obj, default_flow_style=False, sort_keys=False).strip().split('\n'))
+                    type_diffs.append((name, 0, t_lines, t_lines))
+                    continue
+                if t_obj is None:
+                    # Removed
+                    g_lines = len(yaml.dump(g_obj, default_flow_style=False, sort_keys=False).strip().split('\n'))
+                    type_diffs.append((name, g_lines, 0, -g_lines))
+                    continue
+                    
+                # Content Check via line count proxy
+                def count_lines(obj):
+                     if not obj: return 0
+                     return len(yaml.dump(obj, default_flow_style=False, sort_keys=False).strip().split('\n'))
+                
+                g_lines = count_lines(g_obj)
+                t_lines = count_lines(t_obj)
+                delta = t_lines - g_lines
+                
+                if delta != 0:
+                    type_diffs.append((name, g_lines, t_lines, delta))
+            
+            if type_diffs:
+                type_diffs.sort(key=lambda x: abs(x[3]), reverse=True)
+                discrepancies[c_type] = type_diffs
+                
+        return discrepancies
 
     def _count_operations(self, paths: dict) -> int:
         count = 0

@@ -3282,21 +3282,10 @@ class OASGenApp(ctk.CTk):
             # Detailed Breakdown (only if Line Diff is enabled)
             if line_diff:
                 breakdown = comparator.get_detailed_structure_breakdown()
-                
-                # Components breakdown
-                if 'components' in breakdown and breakdown['components']:
-                    self._log_import("\n=== COMPONENTS BREAKDOWN ===")
-                    comp_fmt = "{:<25} | {:<10} | {:<10} | {:<10}"
-                    self._log_import(comp_fmt.format("Subsection", "Source", "Generated", "Delta"))
-                    self._log_import("-" * 65)
-                    
-                    for subsection, (src, gen, delta) in breakdown['components'].items():
-                        delta_str = f"+{delta}" if delta > 0 else str(delta)
-                        self._log_import(comp_fmt.format(subsection, str(src), str(gen), delta_str))
-                
-                # Paths breakdown (top discrepancies)
+
+                # 1. PATHS BREAKDOWN (Line Content Differences) - MOVED FIRST
                 if 'paths' in breakdown and breakdown['paths']:
-                    self._log_import("\n=== PATHS BREAKDOWN (Top 10 Discrepancies) ===")
+                    self._log_import("\n=== PATHS BREAKDOWN (Line Content Differences) ===")
                     path_fmt = "{:<50} | {:<10} | {:<10} | {:<10}"
                     self._log_import(path_fmt.format("Path", "Source", "Generated", "Delta"))
                     self._log_import("-" * 90)
@@ -3306,6 +3295,32 @@ class OASGenApp(ctk.CTk):
                         # Truncate path if too long
                         display_path = path_name if len(path_name) <= 50 else path_name[:47] + "..."
                         self._log_import(path_fmt.format(display_path, str(src), str(gen), delta_str))
+
+                # 2. COMPONENTS BREAKDOWN (Summary Item Counts)
+                if 'components' in breakdown and breakdown['components']:
+                    self._log_import("\n=== COMPONENTS BREAKDOWN (Item Counts) ===")
+                    comp_fmt = "{:<25} | {:<10} | {:<10} | {:<10}"
+                    self._log_import(comp_fmt.format("Subsection", "Source", "Generated", "Delta"))
+                    self._log_import("-" * 65)
+                    
+                    for subsection, (src, gen, delta) in breakdown['components'].items():
+                        delta_str = f"+{delta}" if delta > 0 else str(delta)
+                        self._log_import(comp_fmt.format(subsection, str(src), str(gen), delta_str))
+
+                # 3. DETAILED COMPONENT DISCREPANCIES (New Section)
+                comp_discrepancies = comparator.get_component_discrepancies()
+                has_issues = any(len(v) > 0 for v in comp_discrepancies.values())
+                
+                if has_issues:
+                     self._log_import("\n=== DETAILED COMPONENT DISCREPANCIES (Content/Line Differences) ===")
+                     for comp_type, items in comp_discrepancies.items():
+                         if not items: continue
+                         self._log_import(f"\n--- {comp_type.upper()} ---")
+                         self._log_import(f"{'Name':<50} | {'Source':<7} | {'Gen':<7} | {'Delta':<5}")
+                         for name, s_l, g_l, d in items: # Showing ALL Discrepancies
+                             d_str = f"+{d}" if d > 0 else str(d)
+                             disp_name = name if len(name) < 50 else name[:47] + "..."
+                             self._log_import(f"{disp_name:<50} | {s_l:<7} | {g_l:<7} | {d_str:<5}")
             
             # REMOVED DETAILED DIFF PER USER REQUEST
             # if line_diff and (diff_stats['Added Lines'] > 0 or diff_stats['Removed Lines'] > 0):

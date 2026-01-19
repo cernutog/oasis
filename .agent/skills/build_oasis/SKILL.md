@@ -46,3 +46,12 @@ The `build_exe.bat` script **automatically increments** the build number:
 3.  **Verify Output**
     Check that the build completed successfully (Look for "Build SUCCESSFUL" message).
     The output executable will be at `dist/OASIS.exe`.
+
+4.  **Commit and Tag Changes**
+    After a successful build, commit the changes to source control.
+    -   **Message**: Should start with `Build v1.5.XX` followed by a descriptive summary of changes.
+    -   **Files**: Ensure `src/version.py` is included (it contains the incremented build number).
+    ```powershell
+    git add .
+    git commit -m "Build v1.5.XX: <Description of changes>"
+    ```
