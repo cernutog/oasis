@@ -224,6 +224,7 @@ def parse_tags(df_tags):
     tags = []
     if df_tags is not None:
         for _, row in df_tags.iterrows():
+            # Explicit key order: name, then description
             tag = {"name": row.get("Name"), "description": row.get("Description")}
             if tag["name"]:
                 tags.append(tag)

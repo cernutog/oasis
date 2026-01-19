@@ -3096,7 +3096,7 @@ class OASGenApp(ctk.CTk):
         """
         dialog = ctk.CTkToplevel(self)
         dialog.title("Folder Not Empty")
-        dialog.geometry("400x200")  # Reduced height from 220 to 200
+        dialog.geometry("550x180")  # Wider for horizontal buttons
         dialog.resizable(False, False)
         
         # Remove default icon (cannot set custom icon reliably in CTkToplevel)
@@ -3107,15 +3107,15 @@ class OASGenApp(ctk.CTk):
         
         # Center dialog
         dialog.update_idletasks()
-        x = self.winfo_x() + (self.winfo_width() // 2) - 200
-        y = self.winfo_y() + (self.winfo_height() // 2) - 110
+        x = self.winfo_x() + (self.winfo_width() // 2) - 275
+        y = self.winfo_y() + (self.winfo_height() // 2) - 90
         dialog.geometry(f"+{x}+{y}")
         
         # Modal
         dialog.transient(self)
         dialog.grab_set()
         
-        ctk.CTkLabel(dialog, text="The Excel Output Folder is not empty.", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(20, 20))
+        ctk.CTkLabel(dialog, text="The Excel Output Folder is not empty.", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(25, 20))
         
         self.clean_folder_choice = "cancel"
         
@@ -3123,22 +3123,26 @@ class OASGenApp(ctk.CTk):
             self.clean_folder_choice = c
             dialog.destroy()
             
-        # Buttons (Reordered: Keep Files as default/first option)
+        # Buttons (Horizontal Layout)
         btn_frame = ctk.CTkFrame(dialog, fg_color="transparent")
         btn_frame.pack(fill="x", padx=20, pady=10)
         
-        # Keep Files (Default, safe option) - Standard style
-        ctk.CTkButton(btn_frame, text="Keep Files", 
-                      command=lambda: set_choice("keep")).pack(fill="x", pady=5)
+        # Keep Files (Default)
+        ctk.CTkButton(btn_frame, text="Keep Files", width=100,
+                      command=lambda: set_choice("keep")).pack(side="left", padx=5, expand=True)
                       
-        # Clear Excel Files - Standard style  
-        ctk.CTkButton(btn_frame, text="Clear Excel Files", 
-                      command=lambda: set_choice("clear_excel")).pack(fill="x", pady=5)
+        # Clear Excel
+        ctk.CTkButton(btn_frame, text="Clear Excel Files", width=120,
+                      command=lambda: set_choice("clear_excel")).pack(side="left", padx=5, expand=True)
                        
-        # Clear ALL - Danger style (red)
-        ctk.CTkButton(btn_frame, text="Clear ALL", 
+        # Clear ALL
+        ctk.CTkButton(btn_frame, text="Clear ALL", width=100,
                       fg_color="#A00000", hover_color="#800000",
-                      command=lambda: set_choice("clear_all")).pack(fill="x", pady=5)
+                      command=lambda: set_choice("clear_all")).pack(side="left", padx=5, expand=True)
+
+        # Cancel
+        ctk.CTkButton(btn_frame, text="Cancel", width=80, fg_color="gray", hover_color="#505050",
+                      command=lambda: set_choice("cancel")).pack(side="left", padx=5, expand=True)
 
         dialog.wait_window()
         return self.clean_folder_choice
