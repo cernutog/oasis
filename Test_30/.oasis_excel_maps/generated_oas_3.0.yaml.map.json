@@ -1,0 +1,730 @@
+{
+  "paths./v1/accounts/assessments.post.parameters": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/accounts/assessments.post.requestBody": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/accounts/assessments.post.requestBody.content.application/json.examples": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/accounts/assessments.post.responses.201": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "201"
+  },
+  "paths./v1/accounts/assessments.post.responses.400": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/accounts/assessments.post.responses.401": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/accounts/assessments.post.responses.403": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/accounts/assessments.post.responses.409": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/accounts/assessments.post.responses.429": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/accounts/assessments.post.responses.500": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/accounts/assessments.post": {
+    "file": "create-account-assessment.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/accounts/assessments/vop.post.parameters": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/accounts/assessments/vop.post.requestBody": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/accounts/assessments/vop.post.requestBody.content.application/json.examples": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/accounts/assessments/vop.post.responses.201": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "201"
+  },
+  "paths./v1/accounts/assessments/vop.post.responses.400": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/accounts/assessments/vop.post.responses.401": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/accounts/assessments/vop.post.responses.403": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/accounts/assessments/vop.post.responses.409": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/accounts/assessments/vop.post.responses.429": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/accounts/assessments/vop.post.responses.500": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/accounts/assessments/vop.post": {
+    "file": "create-account-assessment-vop.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.parameters": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.requestBody": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.requestBody.content.application/json.examples": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.responses.201": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "201"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.responses.400": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.responses.401": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.responses.403": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.responses.409": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.responses.429": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post.responses.500": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/accounts/assessments/vop/bulk.post": {
+    "file": "create-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.parameters": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.requestBody": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.requestBody.content.application/json.examples": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.200": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "200"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.400": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.401": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.403": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.404": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "404"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.409": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.429": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get.responses.500": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/accounts/assessments/vop/bulk/{bulkId}.get": {
+    "file": "get-account-assessment-vop-bulk.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./vop/v1/payee-verifications.post.parameters": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./vop/v1/payee-verifications.post.requestBody": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./vop/v1/payee-verifications.post.requestBody.content.application/json.examples": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./vop/v1/payee-verifications.post.responses.200": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "200"
+  },
+  "paths./vop/v1/payee-verifications.post.responses.400": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./vop/v1/payee-verifications.post.responses.401": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./vop/v1/payee-verifications.post.responses.500": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./vop/v1/payee-verifications.post": {
+    "file": "postVerificationOfPayeeRequests.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/assessments.post.parameters": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/assessments.post.requestBody": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/transactions/assessments.post.requestBody.content.application/json.examples": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/transactions/assessments.post.responses.201": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "201"
+  },
+  "paths./v1/transactions/assessments.post.responses.400": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/transactions/assessments.post.responses.401": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/transactions/assessments.post.responses.403": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/transactions/assessments.post.responses.409": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/transactions/assessments.post.responses.429": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/transactions/assessments.post.responses.500": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/transactions/assessments.post": {
+    "file": "create-transaction-assessment.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations.get.parameters": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations.get.requestBody": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/transactions/investigations.get.requestBody.content.application/json.examples": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/transactions/investigations.get.responses.200": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "200"
+  },
+  "paths./v1/transactions/investigations.get.responses.400": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/transactions/investigations.get.responses.401": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/transactions/investigations.get.responses.403": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/transactions/investigations.get.responses.409": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/transactions/investigations.get.responses.429": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/transactions/investigations.get.responses.500": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/transactions/investigations.get": {
+    "file": "get-transaction-investigation-by-transaction-key.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.parameters": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.requestBody": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.requestBody.content.application/json.examples": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.200": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "200"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.400": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.401": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.403": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.404": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "404"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.409": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.429": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get.responses.500": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/transactions/investigations/{fuid}.get": {
+    "file": "get-transaction-investigation-by-fuid.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations/reports.post.parameters": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations/reports.post.requestBody": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/transactions/investigations/reports.post.requestBody.content.application/json.examples": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/transactions/investigations/reports.post.responses.202": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "202"
+  },
+  "paths./v1/transactions/investigations/reports.post.responses.400": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/transactions/investigations/reports.post.responses.401": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/transactions/investigations/reports.post.responses.403": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/transactions/investigations/reports.post.responses.409": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/transactions/investigations/reports.post.responses.429": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/transactions/investigations/reports.post.responses.500": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/transactions/investigations/reports.post": {
+    "file": "create-transaction-investigation-report.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.parameters": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.requestBody": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.requestBody.content.application/json.examples": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.200": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "200"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.400": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.401": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.403": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.404": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "404"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.409": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.429": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get.responses.500": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/transactions/investigations/reports/{reportId}.get": {
+    "file": "get-transaction-investigation-report.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/risk-info/feedbacks.post.parameters": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/risk-info/feedbacks.post.requestBody": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/risk-info/feedbacks.post.requestBody.content.application/json.examples": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/risk-info/feedbacks.post.responses.201": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "201"
+  },
+  "paths./v1/risk-info/feedbacks.post.responses.400": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/risk-info/feedbacks.post.responses.401": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/risk-info/feedbacks.post.responses.403": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/risk-info/feedbacks.post.responses.409": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/risk-info/feedbacks.post.responses.429": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/risk-info/feedbacks.post.responses.500": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/risk-info/feedbacks.post": {
+    "file": "create-feedback-by-fuid.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/eds/local-file.get.parameters": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./v1/eds/local-file.get.requestBody": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "Body"
+  },
+  "paths./v1/eds/local-file.get.requestBody.content.application/json.examples": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./v1/eds/local-file.get.responses.200": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "200"
+  },
+  "paths./v1/eds/local-file.get.responses.204": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "204"
+  },
+  "paths./v1/eds/local-file.get.responses.400": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "400"
+  },
+  "paths./v1/eds/local-file.get.responses.401": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "401"
+  },
+  "paths./v1/eds/local-file.get.responses.403": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "403"
+  },
+  "paths./v1/eds/local-file.get.responses.404": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "404"
+  },
+  "paths./v1/eds/local-file.get.responses.409": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "409"
+  },
+  "paths./v1/eds/local-file.get.responses.429": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "429"
+  },
+  "paths./v1/eds/local-file.get.responses.500": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "500"
+  },
+  "paths./v1/eds/local-file.get": {
+    "file": "get-eds-local-file.260118.xlsx",
+    "sheet": "Parameters"
+  },
+  "components.schemas.AccountType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.AgentType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Amount": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.AssessmentTransactionData": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Bic": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Bic8": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.BICType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Currency": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.DateTime": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ErrorResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FpadUniqueIdentifier": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.GenericOrganisationIdentification": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.HateoasBlock": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Iban": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.IBANType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.InvestigationTransactionData": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.LEIType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.MessageCode": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Max35Text": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Max70Text": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Max140Text": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Max256Text": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Max500Text": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Message": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ModelItem": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ModelName": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ModelVersion": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ModelOutcome": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ModelNarratives": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.NameMatchType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.OrganisationIdentificationCode": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.PaginationInfo": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.PartyIdMatchType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.PartyType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Ria": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.RiskInfoArray": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ServiceType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ShortErrorResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ShortMessage": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.TransactionInvestigationReportFilter": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.TransactionKey": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.VerificationOfPayeeResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.VerificationOfPayeeError": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.VerificationOfPayeeRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.VopBulkIdentification": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.VopBulkRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.VopBulkResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.VopBulkResponseCounter": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  }
+}

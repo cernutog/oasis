@@ -167,25 +167,23 @@ class SchemaFlattener:
                        include_root: bool = True) -> List[FlatRow]:
         """
         Flatten a schema by name into rows.
-        
-        Args:
-            schema_name: Name of the schema in components/schemas
-            root_name: Override for the root element name
-            section: Section label for response sheets
-            include_root: Whether to include a root row for the schema
-            
-        Returns:
-            List of FlatRow objects
         """
+        print(f"DEBUG: flatten_schema called for {schema_name}")
         if schema_name not in self.schemas:
+            print(f"DEBUG: {schema_name} not found in schemas: {list(self.schemas.keys())}")
             return []
         
         rows = []
         schema = self.schemas[schema_name]
         name = root_name or schema_name
         
-        # Add root row for top-level component schemas
-        if include_root:
+        # Check if this schema is a combinator (has oneOf/anyOf/allOf)
+        # Combinators will be handled directly by _flatten_schema_def, no root row needed
+        is_combinator = any(key in schema for key in ['oneOf', 'anyOf', 'allOf'])
+        print(f"DEBUG: flatten_schema {name} is_combinator={is_combinator} include_root={include_root} keys={list(schema.keys())}") 
+        
+        # Add root row for top-level component schemas (SKIP for combinators)
+        if include_root and not is_combinator:
             schema_type = schema.get('type', 'object')
             root_row = FlatRow(
                 section=section,
@@ -200,10 +198,12 @@ class SchemaFlattener:
             rows.append(root_row)
         
         # Flatten the schema with this name as parent for all children
+        # For combinators: parent=None so combinator row becomes root
+        # For regular schemas: parent=name so properties are nested under root
         child_rows = self._flatten_schema_def(
             schema, 
             name=name,
-            parent=name if include_root else None,
+            parent=name if (include_root and not is_combinator) else None,
             required=True,
             section=section,
             is_root=True  # Signal that this is the root call

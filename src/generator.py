@@ -761,8 +761,11 @@ class OASGenerator:
         nodes = {}
         node_map = {}  # Map Name -> Node
         roots = []
+        combinator_schemas = {}  # Track processed combinators
         df.columns = df.columns.str.strip()
 
+        # 1. Build nodes & Map
+        print(f"DEBUG: Generator processing {len(df)} rows. Logic: Robust Combinator Fix v3")
         for idx, row in df.iterrows():
             name = self._get_name(row)
             if pd.isna(name):
@@ -785,37 +788,107 @@ class OASGenerator:
                 "mandatory": is_mandatory,
                 "schema_obj": self._map_type_to_schema(row, is_node=True),
             }
-            # Add title if Name is root?
-            # If it's a root (no parent), usually schema name = title too?
-            # Or description is used as title?
-            # OAS schema 'title' property.
 
             nodes[idx] = node
-            node_map[name] = node
+            node_map[name] = node # Add EVERYTHING to node_map initially
 
-        # 2. Link
+        # Optimization: Build children map (Parent -> [Children Nodes])
+        children_map = {}
+        for idx, node in nodes.items():
+            p = node["parent"]
+            if pd.notna(p):
+                p = str(p).strip()
+                if p not in children_map:
+                    children_map[p] = []
+                children_map[p].append(node)
+
+        # 2. Process combinators FIRST (before regular linking)
+        import re
+        for idx, node in nodes.items():
+            name = node["name"]
+            type_val = str(node["type"]).strip().lower() if pd.notna(node["type"]) else ""
+            
+            if type_val in ["oneof", "anyof", "allof"]:
+                # Check for children matching name[n]
+                combinator_key = {"oneof": "oneOf", "anyof": "anyOf", "allof": "allOf"}[type_val]
+                
+                potential_children = children_map.get(name, [])
+                pattern = re.compile(rf'^{re.escape(name)}\[(\d+)\]$')
+                indexed_children = []
+                
+                for child_node in potential_children:
+                    match = pattern.match(child_node["name"])
+                    if match:
+                        alt_index = int(match.group(1))
+                        indexed_children.append((alt_index, child_node))
+                
+                if indexed_children:
+                    # Found children -> It IS an inline combinator
+                    indexed_children.sort(key=lambda x: x[0])
+                    alternatives = []
+                    
+                    for _, child_node in indexed_children:
+                        alt_schema = self._build_inline_alternative(nodes, child_node, children_map, parent_type=type_val)
+                        alternatives.append(alt_schema)
+                    
+                    # BUG FIX Refined: The root node's schema_obj might already be a combinator 
+                    # (e.g. Type='allOf', Schema='Core' -> {'allOf': [{'$ref': 'Core'}]})
+                    # We must merge it into the new list effectively.
+                    root_schema = node.get("schema_obj", {})
+                    
+                    if combinator_key in root_schema and isinstance(root_schema[combinator_key], list):
+                        # Merge existing combinator alternatives (e.g. the inheritance ref)
+                        alternatives.extend(root_schema[combinator_key])
+                    elif "$ref" in root_schema:
+                        # Case where root is a direct Ref (e.g. Type='object', Schema='Core')
+                        alternatives.append(root_schema)
+
+                    schema_obj = {combinator_key: alternatives}
+                    desc = node["description"]
+                    if pd.notna(desc):
+                        schema_obj["description"] = str(desc)
+                    
+                    combinator_schemas[name] = schema_obj
+                    # CRITICAL: Update the node's schema_obj so linking uses the combinator structure
+                    node["schema_obj"] = schema_obj
+
+        # 3. Regular linking for non-combinator nodes
         for idx, node in nodes.items():
             name = node["name"]
             parent_name = node["parent"]
+            type_val = str(node["type"]).strip().lower() if pd.notna(node["type"]) else ""
+            
+            # Check if child of ANY combinator
+            is_combinator_child = False
+            for comb_name in combinator_schemas:
+                # Optimized check: name starts with comb_name + "["
+                if name.startswith(comb_name + "["):
+                     # Verify exact pattern (name matches comb_name[digits...])
+                     # Note: this handles recursion (e.g. A[0][1]) if A[0] is in combinator_schemas?
+                     # Actually, if A[0] is a combinator, it is in combinator_schemas.
+                     # So A[0][1] is a child of A[0].
+                     # A[0] is a child of A.
+                     # We must skip all of them from ROOT/PARENT linking?
+                     # Yes, because they are handled by recursion inside _build_inline_alternative.
+                     if re.match(rf'^{re.escape(comb_name)}\[\d+\]', name):
+                         is_combinator_child = True
+                         break
+            
+            if is_combinator_child:
+                continue
+            
             if pd.isna(parent_name):
                 roots.append(node)
-                # Note: We don't auto-add 'title' as it's redundant when equal to schema name
             elif str(parent_name).strip() in node_map:
                 parent = node_map[str(parent_name).strip()]
                 parent_schema = parent["schema_obj"]
 
                 if parent_schema.get("type") == "array":
-                    # If parent is array, child usually defines properties of the item object
-                    # Check if items is explicitly object or empty dict (default from map_type)
                     items_schema = parent_schema.get("items", {})
-                    # Ensure items is a dict
                     if not isinstance(items_schema, dict):
-                        # Should not happen if map_type works, but safety check
                         parent_schema["items"] = {}
                         items_schema = parent_schema["items"]
 
-                    # Logic: If we are adding multiple children to an array, they are properties of the item object.
-                    # FORCE item type to object if we are adding properties
                     if "type" not in items_schema:
                         items_schema["type"] = "object"
 
@@ -825,7 +898,6 @@ class OASGenerator:
 
                         items_schema["properties"][name] = node["schema_obj"]
 
-                        # Handle Required for Item
                         if node["mandatory"]:
                             if "required" not in items_schema:
                                 items_schema["required"] = []
@@ -834,25 +906,87 @@ class OASGenerator:
 
                         parent_schema["items"] = items_schema
                     else:
-                        # If items type is NOT object (e.g. array of strings with a child? Unlikely schema design)
-                        # We fallback to overwriting (Last one wins - Legacy behavior)
                         parent_schema["items"] = node["schema_obj"]
                 else:
                     if "properties" not in parent_schema:
                         parent_schema["properties"] = {}
                     parent_schema["properties"][name] = node["schema_obj"]
 
-                    # Handle Required
                     if node["mandatory"]:
                         if "required" not in parent_schema:
                             parent_schema["required"] = []
                         if name not in parent_schema["required"]:
                             parent_schema["required"].append(name)
 
-        # 3. Return map of Root Name -> Schema
+        # 4. Return combined results
+        # Note: combinator_schemas are already integrated into roots or parents via node['schema_obj'] update
         return {r["name"]: r["schema_obj"] for r in roots}
+    
+    def _build_inline_alternative(self, nodes, alt_node, children_map=None, parent_type=None):
+        """Build schema for inline combinator alternative recursively (e.g., InsightNotificationSearchFilter[0])"""
+        from collections import OrderedDict
+        
+        alt_name = alt_node["name"]
+        schema = alt_node["schema_obj"].copy() if alt_node["schema_obj"] else {}
+        
+        # Use description as 'title' for combinator alternatives
+        desc = alt_node["description"]
+        if pd.notna(desc) and desc:
+            schema["title"] = str(desc)
+        
+        # Check for nested combinator (if this alternative is itself a oneOf/...)
+        # If it is, node['schema_obj'] might already be the combinator structure?
+        # Yes, loop 2 processed ALL nodes.
+        # So if alt_node was detected as combinator, schema_obj is ALREADY correct.
+        # We just need to handle PROPERTIES (children) if it is NOT a combinator (or if it's mixed?)
+        # Usually oneOf alternatives are objects.
+        # We need to find children of THIS node (properties).
+        
+        if not children_map:
+            return schema
 
-        return {r["name"]: r["schema_obj"] for r in roots}
+        children = children_map.get(alt_name, [])
+        
+        # But wait! If this node IS a combinator, its children are [0], [1]...
+        # Loop 2 already handled them into schema_obj['oneOf']...
+        # So we don't need to do anything?
+        # BUT Loop 2 only handled INLINE COMBINATORS.
+        # What if it's an OBJECT with properties?
+        # Then Loop 2 did NOT touch it (unless it had oneOf type).
+        # So we must manually build properties here for recursion.
+        
+        # Filter children that are NOT alternatives (e.g. properties)
+        # Actually, Importer flattens object properties as children with Parent=Name.
+        # So we just iterate children.
+        
+        if children and schema.get("type") == "object":
+            if "properties" not in schema:
+                from collections import OrderedDict
+                schema["properties"] = OrderedDict()
+            required = []
+            
+            # Sort children? (optional, alphabetical or document order - dict key order usually preserves insertion)
+            # Importer output usually has order.
+            
+            for child_node in children:
+                child_name = child_node["name"]
+                
+                # Recursion: Build child schema
+                child_schema = self._build_inline_alternative(nodes, child_node, children_map)
+                schema["properties"][child_name] = child_schema
+                
+                if child_node["mandatory"]:
+                    required.append(child_name)
+            
+            if required:
+                schema["required"] = required
+            
+            # CRITICAL FIX: Enforce exclusivity for oneOf matching ONLY
+            # For allOf (inheritance), we MUST allow additional properties (from the parent/other schemas)
+            if parent_type == "oneof":
+                schema["additionalProperties"] = False
+        
+        return schema
 
     def get_yaml(self):
         # Enforce Section Order
