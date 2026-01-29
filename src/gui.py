@@ -49,8 +49,9 @@ from chlorophyll import CodeView
 import pygments.lexers
 
 # Set Theme
-ctk.set_appearance_mode("System")  # Modes: "System" (standard), "Dark", "Light"
-ctk.set_default_color_theme("blue")  # Themes: "blue" (standard), "green", "dark-blue"
+# Set Theme - HANDLED IN MAIN.PY
+# ctk.set_appearance_mode("System")
+# ctk.set_default_color_theme("blue")
 
 
 # Module-level function for multiprocessing (must be picklable)
@@ -85,6 +86,9 @@ class LogWindow(ctk.CTkToplevel):
         self.title("Application Logs")
         self.geometry("800x600")
 
+        # Icon Setup - Delayed to override CTk default (same as PreferencesDialog)
+        self.after(250, self._set_icon)
+
         # Set appearance
         self.theme = theme
 
@@ -96,15 +100,22 @@ class LogWindow(ctk.CTkToplevel):
 
         # Apply initial theme
         self.apply_theme(self.theme)
+        
+        # Ensure window is on top when created (transient keeps it above parent)
+        self.transient(parent)
+        self.lift()
+        self.focus_force()
 
-        # Handle close (hide instead of destroy? No, destroy is fine, we recreate)
-        self.protocol("WM_DELETE_WINDOW", self._on_close)
-        self.on_close_callback = None
+    def _set_icon(self):
+        try:
+            icon_file = resource_path("icon.ico")
+            if os.path.exists(icon_file):
+                self.iconbitmap(icon_file)
+        except Exception:
+            pass
 
-    def _on_close(self):
-        if self.on_close_callback:
-            self.on_close_callback()
-        self.destroy()
+
+
 
     def append_log(self, text):
         """Append text to the log window."""
@@ -128,9 +139,131 @@ class LogWindow(ctk.CTkToplevel):
             self.textbox.configure(fg_color="#F0F0F0", text_color="#000000")
 
 
+class OASErrorDialog(ctk.CTkToplevel):
+    """Custom error dialog with consistent Petrol Blue styling."""
+    def __init__(self, parent, title, message):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("380x160") 
+        self.resizable(False, False)
+        
+        # Center relative to parent
+        self.update_idletasks()
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() // 2) - 190
+            y = parent.winfo_y() + (parent.winfo_height() // 2) - 80
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except:
+            pass
+
+        self.transient(parent)
+        self.grab_set()
+
+        # Icon setup
+        self.after(200, self._set_icon)
+        
+        self._build_ui(message)
+
+    def _get_resource_path(self, relative_path):
+        try:
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+        return os.path.join(base_path, relative_path)
+
+    def _set_icon(self):
+        try:
+            icon_path = "icon.ico"
+            if not os.path.exists(icon_path):
+                icon_path = self._get_resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                try:
+                    self.iconbitmap(icon_path)
+                    self.wm_iconbitmap(icon_path)
+                except:
+                    pass
+        except:
+            pass
+
+    def _build_ui(self, message):
+        # Main Container - Shift up slightly for visual balance
+        main_container = ctk.CTkFrame(self, fg_color="transparent")
+        main_container.place(relx=0.5, rely=0.45, anchor="center")
+
+        # Content Block (Icon + Text) - Row Layout
+        content_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        content_frame.pack(pady=(0, 15))
+
+        # Icon - Red X
+        icon_label = ctk.CTkLabel(content_frame, text="\u274C", 
+                                  text_color="#D32F2F", 
+                                  font=ctk.CTkFont(size=48))
+        icon_label.pack(side="left", padx=(0, 15))
+
+        # Message Area
+        msg_label = ctk.CTkLabel(content_frame, text=message, 
+                                 font=ctk.CTkFont(size=14, weight="bold"),
+                                 text_color=("black", "white"),
+                                 wraplength=300,
+                                 justify="left")
+        msg_label.pack(side="left")
+
+        # Button Area
+        # HARDCODED PETROL BLUE
+        ctk.CTkButton(self, text="OK", width=120, height=32,
+                      fg_color="#0A809E", hover_color="#076075",
+                      command=self.destroy).pack(side="bottom", pady=20)
+
+        # Handle close (hide instead of destroy? No, destroy is fine, we recreate)
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.on_close_callback = None
+
+    def _on_close(self):
+        if self.on_close_callback:
+            self.on_close_callback()
+        self.destroy()
+
+import customtkinter as ctk
+from customtkinter import ThemeManager  # REQUIRED FOR DIRECT OVERRIDE
+import tkinter as tk
+import tkinter.messagebox # debug
+
+# ... [imports] ...
+
 class OASGenApp(ctk.CTk):
     def __init__(self):
         super().__init__()
+        
+        # NUCLEAR OPTION: FORCE THEME COLORS HERE
+        # This bypasses file loading issues entirely.
+        try:
+            PETROL = "#0A809E"
+            HOVER = "#076075"
+            
+            # Button
+            ThemeManager.theme["CTkButton"]["fg_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkButton"]["hover_color"] = [HOVER, HOVER]
+            
+            # Slider
+            ThemeManager.theme["CTkSlider"]["button_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkSlider"]["progress_color"] = [PETROL, PETROL]
+            
+            # CheckBox
+            ThemeManager.theme["CTkCheckBox"]["fg_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkCheckBox"]["hover_color"] = [HOVER, HOVER]
+            
+            # Switch
+            ThemeManager.theme["CTkSwitch"]["progress_color"] = [PETROL, PETROL]
+            
+            # OptionMenu/ComboBox/SegmentedButton
+            ThemeManager.theme["CTkOptionMenu"]["fg_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkOptionMenu"]["button_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkComboBox"]["button_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkSegmentedButton"]["selected_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkSegmentedButton"]["selected_hover_color"] = [HOVER, HOVER]
+
+        except Exception as e:
+            print(f"Failed to enforce theme: {e}")
 
         # Window Setup
         self.title(f"OASIS - OAS Integration Suite v{FULL_VERSION}")
@@ -146,6 +279,11 @@ class OASGenApp(ctk.CTk):
 
         # Initialize Preferences Manager
         self.prefs_manager = PreferencesManager()
+        self.log_window = None # Init before logging
+        self.log_history = []
+        
+        # Open Log Window immediately if desired, or just init history
+        # self.log("[Init] Loading preferences...")
 
         # Log Window State
         self.log_window = None
@@ -185,8 +323,12 @@ class OASGenApp(ctk.CTk):
         # Setup OAS to Excel Tab
         self._setup_import_tab()
         
-        # Bind Ctrl+F globally to the tabview to catch it even if focus is not on text
-        self.bind("<Control-f>", self._handle_global_search)
+        # Global search binding - bind_all to be robust regardless of focus
+        self.bind_all("<Control-f>", self._handle_global_search)
+        self.bind_all("<Control-F>", self._handle_global_search)
+        self.bind_all("<Control-Key-f>", self._handle_global_search)
+        self.bind_all("<Control-Key-F>", self._handle_global_search)
+
 
         # ==========================
         # TAB 2: EXCEL TO OAS (Formerly Generation)
@@ -201,28 +343,27 @@ class OASGenApp(ctk.CTk):
         self.frame_controls.grid(row=0, column=0, sticky="ew", padx=10, pady=10)
         self.frame_controls.grid_columnconfigure(1, weight=1)
 
+        # Label: Excel Input Folder
         self.lbl_dir = ctk.CTkLabel(
             self.frame_controls,
-            text="Template Folder:",
+            text="Excel Input Folder:",
             font=ctk.CTkFont(weight="bold"),
         )
         self.lbl_dir.grid(row=0, column=0, padx=10, pady=10, sticky="w")
 
         self.entry_dir = ctk.CTkEntry(
-            self.frame_controls, placeholder_text="Path to API Templates..."
+            self.frame_controls, placeholder_text="Path to Excel templates..."
         )
         self.entry_dir.grid(row=0, column=1, padx=(0, 10), pady=10, sticky="ew")
 
-        # Use saved preference or default path
-        saved_template_dir = self.prefs_manager.get("template_directory", "")
-        if saved_template_dir and os.path.exists(saved_template_dir):
-            self.entry_dir.insert(0, saved_template_dir)
-        else:
-            default_path = os.path.join(os.getcwd(), "..", "API Templates")
-            if os.path.exists(default_path):
-                self.entry_dir.insert(0, os.path.abspath(default_path))
-            else:
-                self.entry_dir.insert(0, os.getcwd())
+        # Startup Logic: Load Paths
+        remember = self.prefs_manager.get("remember_paths", True)
+        
+        # 1. Excel Input (Template)
+        if remember:
+             load_path = self.prefs_manager.get("last_excel_input", "")
+             if load_path and os.path.exists(load_path):
+                 self.entry_dir.insert(0, load_path)
 
         self.btn_browse = ctk.CTkButton(
             self.frame_controls, text="Browse", width=100, command=self.browse_dir
@@ -242,13 +383,11 @@ class OASGenApp(ctk.CTk):
         )
         self.entry_oas_folder.grid(row=1, column=1, padx=(0, 10), pady=10, sticky="ew")
 
-        # Use saved preference or default OAS folder
-        saved_oas_folder = self.prefs_manager.get("oas_folder", "")
-        if saved_oas_folder and os.path.exists(saved_oas_folder):
-            self.entry_oas_folder.insert(0, saved_oas_folder)
-        else:
-            default_oas_folder = os.path.join(os.getcwd(), "OAS Generated")
-            self.entry_oas_folder.insert(0, os.path.abspath(default_oas_folder))
+        # 2. OAS Output Folder
+        if remember:
+            saved_oas_folder = self.prefs_manager.get("last_oas_folder", "")
+            if saved_oas_folder and os.path.exists(saved_oas_folder):
+                self.entry_oas_folder.insert(0, saved_oas_folder)
 
         self.btn_browse_oas = ctk.CTkButton(
             self.frame_controls,
@@ -309,8 +448,10 @@ class OASGenApp(ctk.CTk):
         # Log Area (Row 2)
         self.log_area = ctk.CTkTextbox(self.tab_gen, font=("Consolas", 11), wrap="word")
         self.log_area.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-        self.log_area.insert("0.0", "Ready.\n")
         self.log_area.configure(state="disabled")
+        
+        # Add Context Menu for clearing
+        self.log_area.bind("<Button-3>", self._show_log_context_menu)
 
         # ==========================
         # TAB 2: VALIDATION
@@ -335,13 +476,16 @@ class OASGenApp(ctk.CTk):
         self.linter = SpectralRunner(spectral_cmd=spectral_cmd)
         self.last_lint_result = None
         self.last_generated_files = []  # Track files from generation
-        self.validated_file = None  # Track which file was validated
+        self.validated_file = None  # Track which file was validated (basename)
+        self.validated_file_path = None  # Full path for caching
+        self.validated_file_mtime = 0 
         self.validation_issues = {}  # {line_number: [(severity, message), ...]}
 
         self.tab_val.grid_columnconfigure(0, weight=1)  # List
         self.tab_val.grid_columnconfigure(1, weight=1)  # Chart
-        self.tab_val.grid_rowconfigure(2, weight=1)  # Content pane expands
-        self.tab_val.grid_rowconfigure(3, weight=0)  # Footer row
+        # Content pane moves to row 3
+        self.tab_val.grid_rowconfigure(3, weight=1)  
+        self.tab_val.grid_rowconfigure(4, weight=0)  # Footer row
 
         # Top Bar - OAS Folder
         self.frame_val_folder = ctk.CTkFrame(self.tab_val, fg_color="transparent")
@@ -411,7 +555,9 @@ class OASGenApp(ctk.CTk):
         self.chk_ignore_br.select()  # Default Checked
 
         # Progress Bar (Indeterminate)
-        # Progress Bar Removed as per user request
+        self.progress_val = ctk.CTkProgressBar(self.tab_val, orientation="horizontal", mode="indeterminate")
+        self.progress_val.grid(row=2, column=0, columnspan=2, sticky="ew", padx=10, pady=(0, 5))
+        self.progress_val.grid_remove() # Hide initially
 
         # Main Layout: List vs Chart
 
@@ -420,7 +566,7 @@ class OASGenApp(ctk.CTk):
             self.tab_val, orient="vertical", sashrelief="raised", bg="#d0d0d0"
         )
         self.paned_val.grid(
-            row=2, column=0, columnspan=2, sticky="nsew", padx=5, pady=5
+            row=3, column=0, columnspan=2, sticky="nsew", padx=5, pady=5
         )
 
         # TOP PANE: Content (List + Chart)
@@ -481,11 +627,12 @@ class OASGenApp(ctk.CTk):
         self.val_json_log = ctk.CTkTextbox(
             self.val_log_frame_inner,
             font=("Consolas", 11),
-            state="disabled",
+            state="normal",
             wrap="none",
             fg_color=fg_col,
             text_color=txt_col,
         )
+        self.val_json_log.bind("<Key>", self._on_log_key_press)
         self.val_json_log.pack(fill="both", expand=True)
 
         # Remove old val_log (Analysis Log) reference
@@ -495,7 +642,7 @@ class OASGenApp(ctk.CTk):
         self.footer_frame = ctk.CTkFrame(
             self.tab_val, height=30, corner_radius=0, fg_color=("gray85", "gray20")
         )
-        self.footer_frame.grid(row=3, column=0, columnspan=2, sticky="ew")
+        self.footer_frame.grid(row=4, column=0, columnspan=2, sticky="ew")
 
         self.btn_toggle_log_f = ctk.CTkButton(
             self.footer_frame,
@@ -740,9 +887,9 @@ class OASGenApp(ctk.CTk):
         # Redoc Generator initialization
         self.redoc_gen = RedocGenerator()
 
-        self.val_log_print("Ready.")
+        # self.val_log_print("Ready.") # Removed - handled by [Init] log
         self.log_visible = False
-
+        
         # Load file lists on startup (after widgets are ready)
         self.after(200, self._load_files_on_startup)
 
@@ -823,6 +970,9 @@ class OASGenApp(ctk.CTk):
         else:
             self.file_menu.entryconfig("Select Template Folder...", state="disabled")
             self.file_menu.entryconfig("Select Import Source...", state="disabled")
+            
+        if current_tab == "Validation":
+            self.run_validation()
 
     def _view_yaml_viewer(self):
         self.tabview.set("View")
@@ -855,11 +1005,18 @@ class OASGenApp(ctk.CTk):
         
     def _load_files_on_startup(self):
         """Load file lists in Validation and View tabs on startup."""
+        self.log_app("[Init] Application Ready.")
+        
         oas_dir = self.entry_oas_folder.get()
         if os.path.exists(oas_dir):
             self.update_file_list()
         else:
-            self.val_log_print(f"OAS folder not found: {oas_dir}")
+            # Benign info log, don't scare the user
+            self.log_app(f"[Init] Default output folder not found (will be created on first generation): {oas_dir}")
+        
+        # Apply all preferences (themes, fonts, etc.) on startup
+        self._apply_preferences(self.prefs_manager.get_all())
+
 
     def _load_custom_theme(self, theme_name):
         """Load a custom TOML theme file and return as dict."""
@@ -967,22 +1124,50 @@ class OASGenApp(ctk.CTk):
         except Exception as e:
             print(f"Error opening user guide: {e}")
 
+    def open_faq(self):
+        """Open the HTML FAQ."""
+        import webbrowser
+        try:
+            if getattr(sys, 'frozen', False):
+                base_path = sys._MEIPASS
+            else:
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            
+            doc_path = os.path.join(base_path, 'src', 'docs', 'faq.html')
+            
+            if os.path.exists(doc_path):
+                webbrowser.open_new_tab(f"file:///{doc_path}")
+            else:
+                # Fallback or dev mode simplified path check
+                dev_path = os.path.join(os.getcwd(), 'src', 'docs', 'faq.html')
+                if os.path.exists(dev_path):
+                    webbrowser.open_new_tab(f"file:///{dev_path}")
+                else:
+                    self.val_log_print(f"FAQ not found at: {doc_path}")
+                    tk.messagebox.showerror("Error", "FAQ not found.")
+        except Exception as e:
+            print(f"Error opening FAQ: {e}")
+
     def _apply_preferences(self, new_prefs: dict):
         """Apply new preferences to the UI."""
         # Apply YAML theme
         if "yaml_theme" in new_prefs:
             self.on_theme_change(new_prefs["yaml_theme"])
-            self.cbo_yaml_theme.set(new_prefs["yaml_theme"])
+            # Update combo if it exists (legacy support or logic separation)
+            if hasattr(self, "cbo_yaml_theme"):
+                self.cbo_yaml_theme.set(new_prefs["yaml_theme"])
 
         # Apply font size (if CodeView supports it)
         if "yaml_font_size" in new_prefs:
             try:
                 font_size = new_prefs["yaml_font_size"]
-                current_font = self.txt_yaml.cget("font")
-                if isinstance(current_font, tuple):
-                    self.txt_yaml.configure(font=(current_font[0], font_size))
-                else:
-                    self.txt_yaml.configure(font=("Consolas", font_size))
+                # Ensure txt_yaml exists
+                if hasattr(self, "txt_yaml"):
+                    current_font = self.txt_yaml.cget("font")
+                    if isinstance(current_font, tuple):
+                        self.txt_yaml.configure(font=(current_font[0], font_size))
+                    else:
+                        self.txt_yaml.configure(font=("Consolas", font_size))
             except (tk.TclError, AttributeError, TypeError):
                 pass
 
@@ -1021,6 +1206,14 @@ class OASGenApp(ctk.CTk):
             if self.log_window:
                 self.log_window.apply_theme(theme)
 
+        if "import_log_theme" in new_prefs:
+            theme = new_prefs["import_log_theme"]
+            if hasattr(self, 'import_log_area'):
+                if theme == "Dark":
+                    self.import_log_area.configure(fg_color="#1e1e1e", text_color="#d4d4d4")
+                else:
+                    self.import_log_area.configure(fg_color="#ffffff", text_color="#333333")
+
         if "spectral_log_theme" in new_prefs:
             theme = new_prefs["spectral_log_theme"]
             if theme == "Dark":
@@ -1029,7 +1222,10 @@ class OASGenApp(ctk.CTk):
                 self.val_json_log.configure(fg_color="#ffffff", text_color="#333333")
 
         # Refresh file list with new sort order
+        # Refresh file list with new sort order
         self.update_file_list()
+
+        # [Init] Application Ready moved to _load_files_on_startup to ensure it's last
 
     def toggle_log(self):
         if self.log_visible:
@@ -1046,19 +1242,11 @@ class OASGenApp(ctk.CTk):
             self.log_visible = True
 
     def val_log_print(self, msg):
-        # Redirect to global application log
-        full_msg = f"> {msg}"
-        
-        # Add to history
-        self.log_history.append(full_msg)
-        if len(self.log_history) > 1000:
-            self.log_history.pop(0)
-
-        # Update window if open
-        if self.log_window and self.log_window.winfo_exists():
-            self.log_window.append_log(full_msg)
+        # Redirect to global application log via self.log_app to ensure timestamp
+        # self.log_app already handles history and window appending
+        self.log_app(f"[Validation] {msg}")
             
-        print(full_msg) # Keep stdout for debugging
+        print(f"[Validation] {msg}") # Keep stdout for debugging
 
     def browse_dir(self):
         current_path = self.entry_dir.get()
@@ -1067,6 +1255,9 @@ class OASGenApp(ctk.CTk):
         if directory:
             self.entry_dir.delete(0, "end")
             self.entry_dir.insert(0, directory)
+            self.prefs_manager.set("excel_input_folder", directory)
+            self.prefs_manager.set("last_excel_input", directory)
+            self.prefs_manager.save()
 
     def _sync_oas_folders(self, new_path):
         """Sync OAS folder value across all tabs."""
@@ -1083,7 +1274,12 @@ class OASGenApp(ctk.CTk):
         self.last_generated_files = []
         # Refresh file lists
         self.update_file_list()
+        self.update_file_list()
         self.refresh_view_files()
+        # Save preference
+        self.prefs_manager.set("oas_folder", new_path)
+        self.prefs_manager.set("last_oas_folder", new_path)
+        self.prefs_manager.save()
 
     def browse_oas_folder(self):
         """Browse for OAS folder (Generation tab)."""
@@ -1114,22 +1310,63 @@ class OASGenApp(ctk.CTk):
         self.log_area.configure(font=("Consolas", val))
         self.lbl_font_size_gen_val.configure(text=str(val))
 
-    def log(self, message):
+    def log_gen(self, message):
+        # Timestamp Construction (For App Log only)
+        now = datetime.datetime.now()
+        timestamp = f"{now.strftime('%H:%M:%S')}.{now.microsecond // 1000:03d}"
+        
+        # 1. GUI Message (No Timestamp per user request)
+        gui_msg = message
+        
+        # 2. App Log Message (With Timestamp)
+        full_msg = f"{timestamp} > {message}"
+
         # Update Generation Tab Log
         self.log_area.configure(state="normal")
-        self.log_area.insert("end", message + "\n")
+        
+        # Formatting for "Done!" message (Green + Bold)
+        # Formatting for "Done!" message (Green + Bold)
+        self.log_area.insert("end", gui_msg + "\n")
+        
         self.log_area.see("end")
         self.log_area.configure(state="disabled")
         
-        # Duplicate to Global Application Log
+        # Duplicate to Global Application Log (with timestamp)
+        self._log_history_append(full_msg)
+
+
+    def log_app(self, message):
+        # Add Timestamp: HH:MM:SS.mmm > 
+        now = datetime.datetime.now()
+        timestamp = f"{now.strftime('%H:%M:%S')}.{now.microsecond // 1000:03d}"
+        full_msg = f"{timestamp} > {message}"
+        
+        # Write to Global Application Log ONLY
+        self._log_history_append(full_msg)
+
+    def _log_history_append(self, full_msg):
         # Add to history
-        self.log_history.append(message)
+        self.log_history.append(full_msg)
         if len(self.log_history) > 1000:
             self.log_history.pop(0)
 
         # Update window if open
         if self.log_window and self.log_window.winfo_exists():
-            self.log_window.append_log(message)
+            self.log_window.append_log(full_msg)
+
+    def _show_log_context_menu(self, event):
+        """Show context menu for log area."""
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="Clear Log", command=self.clear_gen_log)
+        menu.add_separator()
+        menu.add_command(label="Copy", command=lambda: self.log_area.event_generate("<<Copy>>"))
+        menu.post(event.x_root, event.y_root)
+
+    def clear_gen_log(self):
+        """Clear the generation log area."""
+        self.log_area.configure(state="normal")
+        self.log_area.delete("1.0", "end")
+        self.log_area.configure(state="disabled")
 
     def start_generation(self):
         base_dir = self.entry_dir.get()
@@ -1138,11 +1375,11 @@ class OASGenApp(ctk.CTk):
         gen_swift = self.var_swift.get()
 
         if not base_dir:
-            self.log("ERROR: Please select a directory.")
+            self.log_gen("ERROR: Please select a directory.")
             return
 
         self.btn_gen.configure(state="disabled", text="GENERATING...")
-        self.log("Starting generation process...")
+        self.log_gen("Starting generation process...")
 
         t = threading.Thread(
             target=self.run_process, args=(base_dir, gen_30, gen_31, gen_swift)
@@ -1155,7 +1392,7 @@ class OASGenApp(ctk.CTk):
             output_dir = self.entry_oas_folder.get()  # Get OAS output folder
 
             def gui_logger(msg):
-                self.after(0, self.log, msg)
+                self.after(0, self.log_gen, msg)
                 if "Writing OAS" in msg:
                     parts = msg.split(": ")
                     if len(parts) > 1:
@@ -1172,7 +1409,7 @@ class OASGenApp(ctk.CTk):
             )
 
         except Exception as e:
-            self.after(0, self.log, f"CRITICAL ERROR: {e}")
+            self.after(0, self.log_gen, f"CRITICAL ERROR: {e}")
         finally:
 
             def reset_btn():
@@ -1219,7 +1456,7 @@ class OASGenApp(ctk.CTk):
             self.cbo_files.configure(values=display_names)
             self.cbo_files.set(display_names[0])
             # Always run validation on file selection
-            self.run_validation()
+            # self.run_validation() # Disabled auto-run on startup
         else:
             self.cbo_files.configure(values=["No OAS files found"])
             self.cbo_files.set("No OAS files found")
@@ -1242,8 +1479,23 @@ class OASGenApp(ctk.CTk):
             self.val_log_print("File not found or not selected.")
             return
 
+        # Optimization: Check if file needs re-validation
+        current_mtime = os.path.getmtime(selected_file)
+        # Use normpath to ensure path string consistency
+        if (self.validated_file_path and selected_file and
+            os.path.normcase(os.path.normpath(self.validated_file_path)) == os.path.normcase(os.path.normpath(selected_file)) and 
+            self.validated_file_mtime == current_mtime):
+             self.val_log_print(f"File '{selected_name}' unchanged. Using cached validation results.")
+             return
+            
+        # Update cache state (full path for caching)
+        self.validated_file_path = selected_file
+        self.validated_file_mtime = current_mtime
+        
         self.val_log_print(f"Starting validation for: {selected_name}")
-        # self.progress_val.start()
+        
+        # Show Floating Progress Modal (Splash Style)
+        prog_win, prog_lbl = self._show_progress_modal("Running Spectral...")
 
         for widget in self.frame_list.winfo_children():
             widget.destroy()
@@ -1255,22 +1507,59 @@ class OASGenApp(ctk.CTk):
                     self.after(0, lambda: self.val_log_print(msg))
 
                 result = self.linter.run_lint(selected_file, log_callback=thread_logger)
-                self.after(0, lambda: self.show_results(result))
+                # Pass prog_win and prog_lbl for label update and closing
+                self.after(0, lambda: self.show_results(result, prog_win, prog_lbl))
             except Exception as e:
                 self.after(0, lambda: self.val_log_print(f"THREAD CRASH: {e}"))
+                self.after(0, prog_win.destroy) # Close on error
             finally:
-                pass
-                # self.after(0, self.progress_val.stop)
+                pass # Closed by show_results or exception handler
 
         t = threading.Thread(target=validate_thread)
         t.start()
+
+    def _show_progress_modal(self, message="Validating..."):
+        """Create a floating modal with progress bar."""
+        top = ctk.CTkToplevel(self)
+        top.title("")
+        top.geometry("300x120")
+        top.overrideredirect(True) # Splash screen style (no borders)
+        top.resizable(False, False)
+        # Center the modal
+        top.update_idletasks()
+        x = self.winfo_x() + (self.winfo_width() // 2) - 150
+        y = self.winfo_y() + (self.winfo_height() // 2) - 60
+        top.geometry(f"+{x}+{y}")
+        
+        top.transient(self) # Keep on top of main window
+        top.grab_set()      # RAM: Modal behavior
+        top.focus_set()
+        
+        # Container Frame with Border
+        main_frame = ctk.CTkFrame(top, border_width=1, border_color="#555555", corner_radius=0)
+        main_frame.pack(fill="both", expand=True)
+
+        lbl = ctk.CTkLabel(main_frame, text=message, font=ctk.CTkFont(size=14, weight="bold"))
+        lbl.pack(pady=(20, 10))
+        
+        prog = ctk.CTkProgressBar(main_frame, mode="indeterminate", width=250)
+        prog.pack(pady=10)
+        prog.start()
+        
+        # Return both window and label for dynamic updates
+        return top, lbl
 
     def on_filter_change(self):
         if self.last_lint_result:
             self.show_results(self.last_lint_result)
 
-    def show_results(self, result):
+    def show_results(self, result, progress_window=None, progress_label=None):
         self.last_lint_result = result  # Store for filtering
+
+        # Helper to close progress
+        def close_progress():
+            if progress_window:
+                progress_window.destroy()
 
         if not result["success"]:
             self.val_log_print(f"Error: {result.get('error_msg', 'Unknown Error')}")
@@ -1285,6 +1574,7 @@ class OASGenApp(ctk.CTk):
                 text_color="red",
             )
             err_lbl.pack()
+            close_progress()
             return
 
         summary = result["summary"]
@@ -1326,7 +1616,8 @@ class OASGenApp(ctk.CTk):
         self.frame_list.configure(label_text=f"Issues ({total_issues})")
 
         # Store validation issues by line for YAML viewer markers
-        self.validated_file = self.cbo_files.get()  # Get filename being validated
+        # Update validated_file to basename for marker matching (full path stays in validated_file_path)
+        self.validated_file = self.cbo_files.get()  # Get filename (basename) being validated
         self.validation_issues = {}
         for item in details:
             line = item.get("line", 0)
@@ -1364,12 +1655,15 @@ class OASGenApp(ctk.CTk):
         raw_data = result.get("raw_data", [])
         formatted_json = json.dumps(raw_data, indent=2)
 
-        self.val_json_log.configure(state="normal")
         self.val_json_log.delete("0.0", "end")
         self.val_json_log.insert("0.0", formatted_json)
-        self.val_json_log.configure(state="disabled")
 
-        # Populate List
+        # Update modal message for card construction phase
+        if progress_label:
+            progress_label.configure(text="Building issue list...")
+            self.update_idletasks()  # Force label update
+        
+        # Populate List - Clear previous cards
         for widget in self.frame_list.winfo_children():
             widget.destroy()
 
@@ -1377,7 +1671,7 @@ class OASGenApp(ctk.CTk):
             ctk.CTkLabel(
                 self.frame_list,
                 text="No issues found! Great job!",
-                text_color="green",
+                text_color="#0A809E",
                 font=("Arial", 16),
             ).pack(pady=20)
         else:
@@ -1497,16 +1791,19 @@ class OASGenApp(ctk.CTk):
                     text_color=("#333333", "#FFFFFF") # Standard text color
                 ).pack(fill="x", padx=5, pady=(0, 5))
 
-                # Excel Link removed from here (Moved to Header)
-
-
-
+        # Force complete rendering of all cards BEFORE closing modal
+        # This ensures the "PAM!" effect where everything appears at once
+        self.update()
+        
         # Refresh markers in View tab if viewing the same file
         current_view_file = (
             self.cbo_view_files.get() if hasattr(self, "cbo_view_files") else None
         )
         if current_view_file and current_view_file == self.validated_file:
             self._apply_validation_markers(current_view_file)
+
+        # Close progress modal after everything is rendered
+        close_progress()
 
     def _goto_line(self, line_num):
         """Navigate to View tab and scroll to the specified line number."""
@@ -1694,9 +1991,8 @@ class OASGenApp(ctk.CTk):
         # Sync with Validation tab combo
         if value in self.file_map:
             self.cbo_files.set(value)
-            # Trigger validation for the new file if it's different
-            if self.validated_file and self.validated_file != value:
-                self.run_validation()
+            # Lazy Sync: Don't force validation here. 
+            # It will run when the user switches to the Validation tab.
 
         filepath = self.view_file_map.get(value)
         if not filepath or not os.path.exists(filepath):
@@ -1719,10 +2015,23 @@ class OASGenApp(ctk.CTk):
             # To show cursor, state must be normal. We block edits via binding.
             self.txt_yaml.config(state="normal")
             
-            # Unbind previous block if any (to avoid stacking) - though bind replaces by default for same sequence
+            # Fixed Selection logic: bind read-only handler
             self.txt_yaml.bind("<Key>", self._on_yaml_key_press)
+
             # Bind Double Click to fix cursor position
             self.txt_yaml.bind("<Double-Button-1>", self._on_yaml_double_click)
+            
+            # Robus Search Binding: EXCLUSIVE OVERRIDE (No add="+") to ensure priority over internal bindings
+            # Binding all variants to be safe against CapsLock/Shift states
+            self.txt_yaml.bind("<Control-f>", lambda e: self._handle_global_search(e) or "break")
+            self.txt_yaml.bind("<Control-F>", lambda e: self._handle_global_search(e) or "break")
+            self.txt_yaml.bind("<Control-Key-f>", lambda e: self._handle_global_search(e) or "break")
+            self.txt_yaml.bind("<Control-Key-F>", lambda e: self._handle_global_search(e) or "break")
+
+
+
+
+
             
             # We specifically want to allow Copy (Ctrl+C) and Select All (Ctrl+A) and Navigation
             # This is handled in _on_yaml_key_press
@@ -1937,18 +2246,10 @@ class OASGenApp(ctk.CTk):
             )  # Light gold
             self.txt_yaml.tag_configure("info_line", background="#CCE0FF")  # Soft blue
 
-        # Debug logging
-        self.val_log_print(
-            f"Markers check: file='{filename}', validated='{self.validated_file}', issues={len(self.validation_issues)}"
-        )
+        # SILENCED ALL MARKER LOGS PER USER REQUEST
+        # (Marker Check, Fail/No Issues, Mismatch)
+        # Prevents log pollution on startup
 
-        # Check if this is the validated file
-        if filename != self.validated_file or not self.validation_issues:
-            self.val_log_print(f"Markers not applied: filename mismatch or no issues")
-            # Hide nav bar when viewing a different file
-            self.nav_frame.pack_forget()
-            self._clear_marker_indicator()
-            return
 
         # Apply tags to lines with issues
         for line_num, issues in self.validation_issues.items():
@@ -1974,7 +2275,8 @@ class OASGenApp(ctk.CTk):
         self.txt_yaml.tag_raise("warning_line")
         self.txt_yaml.tag_raise("info_line")
 
-        self.val_log_print(f"Markers applied to {len(self.validation_issues)} lines")
+        # self.val_log_print(f"Markers applied to {len(self.validation_issues)} lines")
+
 
         # Reset marker navigation and update counter
         self.current_marker_index = -1
@@ -2353,9 +2655,10 @@ class OASGenApp(ctk.CTk):
 
         # Create Search Window if not exists
         if hasattr(self, "search_window") and self.search_window and self.search_window.winfo_exists():
-            # self.search_window.attributes("-topmost", True) # OSCURA ALTRE APP
+            self.search_window.attributes("-topmost", True)
             self.search_window.lift()
             self.search_window.focus_force()
+
             
             # Dynamic Autofill for existing window
             if initial_search_text:
@@ -2373,7 +2676,20 @@ class OASGenApp(ctk.CTk):
             self.search_window.title("Find")
             self.search_window.geometry("450x60")
             self.search_window.resizable(False, False)
-            # self.search_window.attributes("-topmost", True) # OSCURA ALTRE APP
+            self.search_window.attributes("-topmost", True) 
+
+            
+            # FIX: Clear highlights when search window is closed
+            def on_search_close():
+                try:
+                    self.txt_yaml.tag_remove("found", "1.0", "end")
+                except:
+                    pass
+                self.search_window.destroy()
+                self.search_window = None
+
+            self.search_window.protocol("WM_DELETE_WINDOW", on_search_close)
+
             
             # Icon
             try:
@@ -2699,11 +3015,48 @@ class OASGenApp(ctk.CTk):
         # Update combo
         self.search_entry.configure(values=history)
 
+    def _safe_search_trigger(self, event=None):
+        """Directly trigger search from binding, ensuring 'break'."""
+        try:
+            self._show_search_dialog(event)
+            return "break" 
+        except Exception as e:
+            if hasattr(self, "val_log_print"):
+                 self.val_log_print(f"Search Prompt Error: {e}")
+            else:
+                 print(f"Search Prompt Error: {e}")
+
     def _handle_global_search(self, event=None):
-        """Handle Ctrl+F globally - only if View tab is active."""
-        if self.tabview.get() == "View":
-            self._show_search_dialog()
-            return "break" # Stop propagation
+        """Handle Ctrl+F globally."""
+        # Removed tab check to maximize reliability during debugging
+        # Search dialog handles its own safety checks
+        self._show_search_dialog()
+
+
+
+    def _on_log_key_press(self, event):
+        """Handle key presses in Spectral Log to enforce read-only but allow copy."""
+        # Allow navigation
+        if event.keysym in ["Up", "Down", "Left", "Right", "Home", "End", "Next", "Prior"]:
+            return None
+            
+        # Check for Control key
+        if event.state & 0x4:
+            # Allow Ctrl+C (Copy), Ctrl+A (Select All)
+            if event.keysym.lower() in ['c', 'a']:
+                return None
+            # Block Ctrl+V (Paste), Ctrl+X (Cut) and others
+            return "break"
+            
+        # Block modification keys (BackSpace, Delete, Return, Tab)
+        if event.keysym in ["BackSpace", "Delete", "Return", "Tab"]:
+            return "break"
+            
+        # Block printable characters
+        if event.char and len(event.char) > 0 and ord(event.char) >= 32:
+             return "break"
+             
+        return None
 
     def _on_yaml_key_press(self, event):
         """Handle key presses in YAML viewer to enforce read-only but allow navigation/copy."""
@@ -2948,9 +3301,12 @@ class OASGenApp(ctk.CTk):
         self.entry_imp_file = ctk.CTkEntry(self.frame_imp_inputs, placeholder_text="Path to OAS file...")
         self.entry_imp_file.grid(row=0, column=1, padx=(0,10), pady=10, sticky="ew")
         
-        saved_imp_file = self.prefs_manager.get("import_source_file", "")
-        if saved_imp_file and os.path.exists(saved_imp_file):
-            self.entry_imp_file.insert(0, saved_imp_file)
+        # Startup Logic: Load OAS Source File
+        remember = self.prefs_manager.get("remember_paths", False)
+        if remember:
+            saved_imp_file = self.prefs_manager.get("import_source_file", "")
+            if saved_imp_file and os.path.exists(saved_imp_file):
+                self.entry_imp_file.insert(0, saved_imp_file)
             
         self.btn_browse_imp_file = ctk.CTkButton(self.frame_imp_inputs, text="Browse", width=100, command=self.browse_import_file)
         self.btn_browse_imp_file.grid(row=0, column=2, padx=10, pady=10)
@@ -2960,9 +3316,18 @@ class OASGenApp(ctk.CTk):
         self.entry_imp_dst = ctk.CTkEntry(self.frame_imp_inputs, placeholder_text="Path to Excel Output Folder...")
         self.entry_imp_dst.grid(row=1, column=1, padx=(0,10), pady=10, sticky="ew")
         
-        saved_imp_dst = self.prefs_manager.get("template_directory", "")
-        if saved_imp_dst and os.path.exists(saved_imp_dst):
-             self.entry_imp_dst.insert(0, saved_imp_dst)
+
+             
+        # Startup Logic: Load Excel Output Folder
+        remember = self.prefs_manager.get("remember_paths", True)
+        if remember:
+             load_path = self.prefs_manager.get("excel_output_folder", "")
+             if not load_path:
+                 load_path = self.prefs_manager.get("last_excel_output", "")
+                 
+             if load_path and os.path.exists(load_path):
+                 self.entry_imp_dst.delete(0, "end")
+                 self.entry_imp_dst.insert(0, load_path)
              
         self.btn_browse_imp_dst = ctk.CTkButton(self.frame_imp_inputs, text="Browse", width=100, command=self.browse_import_template_folder)
         self.btn_browse_imp_dst.grid(row=1, column=2, padx=10, pady=10)
@@ -2999,7 +3364,7 @@ class OASGenApp(ctk.CTk):
         # Log Area
         self.import_log_area = ctk.CTkTextbox(self.tab_import, font=("Consolas", 11), wrap="word") 
         self.import_log_area.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-        self.import_log_area.insert("0.0", "Ready for Import/Roundtrip.\n")
+        # self.import_log_area.insert("0.0", "Ready for Import/Roundtrip.\n") # Removed
         self.import_log_area.configure(state="disabled")
 
 
@@ -3017,16 +3382,17 @@ class OASGenApp(ctk.CTk):
             self.entry_imp_file.delete(0, "end")
             self.entry_imp_file.insert(0, f)
             self.prefs_manager.set("import_source_file", f)
+            self.prefs_manager.save()
 
     def browse_import_template_folder(self):
         d = filedialog.askdirectory()
         if d:
             self.entry_imp_dst.delete(0, "end")
             self.entry_imp_dst.insert(0, d)
-            # This is effectively the template directory for Generation too
-            self.entry_dir.delete(0, "end")
-            self.entry_dir.insert(0, d)
-            self.prefs_manager.set("template_directory", d)
+            # Decoupled: Only set output folder for Tab 1
+            self.prefs_manager.set("excel_output_folder", d)
+            self.prefs_manager.set("last_excel_output", d)
+            self.prefs_manager.save()
 
 
 
@@ -3036,6 +3402,10 @@ class OASGenApp(ctk.CTk):
             self.import_log_area.insert("end", f"{msg}\n")
             self.import_log_area.see("end")
             self.import_log_area.configure(state="disabled")
+            self.import_log_area.configure(state="disabled")
+            # Also log to main application log window (BUT NOT Gen Tab)
+            self.log_app(f"[Import] {msg}") 
+            
         self.after(0, _append)
 
     def start_oas_import(self):
@@ -3043,10 +3413,10 @@ class OASGenApp(ctk.CTk):
         dst_folder = self.entry_imp_dst.get()
         
         if not src_path or not os.path.exists(src_path):
-            tk.messagebox.showerror("Error", "Invalid OAS File")
+            self.show_custom_error_dialog("Error", "Invalid OAS File")
             return
         if not dst_folder:
-            tk.messagebox.showerror("Error", "Invalid Output Folder")
+            self.show_custom_error_dialog("Error", "Invalid Output Folder")
             return
 
         # Check for non-empty output folder
@@ -3092,85 +3462,8 @@ class OASGenApp(ctk.CTk):
 
     def show_custom_error_dialog(self, title, message):
         """Shows a custom error dialog with consistent styling."""
-        class CustomErrorDialog(ctk.CTkToplevel):
-            def __init__(self, parent, title, message):
-                super().__init__(parent)
-                self.title(title)
-                self.geometry("450x200") 
-                self.resizable(False, False)
-                
-                # Center relative to parent
-                self.update_idletasks()
-                x = parent.winfo_x() + (parent.winfo_width() // 2) - 225
-                y = parent.winfo_y() + (parent.winfo_height() // 2) - 100
-                try:
-                    self.geometry(f"+{int(x)}+{int(y)}")
-                except:
-                    pass
-
-                self.transient(parent)
-                self.grab_set()
-
-                # Icon setup
-                self.after(200, self._set_icon)
-                
-                self._build_ui(message)
-
-            def _get_resource_path(self, relative_path):
-                try:
-                    base_path = sys._MEIPASS
-                except Exception:
-                    base_path = os.path.abspath(".")
-                return os.path.join(base_path, relative_path)
-
-            def _set_icon(self):
-                try:
-                    icon_path = "icon.ico"
-                    if not os.path.exists(icon_path):
-                        icon_path = self._get_resource_path("icon.ico")
-                    if os.path.exists(icon_path):
-                        try:
-                            self.iconbitmap(icon_path)
-                            self.wm_iconbitmap(icon_path)
-                        except:
-                            pass
-                except:
-                    pass
-
-            def _build_ui(self, message):
-                # Main Container
-                main_container = ctk.CTkFrame(self, fg_color="transparent")
-                main_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
-
-                # Content Block (Icon + Text)
-                content_frame = ctk.CTkFrame(main_container, fg_color="transparent")
-                content_frame.pack(fill="x", expand=True)
-
-                # Icon - Red X
-                icon_label = ctk.CTkLabel(content_frame, text="\u274C", 
-                                          text_color="#D32F2F", 
-                                          font=ctk.CTkFont(size=48))
-                icon_label.pack(side="left", padx=(10, 20))
-
-                # Message Area
-                msg_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
-                msg_frame.pack(side="left", fill="both", expand=True)
-
-                msg_label = ctk.CTkLabel(msg_frame, text=message, 
-                                         font=ctk.CTkFont(size=14, weight="bold"),
-                                         text_color=("black", "white"),
-                                         wraplength=280,
-                                         anchor="w", justify="left")
-                msg_label.pack(fill="x", expand=True)
-
-                # Button Area
-                btn_container = ctk.CTkFrame(main_container, fg_color="transparent")
-                btn_container.pack(fill="x", side="bottom", pady=10)
-
-                ctk.CTkButton(btn_container, text="OK", width=100, height=32,
-                              command=self.destroy).pack(side="top")
-
-        dialog = CustomErrorDialog(self, title, message)
+        # Use the module-level class
+        dialog = OASErrorDialog(self, title, message)
         self.wait_window(dialog)
 
     def show_clean_folder_dialog(self, folder_path):
@@ -3290,6 +3583,7 @@ class OASGenApp(ctk.CTk):
         dialog = CleanFolderDialog(self)
         self.wait_window(dialog)
         self.clean_folder_choice = dialog.choice
+        return self.clean_folder_choice
 
     def _run_oas_import(self, src_path, dst_folder):
         try:
@@ -3297,7 +3591,11 @@ class OASGenApp(ctk.CTk):
             self._log_import(f"Source: {src_path}")
             self._log_import(f"Destination: {dst_folder}")
             
-            converter = OASToExcelConverter(src_path)
+            # Helper to adapt _log_import for the converter
+            def converter_logger(msg):
+                self._log_import(msg)
+
+            converter = OASToExcelConverter(src_path, log_callback=converter_logger)
             
             self._log_import("Generating Index File...")
             converter.generate_index_file(os.path.join(dst_folder, "$index.xlsx"))
@@ -3329,10 +3627,10 @@ class OASGenApp(ctk.CTk):
         line_diff = self.var_line_diff.get()
         
         if not src_path or not os.path.exists(src_path):
-            tk.messagebox.showerror("Error", "Invalid OAS File")
+            self.show_custom_error_dialog("Error", "Invalid OAS File")
             return
         if not dst_folder:
-            tk.messagebox.showerror("Error", "Invalid Output Folder")
+            self.show_custom_error_dialog("Error", "Invalid Output Folder")
             return
 
         self.btn_roundtrip.configure(state="disabled")
@@ -3379,23 +3677,28 @@ class OASGenApp(ctk.CTk):
             self._log_import(f"[Gen] Generating OAS from Templates...")
             self._log_import(f"Target: {rt_dir}")
             
-            # Define Log Callback for generator
+            # 3. Generate (Only detected version)
+            generated_paths = []
             def gen_log(msg):
                 self._log_import(f"  [Gen] {msg}")
+                if "Writing OAS" in msg:
+                    parts = msg.split(": ")
+                    if len(parts) > 1:
+                        generated_paths.append(parts[1].strip())
                 
-            # 3. Generate (Only detected version)
             main_script.generate_oas(dst_folder, gen_30=gen_30, gen_31=gen_31, gen_swift=False, output_dir=rt_dir, log_callback=gen_log)
             self._log_import("[Gen] Generation Complete.")
             
-            # Select Generated File
-            gen_path = ""
-            if gen_31:
-                gen_path = os.path.join(rt_dir, "generated_oas_3.1.yaml")
-            else:
-                gen_path = os.path.join(rt_dir, "generated_oas_3.0.yaml")
+            # Select Generated File (Dynamic)
+            if not generated_paths:
+                 self._log_import("ERROR: No OAS files were generated for comparison.")
+                 return
+                 
+            # If multiple versions generated (not expected here due to version detection), pick the first one
+            gen_path = generated_paths[0]
             
             if not os.path.exists(gen_path):
-                 self._log_import("ERROR: Generated OAS file not found for comparison.")
+                 self._log_import(f"ERROR: Generated OAS file not found at expected path: {gen_path}")
                  return
 
             self._log_import(f"[Compare] Comparing Source ({os.path.basename(src_path)}) vs Generated ({os.path.basename(gen_path)})...")
@@ -3489,6 +3792,41 @@ class OASGenApp(ctk.CTk):
             self.after(0, lambda: self.btn_roundtrip.configure(state="normal"))
 
 
+
+
+    def _on_close(self):
+        """Handle application close: Save session state and geometry."""
+        # Save Window Geometry
+        self.prefs_manager.set("window_geometry", self.geometry())
+
+        # Save Session State (Last Used Paths)
+        # We save these regardless of the 'remember' setting, so they are available
+        # if the user toggles 'remember' on later.
+        try:
+            current_excel_in = self.entry_dir.get()
+            current_excel_out = self.entry_imp_dst.get()
+            current_oas = self.entry_oas_folder.get()
+            
+            self.prefs_manager.set("last_excel_input", current_excel_in)
+            self.prefs_manager.set("last_excel_output", current_excel_out)
+            self.prefs_manager.set("last_oas_folder", current_oas)
+            
+            # Also save OAS Source File from Import tab
+            if hasattr(self, 'entry_imp_file'):
+                 self.prefs_manager.set("import_source_file", self.entry_imp_file.get())
+            
+            self.prefs_manager.save()
+        except Exception as e:
+            print(f"Error saving session state: {e}")
+
+        # specific cleanup
+        try:
+             # Stop any running threads or processes if needed
+             pass
+        except:
+            pass
+
+        self.destroy()
 
 if __name__ == "__main__":
     app = OASGenApp()

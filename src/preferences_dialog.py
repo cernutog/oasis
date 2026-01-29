@@ -17,6 +17,82 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+def ask_confirmation(parent, title, message):
+    """Refactored to use Custom Dialog."""
+    dialog = OASConfirmationDialog(parent, title, message)
+    parent.wait_window(dialog)
+    return dialog.result
+
+class OASConfirmationDialog(ctk.CTkToplevel):
+    """Custom confirmation dialog (Modal)."""
+    def __init__(self, parent, title, message):
+        super().__init__(parent)
+        self.title(title)
+        self.geometry("420x180")
+        self.resizable(False, False)
+        self.result = False
+
+        # Center
+        self.update_idletasks()
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() // 2) - 210
+            y = parent.winfo_y() + (parent.winfo_height() // 2) - 90
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except:
+            pass
+
+        self.transient(parent)
+        self.grab_set()
+        
+        # Icon
+        self.after(200, self._set_icon)
+        
+        self._build_ui(message)
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+    def _set_icon(self):
+        try:
+            # Try to grab icon from parent or resource
+            if hasattr(self.master, "iconbitmap"):
+                 pass # Already inherits?
+        except:
+            pass
+
+    def _build_ui(self, message):
+        # Container
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        # Flex Row for Icon + Text
+        row = ctk.CTkFrame(container, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 20))
+
+        # Icon (Question Mark)
+        ctk.CTkLabel(row, text="?", text_color="#0A809E", 
+                     font=ctk.CTkFont(size=40, weight="bold")).pack(side="left", padx=(0, 15), anchor="n")
+
+        # Message
+        ctk.CTkLabel(row, text=message, wraplength=300, justify="left",
+                     font=ctk.CTkFont(size=13)).pack(side="left", fill="both", expand=True)
+
+        # Buttons
+        btns = ctk.CTkFrame(container, fg_color="transparent")
+        btns.pack(fill="x", side="bottom")
+
+        ctk.CTkButton(btns, text="Cancel", fg_color="gray50", hover_color="gray40", width=100,
+                      command=self._on_cancel).pack(side="right", padx=(10, 0))
+        
+        ctk.CTkButton(btns, text="OK", fg_color="#0A809E", hover_color="#076075", width=100,
+                      command=self._on_ok).pack(side="right")
+
+    def _on_ok(self):
+        self.result = True
+        self.destroy()
+
+    def _on_cancel(self):
+        self.result = False
+        self.destroy()
+
 
 class PreferencesDialog(ctk.CTkToplevel):
     """Non-modal dialog for editing user preferences."""
@@ -49,21 +125,22 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # Window setup
         self.title("Preferences")
-        self.geometry("550x580")
-        self.resizable(True, True)
+        self.geometry("600x380") # Reduced height (was 420)
+        self.resizable(False, False) # Fixed size for cleaner look
 
-        # Non-modal: only transient, no grab_set
+        # Non-modal: only transient
         self.transient(parent)
-        # Removed: self.grab_set() - allows interaction with main window
 
         # Center on parent
         self.update_idletasks()
-        x = parent.winfo_x() + (parent.winfo_width() - 550) // 2
-        y = parent.winfo_y() + (parent.winfo_height() - 580) // 2
-        self.geometry(f"+{x}+{y}")
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() - 600) // 2
+            y = parent.winfo_y() + (parent.winfo_height() - 380) // 2
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except:
+             pass
 
         # Set window icon AFTER CTkToplevel's internal 200ms default icon setting
-        # CTkToplevel sets a default icon at ~200ms, so we need 250ms+ to override it
         self.after(250, self._set_icon)
 
         # Build UI
@@ -78,310 +155,175 @@ class PreferencesDialog(ctk.CTkToplevel):
         try:
             icon_file = resource_path("icon.ico")
             if os.path.exists(icon_file):
-                # At 250ms, CTkToplevel has already set its default icon,
-                # so we can safely override it now
                 self.iconbitmap(icon_file)
         except (OSError, FileNotFoundError, Exception):
             pass
 
     def _build_ui(self):
-        """Build the preferences UI."""
-        # Main scrollable frame
-        self.main_frame = ctk.CTkScrollableFrame(self, label_text="")
-        self.main_frame.pack(fill="both", expand=True, padx=15, pady=(15, 5))
+        """Build the preferences UI with Tabs."""
+        self.tabview = ctk.CTkTabview(self, segmented_button_selected_color="#0A809E", segmented_button_selected_hover_color="#076075")
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
 
-        # === PATHS SECTION ===
-        self._create_section_header("Paths")
+        # Create Tabs
+        self.tab_gen = self.tabview.add("General")
+        self.tab_output = self.tabview.add("Generation")
+        self.tab_val = self.tabview.add("Validation")
+        self.tab_view = self.tabview.add("View")
+        self.tab_logs = self.tabview.add("Logs")
 
-        # Template Directory
-        self.frame_template = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_template.pack(fill="x", pady=5)
-        self.frame_template.grid_columnconfigure(1, weight=1)
+        # === 1. GENERAL TAB ===
+        # Default Tab
+        ctk.CTkLabel(self.tab_gen, text="Default Tab:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_tab = ctk.CTkComboBox(self.tab_gen, values=self.TAB_OPTIONS, width=150, button_color="#0A809E")
+        self.cbo_tab.grid(row=0, column=1, sticky="w", pady=10)
 
-        ctk.CTkLabel(self.frame_template, text="Template Directory:").grid(
-            row=0, column=0, sticky="w", padx=(0, 10)
+        # Sort Order
+        ctk.CTkLabel(self.tab_gen, text="File List Order:").grid(row=1, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_sort = ctk.CTkComboBox(self.tab_gen, values=[opt[0] for opt in self.SORT_OPTIONS], width=150, button_color="#0A809E")
+        self.cbo_sort.grid(row=1, column=1, sticky="w", pady=10)
+
+        # Remember Switches
+        self.var_remember = ctk.BooleanVar(value=False)
+        self.chk_remember = ctk.CTkSwitch(
+            self.tab_gen, 
+            text="Remember files and paths",
+            variable=self.var_remember,
+            progress_color="#0A809E"
         )
-        self.entry_template = ctk.CTkEntry(
-            self.frame_template, placeholder_text="Leave empty for default"
+        self.chk_remember.grid(row=2, column=0, columnspan=2, sticky="w", padx=10, pady=(20, 10))
+
+        self.chk_window_pos = ctk.CTkSwitch(
+            self.tab_gen, text="Remember window size and position", progress_color="#0A809E"
         )
-        self.entry_template.grid(row=0, column=1, sticky="ew", padx=(0, 10))
-        ctk.CTkButton(
-            self.frame_template, text="Browse", width=70, command=self._browse_template
-        ).grid(row=0, column=2)
+        self.chk_window_pos.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=10)
 
-        # OAS Folder
-        self.frame_oas = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_oas.pack(fill="x", pady=5)
-        self.frame_oas.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(self.frame_oas, text="OAS Folder:").grid(
-            row=0, column=0, sticky="w", padx=(0, 10)
+        # === 2. GENERATION TAB (OAS Defaults) ===
+        self.chk_oas31 = ctk.CTkSwitch(self.tab_output, text="OAS 3.1", progress_color="#0A809E")
+        self.chk_oas31.pack(anchor="w", padx=20, pady=(20, 10))
+
+        self.chk_oas30 = ctk.CTkSwitch(self.tab_output, text="OAS 3.0", progress_color="#0A809E")
+        self.chk_oas30.pack(anchor="w", padx=20, pady=10)
+
+        self.chk_swift = ctk.CTkSwitch(self.tab_output, text="OAS SWIFT", progress_color="#0A809E")
+        self.chk_swift.pack(anchor="w", padx=20, pady=10)
+
+
+        # === 3. VALIDATION TAB ===
+        self.chk_ignore_br = ctk.CTkSwitch(
+            self.tab_val, text="Ignore 'Bad Request' Examples", progress_color="#0A809E"
         )
-        self.entry_oas = ctk.CTkEntry(
-            self.frame_oas, placeholder_text="Leave empty for default"
-        )
-        self.entry_oas.grid(row=0, column=1, sticky="ew", padx=(0, 10))
-        ctk.CTkButton(
-            self.frame_oas, text="Browse", width=70, command=self._browse_oas
-        ).grid(row=0, column=2)
+        self.chk_ignore_br.pack(anchor="w", padx=20, pady=20)
 
-        # === GENERATION SECTION ===
-        self._create_section_header("Generation Defaults")
 
-        self.frame_gen = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_gen.pack(fill="x", pady=5)
+        # === 4. VIEW TAB ===
+        ctk.CTkLabel(self.tab_view, text="Theme:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_theme = ctk.CTkComboBox(self.tab_view, values=self.THEMES, width=200, button_color="#0A809E")
+        self.cbo_theme.grid(row=0, column=1, sticky="w", pady=10)
 
-        self.chk_oas31 = ctk.CTkCheckBox(self.frame_gen, text="OAS 3.1")
-        self.chk_oas31.pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(self.tab_view, text="Font:").grid(row=1, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_font = ctk.CTkComboBox(self.tab_view,
+            values=["Consolas", "Courier New", "Monaco", "Fira Code", "JetBrains Mono", "Source Code Pro"],
+            width=200, button_color="#0A809E")
+        self.cbo_font.grid(row=1, column=1, sticky="w", pady=10)
 
-        self.chk_oas30 = ctk.CTkCheckBox(self.frame_gen, text="OAS 3.0")
-        self.chk_oas30.pack(side="left", padx=(0, 20))
-
-        self.chk_swift = ctk.CTkCheckBox(self.frame_gen, text="OAS SWIFT")
-        self.chk_swift.pack(side="left")
-
-        # === VALIDATION SECTION ===
-        self._create_section_header("Validation")
-
-        self.frame_val = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_val.pack(fill="x", pady=5)
-
-        self.chk_ignore_br = ctk.CTkCheckBox(
-            self.frame_val, text="Ignore 'Bad Request' Examples by default"
-        )
-        self.chk_ignore_br.pack(anchor="w", pady=2)
-
-        # === VIEW SECTION ===
-        self._create_section_header("YAML Viewer")
-
-        self.frame_view = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_view.pack(fill="x", pady=5)
-        self.frame_view.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(self.frame_view, text="Theme:").grid(
-            row=0, column=0, sticky="w", padx=(0, 10)
-        )
-        self.cbo_theme = ctk.CTkComboBox(self.frame_view, values=self.THEMES, width=200)
-        self.cbo_theme.grid(row=0, column=1, sticky="w", pady=5)
-
-        ctk.CTkLabel(self.frame_view, text="Font:").grid(
-            row=1, column=0, sticky="w", padx=(0, 10)
-        )
-        self.cbo_font = ctk.CTkComboBox(
-            self.frame_view,
-            values=[
-                "Consolas",
-                "Courier New",
-                "Monaco",
-                "Fira Code",
-                "JetBrains Mono",
-                "Source Code Pro",
-            ],
-            width=200,
-        )
-        self.cbo_font.grid(row=1, column=1, sticky="w", pady=5)
-
-        ctk.CTkLabel(self.frame_view, text="Font Size:").grid(
-            row=2, column=0, sticky="w", padx=(0, 10)
-        )
-        self.frame_font = ctk.CTkFrame(self.frame_view, fg_color="transparent")
-        self.frame_font.grid(row=2, column=1, sticky="w", pady=5)
-
-        self.slider_font = ctk.CTkSlider(
-            self.frame_font, from_=8, to=20, number_of_steps=12, width=150
-        )
+        ctk.CTkLabel(self.tab_view, text="Font Size:").grid(row=2, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.frame_font = ctk.CTkFrame(self.tab_view, fg_color="transparent")
+        self.frame_font.grid(row=2, column=1, sticky="w", pady=10)
+        
+        self.slider_font = ctk.CTkSlider(self.frame_font, from_=8, to=20, number_of_steps=12, width=150)
         self.slider_font.pack(side="left")
         self.lbl_font_val = ctk.CTkLabel(self.frame_font, text="12", width=30)
-        self.lbl_font_val.pack(side="left", padx=(10, 0))
-        self.slider_font.configure(
-            command=lambda v: self.lbl_font_val.configure(text=str(int(v)))
+        self.lbl_font_val.pack(side="left", padx=(5, 0))
+        self.slider_font.configure(command=lambda v: self.lbl_font_val.configure(text=str(int(v))))
+        
+        self.chk_snap_default = ctk.CTkSwitch(
+            self.tab_view, text="Dock documentation viewer to main window", progress_color="#0A809E"
         )
+        self.chk_snap_default.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=20)
 
-        # === LOGS SECTION ===
-        self._create_section_header("Logs Appearance")
 
-        self.frame_logs = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_logs.pack(fill="x", pady=5)
-        self.frame_logs.grid_columnconfigure(1, weight=1)
+        # === 5. LOGS TAB ===
+        self.tab_logs.grid_columnconfigure(1, weight=1)
 
-        ctk.CTkLabel(self.frame_logs, text="Generation Logs:").grid(
-            row=0, column=0, sticky="w", padx=(0, 10), pady=2
-        )
-        self.cbo_gen_log_theme = ctk.CTkComboBox(
-            self.frame_logs, values=["Light", "Dark"], width=100
-        )
-        self.cbo_gen_log_theme.grid(row=0, column=1, sticky="w", pady=2)
+        # OAS to Excel Theme
+        ctk.CTkLabel(self.tab_logs, text="OAS To Excel Theme:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_gen_log_theme = ctk.CTkComboBox(self.tab_logs, values=["Light", "Dark"], width=150, button_color="#0A809E")
+        self.cbo_gen_log_theme.grid(row=0, column=1, sticky="w", pady=10)
 
-        ctk.CTkLabel(self.frame_logs, text="Application Logs:").grid(
-            row=1, column=0, sticky="w", padx=(0, 10), pady=2
-        )
-        self.cbo_app_log_theme = ctk.CTkComboBox(
-            self.frame_logs, values=["Light", "Dark"], width=100
-        )
-        self.cbo_app_log_theme.grid(row=1, column=1, sticky="w", pady=2)
+        # Excel to OAS Theme
+        ctk.CTkLabel(self.tab_logs, text="Excel To OAS Theme:").grid(row=1, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_import_log_theme = ctk.CTkComboBox(self.tab_logs, values=["Light", "Dark"], width=150, button_color="#0A809E")
+        self.cbo_import_log_theme.grid(row=1, column=1, sticky="w", pady=10)
 
-        ctk.CTkLabel(self.frame_logs, text="Spectral Output:").grid(
-            row=2, column=0, sticky="w", padx=(0, 10), pady=2
-        )
-        self.cbo_spectral_log_theme = ctk.CTkComboBox(
-            self.frame_logs, values=["Light", "Dark"], width=100
-        )
-        self.cbo_spectral_log_theme.grid(row=2, column=1, sticky="w", pady=2)
+        # App Logs
+        ctk.CTkLabel(self.tab_logs, text="Application Logs Theme:").grid(row=2, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_app_log_theme = ctk.CTkComboBox(self.tab_logs, values=["Light", "Dark"], width=150, button_color="#0A809E")
+        self.cbo_app_log_theme.grid(row=2, column=1, sticky="w", pady=10)
+        
+        # Spectral
+        ctk.CTkLabel(self.tab_logs, text="Spectral Output Theme:").grid(row=3, column=0, sticky="w", padx=(10, 10), pady=10)
+        self.cbo_spectral_log_theme = ctk.CTkComboBox(self.tab_logs, values=["Light", "Dark"], width=150, button_color="#0A809E")
+        self.cbo_spectral_log_theme.grid(row=3, column=1, sticky="w", pady=10)
 
-        # === FILE DISPLAY SECTION ===
-        self._create_section_header("File Display")
-
-        self.frame_sort = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_sort.pack(fill="x", pady=5)
-
-        ctk.CTkLabel(self.frame_sort, text="Sort Order:").pack(
-            side="left", padx=(0, 10)
-        )
-        self.cbo_sort = ctk.CTkComboBox(
-            self.frame_sort, values=[opt[0] for opt in self.SORT_OPTIONS], width=150
-        )
-        self.cbo_sort.pack(side="left")
-
-        # === INTERFACE SECTION ===
-        self._create_section_header("Interface")
-
-        self.frame_iface = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        self.frame_iface.pack(fill="x", pady=5)
-        self.frame_iface.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkLabel(self.frame_iface, text="Default Tab:").grid(
-            row=0, column=0, sticky="w", padx=(0, 10)
-        )
-        self.cbo_tab = ctk.CTkComboBox(
-            self.frame_iface, values=self.TAB_OPTIONS, width=150
-        )
-        self.cbo_tab.grid(row=0, column=1, sticky="w", pady=5)
-
-        self.chk_window_pos = ctk.CTkCheckBox(
-            self.frame_iface, text="Remember window size and position"
-        )
-        self.chk_window_pos.grid(row=1, column=0, columnspan=2, sticky="w", pady=5)
-
-        self.chk_snap_default = ctk.CTkCheckBox(
-            self.frame_iface, text="Dock documentation viewer to main window by default"
-        )
-        self.chk_snap_default.grid(row=2, column=0, columnspan=2, sticky="w", pady=5)
 
         # === BUTTONS ===
-        # UX Best Practice: Primary=blue, Secondary=gray, Destructive=red
         self.frame_buttons = ctk.CTkFrame(self, fg_color="transparent")
-        self.frame_buttons.pack(fill="x", padx=15, pady=15)
+        self.frame_buttons.pack(fill="x", side="bottom", padx=15, pady=15)
 
-        # Reset to Defaults - red for destructive action
-        ctk.CTkButton(
-            self.frame_buttons,
-            text="Reset to Defaults",
-            width=130,
-            fg_color=("#D04040", "#B03030"),
-            hover_color=("#B03030", "#902020"),
-            command=self._on_reset,
-        ).pack(side="left")
+        ctk.CTkButton(self.frame_buttons, text="Reset to Defaults", width=130,
+                      fg_color=("#D04040", "#B03030"), hover_color=("#B03030", "#902020"),
+                      command=self._on_reset).pack(side="left")
 
-        # Cancel - gray for secondary action
-        ctk.CTkButton(
-            self.frame_buttons,
-            text="Cancel",
-            width=100,
-            fg_color="gray50",
-            hover_color="gray40",
-            command=self._on_cancel,
-        ).pack(side="right", padx=(10, 0))
+        ctk.CTkButton(self.frame_buttons, text="Cancel", width=100,
+                      fg_color="#0A809E", hover_color="#076075",
+                      command=self._on_cancel).pack(side="right", padx=(10, 0))
 
-        # Apply & Close - default blue for primary action
-        ctk.CTkButton(
-            self.frame_buttons, text="Apply & Close", width=120, command=self._on_save
-        ).pack(side="right")
-
-    def _create_section_header(self, text: str):
-        """Create a section header with separator."""
-        frame = ctk.CTkFrame(self.main_frame, fg_color="transparent")
-        frame.pack(fill="x", pady=(15, 5))
-        ctk.CTkLabel(frame, text=text, font=ctk.CTkFont(weight="bold", size=14)).pack(
-            anchor="w"
-        )
-
-
-    def _browse_template(self):
-        """Browse for template directory."""
-        current = self.entry_template.get()
-        initial = current if current and os.path.exists(current) else os.getcwd()
-        directory = filedialog.askdirectory(initialdir=initial)
-        if directory:
-            self.entry_template.delete(0, "end")
-            self.entry_template.insert(0, directory)
-
-    def _browse_oas(self):
-        """Browse for OAS folder."""
-        current = self.entry_oas.get()
-        initial = current if current and os.path.exists(current) else os.getcwd()
-        directory = filedialog.askdirectory(initialdir=initial)
-        if directory:
-            self.entry_oas.delete(0, "end")
-            self.entry_oas.insert(0, directory)
+        ctk.CTkButton(self.frame_buttons, text="Apply & Close", width=120, 
+                      fg_color="#0A809E", hover_color="#076075",
+                      command=self._on_save).pack(side="right")
 
     def _load_current_values(self):
-        """Load current preference values into the UI."""
         prefs = self.prefs_manager.get_all()
 
-        # Paths
-        self.entry_template.insert(0, prefs.get("template_directory", ""))
-        self.entry_oas.insert(0, prefs.get("oas_folder", ""))
-
-        # Generation
-        if prefs.get("gen_oas_30", True):
-            self.chk_oas30.select()
-        if prefs.get("gen_oas_31", True):
-            self.chk_oas31.select()
-        if prefs.get("gen_oas_swift", False):
-            self.chk_swift.select()
-
-        # Validation
-        if prefs.get("ignore_bad_request", True):
-            self.chk_ignore_br.select()
-
-        # View
-        theme = prefs.get("yaml_theme", "oas-dark")
-        if theme in self.THEMES:
-            self.cbo_theme.set(theme)
-
-        font_family = prefs.get("yaml_font", "Consolas")
-        self.cbo_font.set(font_family)
-
-        font_size = prefs.get("yaml_font_size", 12)
-        self.slider_font.set(font_size)
-        self.lbl_font_val.configure(text=str(font_size))
-
-        # Logs
-        self.cbo_gen_log_theme.set(prefs.get("gen_log_theme", "Light"))
-        self.cbo_app_log_theme.set(prefs.get("app_log_theme", "Dark"))  # Default Dark
-        self.cbo_spectral_log_theme.set(prefs.get("spectral_log_theme", "Light"))
-
-        # File Display
+        # General
+        default_tab = prefs.get("default_tab", "OAS to Excel") # Typo in defaults? No, stored as label
+        if default_tab in self.TAB_OPTIONS: self.cbo_tab.set(default_tab)
+        
         sort_order = prefs.get("file_sort_order", "alphabetical")
         for display, value in self.SORT_OPTIONS:
             if value == sort_order:
                 self.cbo_sort.set(display)
                 break
+        
+        self.var_remember.set(self.prefs_manager.get("remember_paths", False))
+        if prefs.get("remember_window_pos", True): self.chk_window_pos.select()
 
-        # Interface
-        default_tab = prefs.get("default_tab", "Generation")
-        if default_tab in self.TAB_OPTIONS:
-            self.cbo_tab.set(default_tab)
+        # OAS to Excel
+        if prefs.get("gen_oas_30", True): self.chk_oas30.select()
+        if prefs.get("gen_oas_31", True): self.chk_oas31.select()
+        if prefs.get("gen_oas_swift", False): self.chk_swift.select()
 
-        if prefs.get("remember_window_pos", True):
-            self.chk_window_pos.select()
+        # Validation
+        if prefs.get("ignore_bad_request", True): self.chk_ignore_br.select()
 
-        if prefs.get("doc_snap_default_enabled", True):
-            self.chk_snap_default.select()
+        # View
+        theme = prefs.get("yaml_theme", "oas-dark")
+        if theme in self.THEMES: self.cbo_theme.set(theme)
+        self.cbo_font.set(prefs.get("yaml_font", "Consolas"))
+        self.slider_font.set(prefs.get("yaml_font_size", 12))
+        self.lbl_font_val.configure(text=str(prefs.get("yaml_font_size", 12)))
+        if prefs.get("doc_snap_default_enabled", True): self.chk_snap_default.select()
 
-    def _get_current_values(self) -> dict:
-        """Get current values from UI as a dictionary."""
-        # Map sort display name back to value
+        # Logs
+        self.cbo_gen_log_theme.set(prefs.get("gen_log_theme", "Light"))
+        self.cbo_import_log_theme.set(prefs.get("import_log_theme", "Light")) # New
+        self.cbo_app_log_theme.set(prefs.get("app_log_theme", "Dark"))
+        self.cbo_spectral_log_theme.set(prefs.get("spectral_log_theme", "Light"))
+
+
+    def save_preferences(self):
+        """Save values to manager and close."""
         sort_display = self.cbo_sort.get()
         sort_value = "alphabetical"
         for display, value in self.SORT_OPTIONS:
@@ -389,65 +331,75 @@ class PreferencesDialog(ctk.CTkToplevel):
                 sort_value = value
                 break
 
-        return {
-            "template_directory": self.entry_template.get().strip(),
-            "oas_folder": self.entry_oas.get().strip(),
-            "gen_oas_30": self.chk_oas30.get() == 1,
-            "gen_oas_31": self.chk_oas31.get() == 1,
-            "gen_oas_swift": self.chk_swift.get() == 1,
-            "ignore_bad_request": self.chk_ignore_br.get() == 1,
+        new_prefs = {
+            # General
+            "default_tab": self.cbo_tab.get(),
+            "file_sort_order": sort_value,
+            "remember_paths": self.var_remember.get(),
+            "remember_window_pos": bool(self.chk_window_pos.get()),
+            
+            # OAS to Excel
+            "gen_oas_30": bool(self.chk_oas30.get()),
+            "gen_oas_31": bool(self.chk_oas31.get()),
+            "gen_oas_swift": bool(self.chk_swift.get()),
+            
+            # Validation
+            "ignore_bad_request": bool(self.chk_ignore_br.get()),
+            
+            # View
             "yaml_theme": self.cbo_theme.get(),
             "yaml_font": self.cbo_font.get(),
             "yaml_font_size": int(self.slider_font.get()),
+            "doc_snap_default_enabled": bool(self.chk_snap_default.get()),
+            
+            # Logs
             "gen_log_theme": self.cbo_gen_log_theme.get(),
+            "import_log_theme": self.cbo_import_log_theme.get(), # New
             "app_log_theme": self.cbo_app_log_theme.get(),
             "spectral_log_theme": self.cbo_spectral_log_theme.get(),
-            "file_sort_order": sort_value,
-            "file_sort_order": sort_value,
-            "default_tab": self.cbo_tab.get(),
-            "remember_window_pos": self.chk_window_pos.get() == 1,
-            "doc_snap_default_enabled": self.chk_snap_default.get() == 1,
         }
-
-    def _on_save(self):
-        """Save preferences and close."""
-        new_prefs = self._get_current_values()
+        
         self.prefs_manager.update(new_prefs)
         self.prefs_manager.save()
-        self.result = True
-
+        
         if self.on_save_callback:
-            self.on_save_callback(new_prefs)
+            try:
+                self.on_save_callback()
+            except Exception as e:
+                print(f"Error applying preferences: {e}")
+                # We still destroy the window, or maybe show an error?
+                # For now, let's allow closing to avoid 'stuck' UI, but logging is critical.
 
+        self.result = True
         self.destroy()
 
+    def _on_save(self):
+        self.save_preferences()
+
     def _on_cancel(self):
-        """Cancel and close without saving."""
         self.result = False
         self.destroy()
 
     def _on_reset(self):
         """Reset UI to default values."""
-        # Clear all
-        self.entry_template.delete(0, "end")
-        self.entry_oas.delete(0, "end")
-
-        # Checkboxes
+        self.cbo_tab.set("OAS to Excel")
+        self.cbo_sort.set("Alphabetical")
+        self.var_remember.set(False)
+        self.chk_window_pos.select()
+        
         self.chk_oas30.select()
         self.chk_oas31.select()
         self.chk_swift.deselect()
+        
         self.chk_ignore_br.select()
-        self.chk_window_pos.select()
-
-        # Dropdowns
+        
         self.cbo_theme.set("oas-dark")
         self.cbo_font.set("Consolas")
-        self.cbo_gen_log_theme.set("Light")
-        self.cbo_app_log_theme.set("Dark")  # Default Dark
-        self.cbo_spectral_log_theme.set("Light")
-        self.cbo_sort.set("Alphabetical")
-        self.cbo_tab.set("OAS to Excel")
- 
-        # Slider
         self.slider_font.set(12)
         self.lbl_font_val.configure(text="12")
+        self.chk_snap_default.select()
+        
+        self.cbo_gen_log_theme.set("Light")
+        self.cbo_import_log_theme.set("Light")
+        self.cbo_app_log_theme.set("Dark")
+        self.cbo_spectral_log_theme.set("Light")

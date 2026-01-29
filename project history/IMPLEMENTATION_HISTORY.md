@@ -421,3 +421,107 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - `src/version.py` - Bumped to 1.5
 - `.gitignore` - Updated exclusions
 
+### Build v1.8.100 (2026-01-19)
+- **Spectral Error Analysis**: Root cause identified as `ShortErrorResponse` ambiguity.
+- **Generator Improvements**:
+    - Enhanced example coercion with `$ref` resolution.
+    - Added support for examples in response headers.
+    - Improved mapping of Excel "Description" to OAS "title" for containers.
+- **Key Modules**: `src/generator_pkg/schema_builder.py`, `src/generator_pkg/row_helpers.py`, `src/generator_pkg/response_builder.py`.
+
+### Build v1.8.101 (2026-01-27)
+- **Metadata Fix**: `type: object` fields now consistently use `description` instead of `title`.
+- **Key Modules**: `src/generator_pkg/schema_builder.py`.
+
+### Build v1.8.102 (2026-01-27)
+- **Precision Overhaul (String Preservation Protocol)**:
+    - Implemented `RawNumericValue(str)` to preserve exact numeric formatting (e.g., `4800.00`).
+    - Unified precision logic across Importer and Generator using string-based preservation.
+    - Prevented all automatic numeric casts (`float`/`int`) to ensure source fidelity.
+- **Key Modules**: `src/generator_pkg/yaml_output.py`, `src/oas_importer/schema_flattener.py`, `src/generator_pkg/row_helpers.py`.
+
+### Build v1.8.103 (2026-01-27)
+- **Hotfix**: Restored missing imports in `oas_converter.py` that caused a `NameError` on startup.
+- **Improved Stability**: Verified startup behavior and precision logic.
+
+### Build v1.8.107 (2026-01-27)
+- **Fix**: Dynamic YAML Tagging. Resolved `!!float` tag leakage by updating `yaml_output.py` to dynamically assign tags based on content (decimal presence).
+- **Verification**: Added `verify_tag_roundtrip.py` for autonomous regression testing.
+
+### Build v1.8.108 (2026-01-27)
+- **Fix**: "Triple Quote" Artifacts. Updated `src/oas_importer/schema_flattener.py` to remove forced quote wrapping for string fields. Importer now faithfully preserves source string format (e.g., `'1.0'` -> `'1.0'`), relying on the Generator for correct type handling.
+- **Verification**: Verified with `verify_fix_live.py` (simulating full app flow).
+
+### Build v1.8.109 (2026-01-27)
+- **Emergency Fix**: Active Quote Stripping. Implemented robust sanitization in `schema_flattener.py` to detect and strip redundant quotes (e.g., `"'1.0'"`) from input values.
+- **Verification**: Verified with `verify_strip.py` and `verify_fix_live.py`.
+
+### Build v1.8.117 (2026-01-28)
+- **Fix**: Universal Custom Extension Support in Importer. Updated `OASParser` and `SchemaFlattener` to recognize, capture, and export all vendor-specific extensions (keys starting with `x-`) at response, parameter, and schema property levels.
+- **Safety**: Strict Build & Commit Workflow. Modified `build_exe.bat` to include mandatory Git reminders and created `.agent/workflows/build.md` to formalize the release cycle.
+- **Verification**: Verified extension capture with `verify_extensions.py` and confirmed workflow safety prompts during build.
+
+### Build v1.8.121 (2026-01-28)
+- **Fix**: Polymorphic Schema Title/Description Duplication. 
+    - **Importer**: Updated `SchemaFlattener` to correctly map Titles to Descriptions for container branches.
+    - **Generator**: 
+        - Restored Titles for top-level containers and branch roots.
+        - Prevented Title promotion for nested properties.
+        - Implemented deduplication for identical Title/Description pairs.
+    - **Ordering**: Enforced `title` priority (appearing before `type`/`oneOf`) in `_recursive_schema_fix`.
+- **Key Modules**: `src/generator.py`, `src/oas_importer/schema_flattener.py`, `src/generator_pkg/schema_builder.py`.
+
+### Build v1.8.122 (2026-01-28)
+- **Fix**: Selective `oneOf` Exclusivity & Inheritance Protection.
+    - **Tracking**: Implemented pre-scanning pass to identify components used in `oneOf` vs `allOf`.
+    - **Selective Closure**: 
+        - Applied `additionalProperties: false` only to components used in `oneOf` but NOT in `allOf`, preventing inheritance breakage.
+        - For OAS 3.1, applied closure as a direct sibling to `$ref` in `oneOf` branches.
+    - **Strictness**: Added `minProperties: 1` to optional-only object branches in `oneOf` to prevent ambiguous empty object matches.
+    - **Compatibility**: Guaranteed identical behavior across OAS 3.0 and 3.1.
+- **Key Modules**: `src/generator.py`, `src/generator_pkg/schema_builder.py`.
+
+### Build v1.8.123 (2026-01-28)
+- **Fix**: Schema Description Preservation (Global). 
+    - Attempted to remove all title promotion for combinators. (Superseded by v1.8.124).
+- **Key Modules**: `src/generator.py`, `src/generator_pkg/schema_builder.py`.
+
+### Build v1.8.124 (2026-01-28)
+- **Refinement**: Schema Title/Description Logic (Root vs Branch).
+    - **Root Containers**: Restricted `description` preservation to the main root of combinators (`allOf`, `oneOf`, `anyOf`).
+    - **Branch Roots**: Restored `title` promotion for indexed branch roots (e.g., `Branch[0]`) to maintain documentation readability.
+    - **Deduplication**: Ensured that if a description is promoted to a title for a branch, the redundant description field is removed.
+- **Key Modules**: `src/generator.py`.
+
+### Build v1.8.125 (2026-01-28)
+- **Fix**: Inline Header Resolution (OAS 3.0).
+    - Implemented inline expansion for response headers in OAS 3.0 when a `description` override is detected.
+    - Added `x-comment` to explain the expansion.
+- **Key Modules**: `src/generator_pkg/response_builder.py`.
+
+### Build v1.8.126 (2026-01-28)
+- **Fix**: Automatic Abandoned Component Cleanup (OAS 3.0).
+    - Implemented a reference-counting mechanism to identify and remove global components (`headers`, `schemas`) that become unused after being inlined.
+    - Prevents `oas3-unused-component` warnings while maintaining valid doc-level references.
+- **Key Modules**: `src/generator.py`, `src/generator_pkg/response_builder.py`.
+
+### Build v1.8.127 (2026-01-28)
+- **Refinement**: Consistent `x-comment` wording.
+    - Updated the prefix to `"Reference from..."` for inlined headers in OAS 3.0, matching the style used for parameters.
+- **Key Modules**: `src/generator_pkg/response_builder.py`.
+
+### Build v1.8.128 (2026-01-28)
+- **Feature**: User Manual & Navigation refinement.
+    - Updated `user_manual.html`: Fixed "View" menu description and endpoint file extensions (.xlsx).
+- **Key Modules**: `src/docs/user_manual.html`.
+
+### Build v1.8.130 (2026-01-29)
+- **Feature**: Workspace Cleanup.
+    - Removed redundant scripts, temporary output folders, and helper assets to streamline the repository.
+    - Updated `.gitignore` with comprehensive release-ready exclusions.
+    - Archived essential regression tests in `tests/`.
+
+### Build v1.8.131 (2026-01-29)
+- **Refinement**: Entry point restoration.
+    - Restored `run_gui.py` (accidentally removed during cleanup) to fix the build process.
+- **Key Modules**: `run_gui.py`.

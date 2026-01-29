@@ -13,6 +13,7 @@ Usage:
 
 import yaml
 import os
+from src.generator_pkg.yaml_output import SafeLoaderRawNumbers
 from typing import Dict, List, Any, Optional, Tuple
 from dataclasses import dataclass, field
 from collections import OrderedDict
@@ -24,7 +25,7 @@ class ParameterInfo:
     name: str
     location: str  # 'path', 'query', 'header', 'cookie'
     description: Optional[str] = None
-    required: bool = False
+    required: Optional[bool] = None
     schema_type: Optional[str] = None
     schema_ref: Optional[str] = None
     schema_format: Optional[str] = None
@@ -39,6 +40,7 @@ class ParameterInfo:
     enum: Optional[List[str]] = None
     example: Optional[Any] = None
     ref: Optional[str] = None  # Top-level $ref if present
+    extensions: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -51,7 +53,7 @@ class SchemaProperty:
     schema_ref: Optional[str] = None
     items_type: Optional[str] = None
     format: Optional[str] = None
-    required: bool = False
+    required: Optional[bool] = None
     minimum: Optional[Any] = None
     maximum: Optional[Any] = None
     min_length: Optional[int] = None
@@ -72,6 +74,7 @@ class ResponseInfo:
     content: Dict[str, Any] = field(default_factory=dict)
     links: Dict[str, Any] = field(default_factory=dict)
     ref: Optional[str] = None  # Top-level $ref if present
+    extensions: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -87,6 +90,8 @@ class OperationInfo:
     request_body: Optional[Dict[str, Any]] = None
     responses: Dict[str, ResponseInfo] = field(default_factory=dict)
     extensions: Dict[str, Any] = field(default_factory=dict)
+
+
 
 
 class OASParser:
@@ -111,7 +116,9 @@ class OASParser:
         """Load and parse the OAS YAML file."""
         with open(self.filepath, 'r', encoding='utf-8') as f:
             self._raw_content = f.read()
-        self.oas = yaml.safe_load(self._raw_content)
+        # Use custom loader to preserve dateTime formats and numeric precision (e.g., 1.00 -> "1.00")
+        self.oas = yaml.load(self._raw_content, Loader=SafeLoaderRawNumbers)
+
     
     @property
     def version(self) -> str:
@@ -257,7 +264,7 @@ class OASParser:
             name=param_data.get('name', ''),
             location=param_data.get('in', ''),
             description=param_data.get('description'),
-            required=param_data.get('required', False),
+            required=param_data.get('required'),
         )
         
         # Schema properties
@@ -286,19 +293,29 @@ class OASParser:
         
         param.example = param_data.get('example') or schema.get('example')
         
+        # Extract custom extensions (x-*)
+        for key, value in param_data.items():
+            if key.startswith('x-'):
+                param.extensions[key] = value
+        
         return param
     
     def _parse_response(self, status_code: str, resp_data: Dict) -> ResponseInfo:
         """Parse a response definition."""
         # Handle $ref - preserve inline description before resolving
         top_ref = resp_data.get('$ref')
-        inline_description = resp_data.get('description')  # Preserve inline description
+        local_description = resp_data.get('description') # Preserve local description
         
         if top_ref:
-            resp_data = self._resolve_ref(top_ref)
-        
-        # Use inline description if present, otherwise use resolved description
-        final_description = inline_description if inline_description else resp_data.get('description')
+            # Resolve to get header and content structure
+            resolved_data = self._resolve_ref(top_ref)
+            # Use local description override if present, otherwise leave empty for refs
+            # to prevent redundant descriptions in the generated OAS.
+            # (If it's a ref, the description lives in the component).
+            final_description = local_description
+            resp_data = resolved_data
+        else:
+            final_description = local_description
         
         response = ResponseInfo(
             status_code=status_code,
@@ -318,6 +335,11 @@ class OASParser:
         
         # Links
         response.links = resp_data.get('links', {})
+        
+        # Extract custom extensions (x-*)
+        for key, value in resp_data.items():
+            if key.startswith('x-'):
+                response.extensions[key] = value
         
         return response
     

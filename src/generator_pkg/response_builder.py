@@ -17,6 +17,7 @@ from .row_helpers import (
     get_description,
     get_schema_name,
     parse_example_string,
+    coerce_example_types,
 )
 from .schema_builder import map_type_to_schema
 
@@ -110,7 +111,7 @@ def flatten_subtree(nodes):
     return rows
 
 
-def build_schema_from_flat_table(df, version: str):
+def build_schema_from_flat_table(df, version: str, components_schemas: dict = None):
     """
     Reconstructs a nested schema from flat parent/child rows.
     
@@ -138,7 +139,7 @@ def build_schema_from_flat_table(df, version: str):
                 get_col_value(row, ["Mandatory", "Required"]) or ""
             ).lower()
             in ["yes", "y", "true", "m"],
-            "schema_obj": map_type_to_schema(row, version, is_node=True),
+            "schema_obj": map_type_to_schema(row, version, is_node=True, components_schemas=components_schemas),
         }
 
         nodes[name] = node
@@ -344,13 +345,15 @@ def build_examples_from_rows(df):
     return final_examples
 
 
-def process_response_headers(header_nodes, headers_components: dict, version: str):
+def process_response_headers(header_nodes, headers_components: dict, version: str, components_schemas: dict = None, inlined_components: set = None):
     """
     Processes header nodes into OAS headers dict.
     
     :param header_nodes: List of header node dicts
     :param headers_components: The components/headers dict from OAS
+    :param components_schemas: Dict of component schemas for $ref resolution
     :param version: OAS version string
+    :param inlined_components: Set to track components that were resolved inline (for OAS 3.0 cleanup)
     :return: Headers dict or None
     """
     if not header_nodes:
@@ -361,95 +364,88 @@ def process_response_headers(header_nodes, headers_components: dict, version: st
         row = h_node["row"]
         h_name = h_node["name"]
         schema_ref = get_schema_name(row)
+        desc = get_description(row)
+        has_desc = pd.notna(desc) and str(desc).strip()
+        is_oas30 = version.startswith("3.0")
 
         if pd.notna(schema_ref):
             schema_ref = str(schema_ref).strip()
             if schema_ref in headers_components:
-                headers[h_name] = {"$ref": f"#/components/headers/{schema_ref}"}
+                # Reference to a Header Component
+                if has_desc and is_oas30:
+                    # OAS 3.0: Inline resolution for Header Component with description override
+                    # (Since $ref cannot have siblings and Headers don't support allOf)
+                    header_obj = headers_components[schema_ref].copy()
+                    header_obj["description"] = str(desc)
+                    header_obj["x-comment"] = f"Reference from #/components/headers/{schema_ref} to allow description override in OAS 3.0"
+                    
+                    if inlined_components is not None:
+                        inlined_components.add(f"headers/{schema_ref}")
+                else:
+                    ref_path = f"#/components/headers/{schema_ref}"
+                    header_obj = {"$ref": ref_path}
+                    if has_desc and not is_oas30:
+                        # OAS 3.1: description as sibling of $ref
+                        header_obj["description"] = str(desc)
+                
+                headers[h_name] = header_obj
             else:
-                headers[h_name] = {
-                    "schema": {"$ref": f"#/components/schemas/{schema_ref}"},
-                    "description": get_description(row) or "",
-                }
+                # Reference to a Schema Component
+                ref_path = f"#/components/schemas/{schema_ref}"
+                
+                if has_desc and is_oas30:
+                    # OAS 3.0: apply 'allOf' workaround for schema reference with description
+                    headers[h_name] = {
+                        "schema": {
+                            "allOf": [{"$ref": ref_path}],
+                            "description": str(desc)
+                        }
+                    }
+                else:
+                    # In OAS 3.1, or if no description, or if description at Header level is preferred
+                    # Actually, putting description at Header level is usually better in 3.0 too
+                    # if we want to avoid allOf inside schema.
+                    headers[h_name] = {
+                        "schema": {"$ref": ref_path},
+                    }
+                    if has_desc:
+                        headers[h_name]["description"] = str(desc)
         else:
-            h_schema = map_type_to_schema(row, version)
+            h_schema = map_type_to_schema(row, version, components_schemas=components_schemas)
+            # map_type_to_schema already handles allOf workaround for primitive schemas in 3.0
             h_desc = h_schema.pop("description", None)
+            
+            # Move examples from schema to Header level (OAS standard)
+            # OAS 3.1: examples is a map, OAS 3.0: example is singular.
+            # However, singular 'example' is still valid in 3.1 and often matches source OAS.
+            h_example = h_schema.pop("example", None)
+            h_examples = h_schema.pop("examples", None)
+            
+            # Extract required field from row/schema
+            mandatory = get_col_value(row, ["Mandatory", "Required"])
+            
             head_obj = {"schema": h_schema}
             if h_desc:
                 head_obj["description"] = h_desc
+                
+            if pd.notna(mandatory) and str(mandatory).strip():
+                head_obj["required"] = str(mandatory).lower() in ["yes", "y", "true", "m"]
+            
+            # Priority: if we have a singular example, use it.
+            # If we have plural examples (list), take the first one and use it as singular 'example' 
+            # for better compliance with Source OAS which uses singular form.
+            final_ex = h_example
+            if final_ex is None and h_examples and isinstance(h_examples, list) and len(h_examples) > 0:
+                final_ex = h_examples[0]
+            
+            if final_ex is not None:
+                head_obj["example"] = final_ex
+                
             headers[h_name] = head_obj
 
     return headers
 
 
-def coerce_example_types(value, schema, components_schemas=None):
-    """
-    Recursively coerce example value types to match schema expectations.
-    
-    When schema type is 'string' but value is a number, converts to quoted string.
-    This ensures proper YAML serialization while respecting the schema.
-    
-    Args:
-        value: The example value to check
-        schema: The schema definition for this value
-        components_schemas: Dict of component schemas for $ref resolution
-        
-    Returns:
-        Coerced value with proper types
-    """
-    if schema is None or not isinstance(schema, dict):
-        return value
-    
-    # Resolve $ref if present (direct $ref)
-    if '$ref' in schema and components_schemas:
-        ref_path = schema['$ref']
-        if ref_path.startswith('#/components/schemas/'):
-            ref_name = ref_path.split('/')[-1]
-            schema = components_schemas.get(ref_name, {})
-    
-    # For allOf with single $ref + description (common pattern), follow the $ref
-    # to get schema info, but DON'T modify the original schema structure
-    effective_schema = schema
-    if 'allOf' in schema and components_schemas:
-        for sub_schema in schema['allOf']:
-            if isinstance(sub_schema, dict) and '$ref' in sub_schema:
-                ref_path = sub_schema['$ref']
-                if ref_path.startswith('#/components/schemas/'):
-                    ref_name = ref_path.split('/')[-1]
-                    resolved = components_schemas.get(ref_name, {})
-                    # Use resolved schema for type checking only, don't modify original
-                    effective_schema = resolved
-                    break
-    
-    schema_type = effective_schema.get('type')
-    
-    # Handle object: recurse into properties
-    if isinstance(value, dict):
-        properties = effective_schema.get('properties', {})
-        # Also check allOf/anyOf/oneOf for properties in effective_schema
-        for combinator in ['allOf', 'anyOf', 'oneOf']:
-            if combinator in effective_schema:
-                for sub_schema in effective_schema[combinator]:
-                    if isinstance(sub_schema, dict):
-                        properties.update(sub_schema.get('properties', {}))
-        
-        result = {}
-        for k, v in value.items():
-            prop_schema = properties.get(k, {})
-            result[k] = coerce_example_types(v, prop_schema, components_schemas)
-        return result
-    
-    # Handle array: recurse into items
-    if isinstance(value, list):
-        items_schema = effective_schema.get('items', {})
-        return [coerce_example_types(item, items_schema, components_schemas) for item in value]
-    
-    # Handle scalar: coerce numeric to string if schema expects string  
-    if schema_type == 'string' and isinstance(value, (int, float)):
-        # Convert number to string - YAML dumper will add appropriate quotes
-        return str(value)
-    
-    return value
 
 def process_response_content(content_nodes, schema_nodes, root_node, version: str, components_schemas=None):
     """

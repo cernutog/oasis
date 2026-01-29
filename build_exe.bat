@@ -7,6 +7,11 @@ echo  OASIS EXE Build Process
 echo ============================================
 echo.
 
+REM Step 0: Kill running instances
+echo Step 0: Killing running instances...
+taskkill /F /IM OASIS.exe /T 2>nul
+taskkill /F /IM OAS_Generation.exe /T 2>nul
+
 REM Step 1: Increment BUILD_NUMBER in version.py
 echo Step 1: Incrementing build number...
 python -c "import re; f=open('src/version.py','r'); c=f.read(); f.close(); m=re.search(r'BUILD_NUMBER\s*=\s*(\d+)',c); old=int(m.group(1)); new=old+1; c=re.sub(r'BUILD_NUMBER\s*=\s*\d+',f'BUILD_NUMBER = {new}',c); f=open('src/version.py','w'); f.write(c); f.close(); print(f'  Build number: {old} -> {new}')"
@@ -36,5 +41,12 @@ echo ============================================
 echo  Build SUCCESSFUL!
 echo  Version: %FULL_VER%
 echo  Output: dist\OASIS.exe
+echo ============================================
+echo.
+echo  MANDATORY: COMMIT YOUR CHANGES NOW!
+echo  -----------------------------------
+echo  git add .
+echo  git commit -m "Build v%FULL_VER%: <Description>"
+echo.
 echo ============================================
 echo.

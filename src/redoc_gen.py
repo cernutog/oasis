@@ -77,9 +77,9 @@ class RedocGenerator:
             gap: 8px;
         }}
         
-        /* Button base - matches CTkButton default blue */
+        /* Button base - matches OASIS Petrol Blue */
         #doc-toolbar button {{
-            background: #1F6AA5;
+            background: #0A809E;
             color: white;
             border: none;
             padding: 7px 16px;
@@ -94,7 +94,7 @@ class RedocGenerator:
         }}
         
         #doc-toolbar button:hover {{
-            background: #144870;
+            background: #076075;
         }}
         
         /* Snap button when unsnapped */
@@ -132,7 +132,7 @@ class RedocGenerator:
     <!-- Toolbar with pywebview API integration -->
     <div id="doc-toolbar">
         <button id="btn-snap" onclick="toggleSnap()" title="Dock viewer to main window">
-            🔗 Dock
+            📌 Undock
         </button>
         <button id="btn-sync-editor" onclick="syncToEditor()" title="Find this section in YAML editor">
             📍 Find in YAML
@@ -161,10 +161,10 @@ class RedocGenerator:
             var btn = document.getElementById('btn-snap');
             if (!btn) return;
             if (isSnapped) {{
-                btn.textContent = '🔗 Dock';
+                btn.textContent = '📌 Undock';
                 btn.className = '';
             }} else {{
-                btn.textContent = '📌 Undock';
+                btn.textContent = '🔗 Dock';
                 btn.className = 'unsnapped';
             }}
         }}

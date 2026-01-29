@@ -155,7 +155,7 @@ def generate_oas(
 
     # Prepare Clean Info (Exclude internal fields)
     clean_info = info_data.copy()
-    for internal_key in ["release", "filename_pattern"]:
+    for internal_key in ["filename_pattern"]:
         clean_info.pop(internal_key, None)
 
     # 4. Generate OAS 3.0
@@ -293,29 +293,71 @@ def generate_oas(
         with open(map_sw_31, "w", encoding="utf-8") as f:
             f.write(sw_gen_31.get_source_map_json())
 
-    log_callback("Done!")
+    log_callback("\n=== OAS GENERATION COMPLETED ===\n")
 
 
 def main():
+    import customtkinter as ctk
+    import os
+    import sys
+    import tkinter.messagebox
+    from customtkinter import ThemeManager
+
+    # 1. SETUP THEME BEFORE IMPORTING GUI (Prevents default blue init)
+    ctk.set_appearance_mode("System")
+    
+    theme_loaded = False
     try:
-        import customtkinter as ctk
+        if getattr(sys, 'frozen', False):
+            # PyInstaller mode
+            theme_path = os.path.join(sys._MEIPASS, "src", "resources", "oasis_theme.json")
+        else:
+            # Dev mode
+            theme_path = os.path.join(os.path.dirname(__file__), "resources", "oasis_theme.json")
+            
+        if os.path.exists(theme_path):
+            ctk.set_default_color_theme(theme_path)
+            theme_loaded = True
+        else:
+            tkinter.messagebox.showwarning("Theme Error", f"Theme file missing at:\n{theme_path}")
+            ctk.set_default_color_theme("blue")
+            
+    except Exception as e:
+        tkinter.messagebox.showerror("Theme Exception", f"Error setting theme:\n{e}")
+        ctk.set_default_color_theme("blue")
+
+    # 2. IMPORT GUI NOW
+    try:
         from src.gui import OASGenApp
     except ImportError:
         try:
             from gui import OASGenApp
-            import customtkinter as ctk
         except ImportError:
-            # Fallback for dev environment path issues
-            import sys
-
             sys.path.append(os.path.join(os.path.dirname(__file__), "src"))
             from src.gui import OASGenApp
-            import customtkinter as ctk
-
-    ctk.set_appearance_mode("System")
-    ctk.set_default_color_theme("blue")
 
     app = OASGenApp()
+    
+    # 3. RUNTIME FALLBACK CHECK (The "Nuclear Option")
+    # If the button color is still Blue (#3B8ED0 is standard CTk Blue), force it.
+    try:
+        current_fg = ThemeManager.theme["CTkButton"]["fg_color"]
+        # Standard Blue is usually ["#3B8ED0", "#1F6AA5"]
+        if "#3B8ED0" in str(current_fg) or "3B8ED0" in str(current_fg):
+            # Force Petrol Blue Override
+            PETROL = "#0A809E"
+            HOVER = "#076075"
+            
+            ThemeManager.theme["CTkButton"]["fg_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkButton"]["hover_color"] = [HOVER, HOVER]
+            ThemeManager.theme["CTkSlider"]["button_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkSlider"]["progress_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkCheckBox"]["fg_color"] = [PETROL, PETROL]
+            ThemeManager.theme["CTkCheckBox"]["hover_color"] = [HOVER, HOVER]
+            # Force refresh if app already drew? No, app didn't mainloop yet.
+    except Exception:
+        pass
+
     app.mainloop()
 
 

@@ -142,7 +142,7 @@ class SemanticPieChart(ctk.CTkFrame):
                 # Using a large font size for the checkmark
                 # "✔" U+2714 HEAVY CHECK MARK
                 self.canvas.create_text(
-                    cx, cy, text="✔", fill="#2e7d32", font=("Segoe UI Symbol", 100)
+                    cx, cy, text="✔", fill="#0A809E", font=("Segoe UI Symbol", 100)
                 )
             # If has_data is False, just leave canvas empty
             return
@@ -169,7 +169,7 @@ class SemanticPieChart(ctk.CTkFrame):
         warn_colors = self._generate_hsl_gradient(
             0.13, len(warnings)
         )  # 0.13 is nice gold/amber
-        other_colors = self._generate_hsl_gradient(0.55, len(others))  # Blueish
+        other_colors = self._generate_hsl_gradient(0.53, len(others))  # Petrol/Cyan-ish
 
         # Combine for drawing order: Errors -> Warnings -> Others
         final_list = []

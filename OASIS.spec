@@ -11,6 +11,7 @@ TKINTER_LIB = os.path.join(PYTHON_HOME, "Lib", "tkinter")
 
 datas = [
     ('src/resources/redoc.standalone.js', 'src/resources'),
+    ('src/resources/oasis_theme.json', 'src/resources'),
     ('src/colorschemes', 'src/colorschemes'),  # Custom color schemes
     ('src', 'src'),  # Include entire src directory to ensure all modules are available
     ('icon.ico', '.'),

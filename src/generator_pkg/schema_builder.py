@@ -11,9 +11,13 @@ from collections import OrderedDict
 from .row_helpers import (
     get_col_value,
     get_type,
+    get_name,
+    get_parent,
     get_schema_name,
     get_description,
+    get_title,
     parse_example_string,
+    coerce_example_types,
 )
 
 
@@ -164,7 +168,7 @@ def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
             pass
 
 
-def map_type_to_schema(row, version: str, is_node: bool = False) -> dict:
+def map_type_to_schema(row, version: str, is_node: bool = False, components_schemas: dict = None) -> dict:
     """
     Maps Excel row data to an OAS schema object.
     
@@ -181,6 +185,7 @@ def map_type_to_schema(row, version: str, is_node: bool = False) -> dict:
     schema = {}
     schema_ref = get_schema_name(row)
     desc = get_description(row)
+    title = get_title(row)
 
     # Handle combinators (oneOf/allOf/anyOf)
     if pd.notna(schema_ref):
@@ -201,9 +206,22 @@ def map_type_to_schema(row, version: str, is_node: bool = False) -> dict:
     if type_val != "array" and "$ref" not in schema and "allOf" not in schema:
         schema["type"] = type_val
 
-    # Add description if not already present
-    if pd.notna(desc) and "description" not in schema:
-        schema["description"] = str(desc)
+    # Add title and description
+    if pd.notna(title):
+        schema["title"] = str(title)
+    
+    if pd.notna(desc):
+        if "description" not in schema:
+            schema["description"] = str(desc)
+
+    # FINAL DEDUPLICATION: If Title and Description are identical, keep only Description
+    if "title" in schema and "description" in schema:
+        if str(schema["title"]).strip() == str(schema["description"]).strip():
+            del schema["title"]
+    elif "title" in schema and "description" not in schema:
+        # If we promoted description to title, but user wants it as description if identical...
+        # Wait, if only title is present (e.g. from promotion), keep it as title for containers.
+        pass
 
     # Apply constraints (enum, format, pattern, min/max)
     apply_schema_constraints(schema, row, type_val)
@@ -257,6 +275,10 @@ def map_type_to_schema(row, version: str, is_node: bool = False) -> dict:
     ex = get_col_value(row, ["Example", "Examples"])
     if pd.notna(ex):
         parsed_ex = parse_example_string(ex)
+        # Apply coercion if possible (for primitives and arrays)
+        # For complex objects, full coercion happens at response/component building level
+        parsed_ex = coerce_example_types(parsed_ex, schema, components_schemas)
+        
         if version.startswith("3.1"):
             schema["examples"] = [parsed_ex]
         else:

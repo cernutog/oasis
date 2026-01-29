@@ -93,7 +93,7 @@ class SplashScreen:
         # Subtitle
         self.canvas.create_text(
             splash_width // 2,
-            255,
+            215,  # Lifted from 255 to align with new layout
             text="OAS Integration Suite",
             font=('Segoe UI', 15),
             fill=self.text_secondary
@@ -151,7 +151,7 @@ class SplashScreen:
         """Draw OASIS with logo replacing the O."""
         # Load logo
         logo_loaded = False
-        logo_size = 170  # Large and prominent
+        logo_size = 155  # Exaclty 155px to match User Guide
         
         try:
             if getattr(sys, 'frozen', False):
@@ -172,14 +172,14 @@ class SplashScreen:
         
         # Use lighter font to match the thin circle outline
         font_name = 'Segoe UI Light'
-        font_size = 100  # Large for visual impact
+        font_size = 130  # Increased to 130px to match User Guide
         text_font = (font_name, font_size)
         
         # "ASIS" text (the part after the logo/O)
         asis_text = "ASIS"
         
-        # Vertical center
-        center_y = 145
+        # Vertical center (Lifted from 145 to 130 to balance space)
+        center_y = 130
         
         # Measure ASIS text width and get O width for reference
         temp_id = self.canvas.create_text(0, 0, text=asis_text, font=text_font)
@@ -194,23 +194,37 @@ class SplashScreen:
         self.canvas.delete(temp_o)
         o_width = bbox_o[2] - bbox_o[0] if bbox_o else 80
         
-        # Kerning: reduce overlap to separate logo from text
-        kerning = logo_size - o_width - 25
+        # Kerning: Fixed at 35px to match HTML "margin-right: -35px" style
+        # In HTML we pull them closer. Here we calculate Position = start_x + logo - kerning.
+        # However, HTML logic was "Logo margin-right: -35px".
+        # Meaning the Text starts 35px BEFORE the Logo ends? 
+        # No, margin-right on Logo pulls the NEXT element left.
+        # So Text Start = Logo End - 35. This means OVERLAP.
+        # let's try kerning = 35 (overlap).
+        kerning = 35 
         
-        # Total visual width of logo + ASIS
+        # Total visual width of logo + ASIS (Logo Width + Text Width - Overlap)
         total_width = logo_size + asis_width - kerning
         
         # Center the whole thing
-        start_x = (width - total_width) // 2
+        # Apply +20px visual offset (Right) to compensate for the wide Logo ('O')
+        # pulling the geometric center to the left.
+        start_x = (width - total_width) // 2 + 20
         
         # Position logo
         logo_center_x = start_x + logo_size // 2
         
         # Draw logo as O
+        # Apply visual offset: 
+        # Y: Moved UP by 6px from previous (+8) -> Net +2
+        # X: Moved RIGHT by 2px
+        logo_visual_y = center_y + 2
+        logo_visual_x = logo_center_x + 2
+        
         if logo_loaded:
             self.canvas.create_image(
-                logo_center_x,
-                center_y,
+                logo_visual_x,
+                logo_visual_y,
                 image=self.images['logo'],
                 anchor='center'
             )
@@ -531,7 +545,7 @@ class SplashScreen:
         
         # Draw Version (Smaller, Normal Weight, Gray, Closer to Title)
         self.canvas.create_text(
-            center_x, 280,  # Moved up from 305 to be closer to subtitle (y=255)
+            center_x, 250,  # Lifted to 250 (below 215 subtitle)
             text=version_text,
             font=('Segoe UI', 11),
             fill='#64748B',
@@ -540,7 +554,7 @@ class SplashScreen:
         
         # Draw Description (Clean, Spaced)
         self.canvas.create_text(
-            center_x, 340,  # Moved down slightly to increase gap
+            center_x, 310,  # Lifted to 310
             text=description,
             font=('Segoe UI', 10),
             fill='#64748B',

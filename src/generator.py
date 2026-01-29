@@ -53,6 +53,9 @@ class OASGenerator:
             },
         }
         self.source_map = {}
+        self.oneof_refs = set()
+        self.allof_refs = set()
+        self.inlined_components = set() # Track components inlined for OAS 3.0 cleanup
 
     def _record_source(self, json_path, filename, sheet_name=None):
         """Records the source file and sheet for a given OAS path."""
@@ -61,19 +64,49 @@ class OASGenerator:
             self.source_map[json_path] = {"file": filename, "sheet": sheet_name}
 
     def build_info(self, info_data):
-        self.oas["info"] = copy.deepcopy(info_data)
+        # We use OrderedDict to ensure version, title, description, contact order
+        ordered_info = OrderedDict()
         
+        # 1. Version
+        if "version" in info_data:
+            ordered_info["version"] = str(info_data["version"])
+        
+        # 2. Title
+        if "title" in info_data:
+            ordered_info["title"] = info_data["title"]
+            
+        # 3. Description
+        if "description" in info_data:
+            ordered_info["description"] = info_data["description"]
+            
+        # 4. Contact
+        if "contact" in info_data:
+            ordered_info["contact"] = info_data["contact"]
+            
+        # Inject other fields and extensions
+        data_copy = copy.deepcopy(info_data)
+        # Remove standard keys already added
+        for k in ["version", "title", "description", "contact"]:
+            data_copy.pop(k, None)
+            
         # Inject Creation Date (YYYY-MM-DD)
-        self.oas["info"]["x-info-creation-date"] = datetime.now().strftime("%Y-%m-%d")
+        ordered_info["x-info-creation-date"] = datetime.now().strftime("%Y-%m-%d")
         
         # Move 'release' to 'x-info-release' if present
-        if "release" in self.oas["info"]:
-            self.oas["info"]["x-info-release"] = self.oas["info"]["release"]
-            del self.oas["info"]["release"]
+        if "release" in data_copy:
+            ordered_info["x-info-release"] = data_copy["release"]
+            del data_copy["release"]
             
         # Clean up internal fields if present
-        if "filename_pattern" in self.oas["info"]:
-            del self.oas["info"]["filename_pattern"]
+        if "filename_pattern" in data_copy:
+            del data_copy["filename_pattern"]
+            
+        # Add everything else (custom extensions)
+        for k, v in data_copy.items():
+            ordered_info[k] = v
+            
+        self.oas["info"] = ordered_info
+
 
     def build_paths(self, paths_list, operations_details):
         for op_meta in paths_list:
@@ -138,10 +171,25 @@ class OASGenerator:
                 "delete",
                 "head",
             ]:
-                req_body = self._build_request_body(details["body"], body_examples)
-
+                # Extract Description and Mandatory from Body sheet attrs (B1, C1)
+                body_df = details["body"]
+                body_description = body_df.attrs.get("body_description")
+                body_required_raw = body_df.attrs.get("body_required")
+                
+                # Convert mandatory to boolean
+                # M, Yes, True -> True
+                body_is_required = str(body_required_raw).lower() in ["m", "yes", "true", "y"] if body_required_raw else False
+                
+                req_body = self._build_request_body(
+                    body_df, 
+                    body_examples, 
+                    description=body_description, 
+                    required=body_is_required
+                )
                 if req_body:
                     op_obj["requestBody"] = req_body
+
+
 
             # Responses
             if details.get("responses"):
@@ -155,15 +203,16 @@ class OASGenerator:
                 op_obj["responses"]["default"] = {"description": "Default response"}
 
             # Reorder Operation Object keys
-            # Don't sort extensions - preserve original order from Excel!
+            # ORDER: operationId, summary, description, tags, parameters, requestBody
             standard_pre = [
+                "operationId",
                 "summary",
                 "description",
-                "operationId",
                 "tags",
                 "parameters",
                 "requestBody",
             ]
+
             extensions = [k for k in op_obj.keys() if k.startswith("x-")]
             if "__RAW_EXTENSIONS__" in op_obj:
                 extensions.append("__RAW_EXTENSIONS__")
@@ -304,15 +353,15 @@ class OASGenerator:
                 else:
                     continue
 
+            mandatory = self._get_col_value(row, ["Mandatory", "Required"])
             param = {
                 "name": name,
                 "in": str(in_loc).lower(),
                 "description": self._get_description(row) or "",
-                "required": str(
-                    self._get_col_value(row, ["Mandatory", "Required"]) or ""
-                ).lower()
-                in ["yes", "y", "true", "m"],
             }
+            if pd.notna(mandatory) and str(mandatory).strip():
+                param["required"] = str(mandatory).lower() in ["yes", "y", "true", "m"]
+            
             # Build schema but remove description and examples (they go at param level)
             schema = self._map_type_to_schema(row)
             schema.pop("description", None)
@@ -330,7 +379,7 @@ class OASGenerator:
             params.append(param)
         return params
 
-    def _build_request_body(self, df, body_examples=None):
+    def _build_request_body(self, df, body_examples=None, description=None, required=False):
 
         if df is None or df.empty:
             return None
@@ -352,23 +401,30 @@ class OASGenerator:
             if root_key == content_type or root_key == "application/json":
                 schema = schema["properties"][root_key]
 
-        return {
-            "content": {
-                content_type: {
-                    "schema": schema,
-                    **(
-                        {
-                            "examples": {
-                                k: {"value": self._parse_example_string(v)}
-                                for k, v in body_examples.items()
-                            }
+        # Use OrderedDict to enforce order: description, required, content
+        req_body = OrderedDict()
+        if description:
+            req_body["description"] = description
+        if required:
+            req_body["required"] = True
+            
+        req_body["content"] = {
+            content_type: {
+                "schema": schema,
+                **(
+                    {
+                        "examples": {
+                            k: {"value": self._parse_example_string(v)}
+                            for k, v in body_examples.items()
                         }
-                        if body_examples
-                        else {}
-                    ),
-                }
+                    }
+                    if body_examples
+                    else {}
+                ),
             }
         }
+        return req_body
+
 
     def _get_col_value(self, row, keys):
         """Delegate to row_helpers.get_col_value."""
@@ -409,7 +465,11 @@ class OASGenerator:
     def _process_response_headers(self, header_nodes):
         """Delegate to response_builder.process_response_headers."""
         return _process_response_headers_fn(
-            header_nodes, self.oas["components"]["headers"], self.version
+            header_nodes, 
+            self.oas["components"]["headers"], 
+            self.version,
+            self.oas["components"]["schemas"],
+            inlined_components=self.inlined_components
         )
 
     def _process_response_content(self, content_nodes, schema_nodes, root_node):
@@ -527,7 +587,7 @@ class OASGenerator:
 
     def _build_schema_from_flat_table(self, df):
         """Delegate to response_builder.build_schema_from_flat_table."""
-        return _build_schema_from_flat_table_fn(df, self.version)
+        return _build_schema_from_flat_table_fn(df, self.version, self.oas["components"]["schemas"])
 
     def _handle_combinator_refs(self, type_val, schema_ref, desc=None):
         """Delegate to schema_builder.handle_combinator_refs."""
@@ -543,7 +603,7 @@ class OASGenerator:
 
     def _map_type_to_schema(self, row, is_node=False):
         """Delegate to schema_builder.map_type_to_schema."""
-        return _map_type_to_schema_fn(row, self.version, is_node)
+        return _map_type_to_schema_fn(row, self.version, is_node, self.oas["components"]["schemas"])
 
     def build_components(self, global_components, source_file=None):
         """
@@ -607,11 +667,16 @@ class OASGenerator:
             # Record Source for Schemas
             if source_file:
                 for schema_name in schema_tree.keys():
-                    # For schemas, we might have specific sheet info if 'schemas' was a DF with attrs
-                    # But here 'schema_tree' is a dict of built schemas.
-                    # 'global_components["schemas"]' IS the dataframe!
                     sheet_name = global_components["schemas"].attrs.get("sheet_name")
                     self._record_source(f"components.schemas.{schema_name}", source_file, sheet_name)
+
+            # SELECTIVE CLOSURE (Case 2 - Components)
+            # Apply additionalProperties: false to objects used in oneOf but NOT in allOf
+            for schema_name, schema in self.oas["components"]["schemas"].items():
+                if schema_name in self.oneof_refs and schema_name not in self.allof_refs:
+                    if isinstance(schema, dict) and schema.get("type") == "object":
+                         if "additionalProperties" not in schema:
+                             schema["additionalProperties"] = False
 
         # 4. Responses (Global)
         if global_components.get("responses") is not None:
@@ -776,13 +841,82 @@ class OASGenerator:
         combinator_schemas = {}  # Track processed combinators
         df.columns = df.columns.str.strip()
 
+        # PRE-SCAN: Identify all refs used in oneOf vs allOf to ensure correct selective closure
+        # This prevents race conditions where a oneOf branch is built before we know it's also in allOf
+        for _, row in df.iterrows():
+            c_type = str(self._get_type(row)).strip().lower()
+            s_ref = self._get_schema_name(row)
+            if pd.notna(s_ref):
+                ref_name = str(s_ref).strip()
+                p_name = self._get_parent(row)
+                
+                # Check if it's a combinator child or a direct ref node
+                if pd.notna(p_name):
+                    p_name = str(p_name).strip()
+                    # Resolve parent type if possible (might be tricky for deep nested)
+                    # But for now, we look for parent nodes already processed? No, they aren't processed yet.
+                    # We look at the row of the parent.
+                    pass 
+                
+                # SPREAD: Just track all Schema Name usage based on the row's own Type
+                if c_type == "oneof":
+                    self.oneof_refs.add(ref_name)
+                elif c_type == "allof":
+                    self.allof_refs.add(ref_name)
+                elif pd.notna(p_name):
+                     # If parent name matches name[n] pattern, it's a combinator branch
+                     p_name_str = str(p_name)
+                     m = re.match(r"^(.+)\[(\d+)\]$", p_name_str)
+                     if m:
+                         base_name = m.group(1)
+                         # Find the type of the base_name node
+                         # This requires a second pass within the pre-scan or a temporary map
+                         pass
+        
+        # REFINED PRE-SCAN: Build temporary name->type map for accurate tracking
+        temp_type_map = {}
+        for _, row in df.iterrows():
+            t_name = self._get_name(row)
+            if pd.notna(t_name):
+                temp_type_map[str(t_name).strip()] = str(self._get_type(row)).strip().lower()
+        
+        for _, row in df.iterrows():
+            s_ref = self._get_schema_name(row)
+            if pd.notna(s_ref):
+                ref_name = str(s_ref).strip()
+                p_name = self._get_parent(row)
+                if pd.notna(p_name):
+                    p_name = str(p_name).strip()
+                    
+                    # Case A: Parent is explicitly a branch (e.g. Filter[0])
+                    m = re.match(r"^(.+)\[(\d+)\]$", p_name)
+                    if m:
+                        base_name = m.group(1)
+                        base_type = temp_type_map.get(base_name)
+                        if base_type == "oneof":
+                            self.oneof_refs.add(ref_name)
+                        elif base_type == "allof":
+                            self.allof_refs.add(ref_name)
+                    
+                    # Case B: Parent is a combinator root (e.g. Filter)
+                    p_type = temp_type_map.get(p_name)
+                    if p_type == "oneof":
+                        self.oneof_refs.add(ref_name)
+                    elif p_type == "allof":
+                        self.allof_refs.add(ref_name)
+
         # 1. Build nodes & Map
-        print(f"DEBUG: Generator processing {len(df)} rows. Logic: Robust Combinator Fix v3")
+        debug_log = []
+        
         for idx, row in df.iterrows():
             name = self._get_name(row)
+            raw_name = name
             if pd.isna(name):
                 continue
             name = str(name).strip()
+            # FIX: Skip rows with empty name string (e.g. ghost rows)
+            if not name:
+                continue
 
             # Parsing M for mandatory
             mand_raw = (
@@ -792,30 +926,55 @@ class OASGenerator:
             )
             is_mandatory = mand_raw in ["yes", "y", "true", "m"]
 
+            # FIX: Normalize Parent - treat empty string as None/Root
+            raw_parent = self._get_parent(row)
+            parent = None
+            if pd.notna(raw_parent):
+                p_str = str(raw_parent).strip()
+                if p_str:
+                    parent = p_str
+                # Else parent remains None (Root)
+            
+            debug_log.append(f"Row {idx}: Name='{name}' (Raw: {raw_name}), Parent='{parent}' (Raw: {raw_parent})")
+
             node = {
                 "name": name,
                 "type": self._get_type(row),
                 "description": self._get_description(row),
-                "parent": self._get_parent(row),
+                "parent": parent,
                 "mandatory": is_mandatory,
                 "schema_obj": self._map_type_to_schema(row, is_node=True),
             }
 
             nodes[idx] = node
-            node_map[name] = node # Add EVERYTHING to node_map initially
+            
+            # FIX: Node Map Prioritization
+            if name not in node_map:
+                node_map[name] = node
+            else:
+                existing = node_map[name]
+                existing_is_root = existing["parent"] is None
+                current_is_root = parent is None
+                
+                if current_is_root:
+                    # Root always wins (or overwrites/updates other root)
+                    node_map[name] = node
+                elif not existing_is_root:
+                    # Child overwrites child (default behavior for potential duplicates)
+                    node_map[name] = node
+                # Else: Existing is Root, Current is Child -> Keep Root (Do nothing)
+
 
         # Optimization: Build children map (Parent -> [Children Nodes])
         children_map = {}
         for idx, node in nodes.items():
             p = node["parent"]
-            if pd.notna(p):
-                p = str(p).strip()
+            if p: # Not None and not empty
                 if p not in children_map:
                     children_map[p] = []
                 children_map[p].append(node)
 
         # 2. Process combinators FIRST (before regular linking)
-        import re
         for idx, node in nodes.items():
             name = node["name"]
             type_val = str(node["type"]).strip().lower() if pd.notna(node["type"]) else ""
@@ -855,10 +1014,24 @@ class OASGenerator:
                         # Case where root is a direct Ref (e.g. Type='object', Schema='Core')
                         alternatives.append(root_schema)
 
-                    schema_obj = {combinator_key: alternatives}
+                    # TRACKING REFS
+                    for alt in alternatives:
+                        if isinstance(alt, dict) and "$ref" in alt:
+                            ref_name = alt["$ref"].split("/")[-1]
+                            if combinator_key == "oneOf":
+                                self.oneof_refs.add(ref_name)
+                            elif combinator_key == "allOf":
+                                self.allof_refs.add(ref_name)
+
+                    from collections import OrderedDict
+                    schema_obj = OrderedDict()
+                    
+                    # USER REQUEST: Use description for the main container
                     desc = node["description"]
-                    if pd.notna(desc):
+                    if pd.notna(desc) and desc:
                         schema_obj["description"] = str(desc)
+                    
+                    schema_obj[combinator_key] = alternatives
                     
                     combinator_schemas[name] = schema_obj
                     # CRITICAL: Update the node's schema_obj so linking uses the combinator structure
@@ -867,6 +1040,7 @@ class OASGenerator:
         # 3. Regular linking for non-combinator nodes
         for idx, node in nodes.items():
             name = node["name"]
+
             parent_name = node["parent"]
             type_val = str(node["type"]).strip().lower() if pd.notna(node["type"]) else ""
             
@@ -889,7 +1063,11 @@ class OASGenerator:
             if is_combinator_child:
                 continue
             
-            if pd.isna(parent_name):
+            if is_combinator_child:
+                continue
+            
+            # FIX: Explicit Root Check (Parent is None)
+            if parent_name is None:
                 roots.append(node)
             elif str(parent_name).strip() in node_map:
                 parent = node_map[str(parent_name).strip()]
@@ -922,6 +1100,7 @@ class OASGenerator:
                 else:
                     if "properties" not in parent_schema:
                         parent_schema["properties"] = {}
+                        
                     parent_schema["properties"][name] = node["schema_obj"]
 
                     if node["mandatory"]:
@@ -941,10 +1120,30 @@ class OASGenerator:
         alt_name = alt_node["name"]
         schema = alt_node["schema_obj"].copy() if alt_node["schema_obj"] else {}
         
-        # Use description as 'title' for combinator alternatives
+        # Use description as 'title' ONLY for combinator alternatives (branch roots)
+        # parent_type is provided by Loop 2 when calling building the many branches
         desc = alt_node["description"]
-        if pd.notna(desc) and desc:
+        if pd.notna(desc) and desc and (parent_type is not None):
             schema["title"] = str(desc)
+            # DEDUPLICATION: If Title promoted from Description, remove redundant description
+            if "description" in schema and schema["description"] == schema["title"]:
+                del schema["description"]
+            
+            # SELECTIVE CLOSURE & TRACKING (Always for Refs)
+            if "$ref" in schema:
+                 # OAS 3.1: Add additionalProperties: false to ref branch if not in allOf
+                 if self.version >= "3.1.0" and parent_type == "oneof":
+                     ref_name = schema["$ref"].split("/")[-1]
+                     if ref_name not in self.allof_refs:
+                         schema["additionalProperties"] = False
+                 
+                 # TRACK REF Usage for components closure
+                 if parent_type == "oneof":
+                     ref_name = schema["$ref"].split("/")[-1]
+                     self.oneof_refs.add(ref_name)
+                 elif parent_type == "allof":
+                     ref_name = schema["$ref"].split("/")[-1]
+                     self.allof_refs.add(ref_name)
         
         # Check for nested combinator (if this alternative is itself a oneOf/...)
         # If it is, node['schema_obj'] might already be the combinator structure?
@@ -992,15 +1191,24 @@ class OASGenerator:
             
             if required:
                 schema["required"] = required
+            else:
+                # USER REQUEST: If no required properties, add minProperties: 1 for oneOf branches
+                # to avoid empty object catch-all ambiguity.
+                if parent_type == "oneof" and schema.get("type") == "object" and "properties" in schema and schema["properties"]:
+                    schema["minProperties"] = 1
             
             # CRITICAL FIX: Enforce exclusivity for oneOf matching ONLY
             # For allOf (inheritance), we MUST allow additional properties (from the parent/other schemas)
             if parent_type == "oneof":
-                schema["additionalProperties"] = False
+                if "additionalProperties" not in schema:
+                    schema["additionalProperties"] = False
         
         return schema
 
     def get_yaml(self):
+        # Cleanup components that were inlined and are no longer referenced
+        self._cleanup_unused_inlined_components()
+        
         # Enforce Section Order
         ordered_oas = OrderedDict()
         # 1. OpenAPI Version
@@ -1014,6 +1222,8 @@ class OASGenerator:
         # 3. Servers
         if "servers" in self.oas:
             ordered_oas["servers"] = self.oas["servers"]
+
+
 
         # 4. Tags
         if "tags" in self.oas:
@@ -1053,7 +1263,44 @@ class OASGenerator:
         # FINAL FIX: Recursively enforce 'example'/'examples' at the bottom of every object
         self._recursive_schema_fix(ordered_oas)
         
+        # RE-APPLY USER REQUESTED ORDER (v1.8.78)
+        # We do this AFTER recursive fix to ensure compliance with specialized request
+        if "info" in ordered_oas:
+            ordered_oas["info"] = self._reorder_dict(
+                ordered_oas["info"], 
+                ["version", "title", "description", "contact"]
+            )
+
+
+            
+        if "paths" in ordered_oas:
+            for path_url, path_item in ordered_oas["paths"].items():
+                if isinstance(path_item, dict):
+                    for method, op in path_item.items():
+                        if isinstance(op, dict):
+                            # Identify x- extensions to keep them near the bottom but before responses
+                            x_keys = [k for k in op.keys() if k.startswith("x-") and k != "__RAW_EXTENSIONS__"]
+                            path_item[method] = self._reorder_dict(
+                                op, 
+                                ["tags", "operationId", "summary", "description", "parameters", "requestBody"] + x_keys + ["__RAW_EXTENSIONS__", "responses"]
+                            )
+
+
+        # RE-APPLY SERVER ORDER (v1.8.85)
+        if "servers" in ordered_oas:
+            new_servers = []
+            for s in ordered_oas["servers"]:
+                if isinstance(s, dict):
+                    new_servers.append(self._reorder_dict(s, ["url", "description"]))
+                else:
+                    new_servers.append(s)
+            ordered_oas["servers"] = new_servers
+
+
+
+        
         # Post-process: Coerce example types based on schema
+
         # (e.g., convert numeric values to strings when schema expects string)
         self._coerce_all_example_types(ordered_oas)
 
@@ -1064,7 +1311,9 @@ class OASGenerator:
             sort_keys=False,
             default_flow_style=False,
             allow_unicode=True,
-            width=120,
+            width=10000,
+
+
         )
 
         # Post-process: Replace __RAW_EXTENSIONS__ markers with actual raw YAML
@@ -1076,39 +1325,62 @@ class OASGenerator:
         """Returns the source map as a JSON string."""
         return json.dumps(self.source_map, indent=2)
 
-    def _recursive_schema_fix(self, obj):
+    def _recursive_schema_fix(self, obj, in_example=False):
         """
         Recursively traverses the OAS structure and enforces key ordering:
         - 'description' is always first (for human readability)
         - 'example' and 'examples' are always last (for YAML formatting)
         """
+
         if isinstance(obj, dict):
             # 1. Process children first
             for k, v in obj.items():
-                self._recursive_schema_fix(v)
+                is_ex = k in ["example", "examples", "value"] or in_example
+                self._recursive_schema_fix(v, in_example=is_ex)
+
 
             # 2. Re-order current dict if strictly required keys are present
+            has_ref = "$ref" in obj
             has_name = "name" in obj
+            has_title = "title" in obj
             has_desc = "description" in obj
+            has_type = "type" in obj
             has_example = "example" in obj or "examples" in obj
             
-            if has_name or has_desc or has_example:
+            if (has_ref or has_name or has_title or has_desc or has_type or has_example) and not in_example:
+
+
                 from collections import OrderedDict
                 
                 # Extract special keys
                 name = obj.pop("name", None)
                 desc = obj.pop("description", None)
+                ref = obj.pop("$ref", None)
                 ex = obj.pop("example", None)
                 exs = obj.pop("examples", None)
 
-                # Reconstruct with correct order: Name -> Description -> Rest -> Examples
+                # Reconstruct with correct order: Name -> Title -> Description -> Type -> $ref -> Rest -> Examples
                 new_d = OrderedDict()
                 
                 if name is not None:
                     new_d["name"] = name
+                
+                title = obj.pop("title", None)
+                if title is not None:
+                    new_d["title"] = title
                     
                 if desc is not None:
                     new_d["description"] = desc
+                
+                type_val = obj.pop("type", None)
+                if type_val is not None:
+                    new_d["type"] = type_val
+                
+                if ref is not None:
+                    new_d["$ref"] = ref
+
+
+
                 
                 # Add remaining keys
                 for k, v in obj.items():
@@ -1126,7 +1398,8 @@ class OASGenerator:
 
         elif isinstance(obj, list):
             for item in obj:
-                self._recursive_schema_fix(item)
+                self._recursive_schema_fix(item, in_example=in_example)
+
 
     def _coerce_all_example_types(self, oas: dict) -> None:
         """
@@ -1327,3 +1600,42 @@ class OASGenerator:
         """
         _apply_swift_customization(self.oas, source_filename)
 
+    def _cleanup_unused_inlined_components(self):
+        """
+        Scans for $ref in the entire OAS document and removes components from 
+        self.inlined_components that have zero remaining references.
+        """
+        if not self.inlined_components:
+            return
+
+        # 1. Collect all $ref values
+        all_refs = set()
+
+        def find_refs(obj):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k == "$ref" and isinstance(v, str):
+                        # Extract the component path, e.g., 'headers/pri'
+                        m = re.match(r"#/components/(.+)$", v)
+                        if m:
+                            all_refs.add(m.group(1))
+                    else:
+                        find_refs(v)
+            elif isinstance(obj, list):
+                for item in obj:
+                    find_refs(item)
+
+        find_refs(self.oas)
+
+        # 2. Identify and remove unused inlined components
+        for comp_path in list(self.inlined_components):
+            if comp_path not in all_refs:
+                # Remove from OAS components
+                parts = comp_path.split("/")
+                if len(parts) == 2:
+                    section, name = parts
+                    if section in self.oas["components"] and name in self.oas["components"][section]:
+                        del self.oas["components"][section][name]
+                
+        # Always clear the tracking set at the end
+        self.inlined_components.clear()

@@ -57,17 +57,26 @@ def load_excel_sheet(file_path, sheet_name):
                         if first_val.lower() == "response":
                             # Found Definition Row: "Response" | Code | Description
                             # We expect at least 3 values: Response, Code, Description
-                            # Or 2 values if code is implicit? (Rules imply Response | Code | Description)
                             if len(row_vals) > 2:
-                                # description is the 3rd value (index 2)
-                                # or later?
-                                # We assume standard: Response -> Code -> Description
                                 desc = row_vals[2]
                                 df.attrs["response_description"] = str(desc).strip()
-                                # We could also capture code: row_vals[1]
                                 break
+                    
+                    # NEW: Specific metadata for "Body" sheet (B1=Description, C1=Required)
+                    if sheet_name == "Body":
+                        try:
+                            # Row 0, Col 1 is B1; Col 2 is C1
+                            b1_val = df_raw.iloc[0, 1]
+                            c1_val = df_raw.iloc[0, 2]
+                            if pd.notna(b1_val):
+                                df.attrs["body_description"] = str(b1_val).strip()
+                            if pd.notna(c1_val):
+                                df.attrs["body_required"] = str(c1_val).strip()
+                        except Exception:
+                            pass
                 except Exception:
                     pass
+
         else:
             # Fallback to default
             df = pd.read_excel(file_path, sheet_name=sheet_name)

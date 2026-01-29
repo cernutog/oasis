@@ -11,10 +11,22 @@ Usage:
 """
 
 import os
+import datetime
 from typing import Dict, List, Any, Optional
+import pandas as pd
+from openpyxl import Workbook
+from src.generator_pkg.yaml_output import RawNumericValue, OASDumper, SafeLoaderRawNumbers
 from .oas_parser import OASParser, OperationInfo
 from .schema_flattener import SchemaFlattener, FlatRow
 from .template_writer import TemplateExcelWriter
+
+
+
+def _to_string(value: Any) -> str:
+    """Safely convert value to string, preserving ISO 8601 for datetimes."""
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    return str(value)
 
 
 class OASToExcelConverter:
@@ -25,16 +37,22 @@ class OASToExcelConverter:
     and TemplateExcelWriter for output generation.
     """
     
-    def __init__(self, oas_filepath: str):
+    def __init__(self, oas_filepath: str, log_callback=None):
         """
         Initialize converter with an OAS file.
         
         Args:
             oas_filepath: Path to the OAS YAML file
+            log_callback: Optional function to log messages
         """
         self.oas_filepath = oas_filepath
+        self.log_callback = log_callback
         self.parser = OASParser(oas_filepath)
         self.flattener = SchemaFlattener(self.parser.oas)
+
+    def log(self, message: str):
+        if self.log_callback:
+            self.log_callback(message)
         
     def generate_endpoint_file(self, operation: OperationInfo, 
                                 output_path: str) -> str:
@@ -89,16 +107,22 @@ class OASToExcelConverter:
             List of generated file paths
         """
         os.makedirs(output_dir, exist_ok=True)
+        self.log(f"Generating endpoint files in: {output_dir}")
         
         generated_files = []
-        for operation in self.parser.get_operations():
+        operations = self.parser.get_operations()
+        total_ops = len(operations)
+        
+        for i, operation in enumerate(operations):
             # Generate filename from operation ID or path
             filename = self._operation_to_filename(operation)
             filepath = os.path.join(output_dir, filename)
             
+            # self.log(f"Processing ({i+1}/{total_ops}): {filename}")
             self.generate_endpoint_file(operation, filepath)
             generated_files.append(filepath)
             
+        self.log(f"Generated {len(generated_files)} endpoint files.")
         return generated_files
     
     def generate_index_file(self, output_path: str) -> str:
@@ -145,6 +169,7 @@ class OASToExcelConverter:
         self._fill_component_responses(writer)
         
         writer.save(output_path)
+        self.log(f"Generated Master Index: {output_path}")
         return output_path
     
     def _fill_general_description(self, writer: TemplateExcelWriter) -> None:
@@ -360,7 +385,7 @@ class OASToExcelConverter:
                     examples_list = ref_schema.get('examples')
                     if examples_list and isinstance(examples_list, list) and len(examples_list) > 0:
                         example = examples_list[0]
-            ws.cell(row=row_idx, column=13, value=str(example) if example is not None else '')  # Example
+            ws.cell(row=row_idx, column=13, value=_to_string(example) if example is not None else '')  # Example
             
             for col in range(1, 14):
                 ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
@@ -488,8 +513,8 @@ class OASToExcelConverter:
                 return [convert_to_literal(item) for item in obj]
             return obj
         
-        # Create a custom dumper
-        class LiteralDumper(yaml.SafeDumper):
+        # Create a custom dumper inheriting from OASDumper to preserve RawNumericValue precision
+        class LiteralDumper(OASDumper):
             pass
         
         # Register representers - LiteralStr always uses literal, str checks for newlines
@@ -545,13 +570,13 @@ class OASToExcelConverter:
                     'Items Data Type (Array only)': param.items_type or '',
                     "Schema Name\n(for Type or Items Data Type = 'schema')": schema_name,
                     'Format': param.schema_format or '',
-                    'Mandatory': 'M' if param.required else 'O',
+                    'Mandatory': 'M' if param.required is True else ('O' if param.required is False else ''),
                     'Min  \nValue/Length/Item': self._format_min(param),
                     'Max  \nValue/Length/Item': self._format_max(param),
                     'PatternEba': '',
                     'Regex': param.pattern or '',
                     'Allowed values': ', '.join(param.enum) if param.enum else '',
-                    'Example': str(param.example) if param.example else ''
+                    'Example': _to_string(param.example) if param.example else ''
                 })
         return rows
     
@@ -589,7 +614,8 @@ class OASToExcelConverter:
         response_dict = {
             'description': response.description,
             'headers': {h.get('name', ''): h for h in response.headers} if response.headers else {},
-            'content': response.content
+            'content': response.content,
+            'extensions': response.extensions
         }
         flat_rows = self.flattener.flatten_response(response_dict)
         return [self._map_row_to_response_format(row) for row in flat_rows]
@@ -671,7 +697,17 @@ class OASToExcelConverter:
         
         # Handle object: recurse into properties
         if isinstance(value, dict):
-            properties = schema.get('properties', {})
+            properties = schema.get('properties', {}).copy()
+            # Also check combinators for properties
+            for combinator in ['oneOf', 'anyOf', 'allOf']:
+                if combinator in schema and isinstance(schema[combinator], list):
+                    for sub_schema in schema[combinator]:
+                        if isinstance(sub_schema, dict):
+                            if '$ref' in sub_schema:
+                                ref_name = sub_schema['$ref'].split('/')[-1]
+                                sub_schema = self.parser.oas.get('components', {}).get('schemas', {}).get(ref_name, {})
+                            properties.update(sub_schema.get('properties', {}))
+
             result = {}
             for k, v in value.items():
                 prop_schema = properties.get(k, {})
@@ -681,12 +717,58 @@ class OASToExcelConverter:
         # Handle array: recurse into items
         if isinstance(value, list):
             items_schema = schema.get('items', {})
+            # Resolve $ref for items
+            if items_schema and isinstance(items_schema, dict) and '$ref' in items_schema:
+                ref_name = items_schema['$ref'].split('/')[-1]
+                items_schema = self.parser.oas.get('components', {}).get('schemas', {}).get(ref_name, {})
             return [self._coerce_example_types(item, items_schema) for item in value]
         
-        # Handle scalar: coerce numeric to string if schema expects string
-        if schema_type == 'string' and isinstance(value, (int, float)):
-            # Convert number to string - YAML dumper will add quotes as needed
-            return str(value)
+        # Handle scalar: 
+        if isinstance(value, str):
+            # PROACTIVE STRIPPING: Always strip redundant quotes from string inputs.
+            # This handles cases where schema_type is unknown or resolution failed.
+            if isinstance(value, str):
+                s_val = value.strip()
+                if len(s_val) >= 2 and (
+                    (s_val.startswith("'") and s_val.endswith("'")) or 
+                    (s_val.startswith('"') and s_val.endswith('"'))
+                ):
+                    value = s_val[1:-1]
+                    
+            # Check if it looks like a number
+            try:
+                float(value)
+                
+                # PRECISE TYPE DETECTION: If not direct, look into combinators
+                if not schema_type and schema and isinstance(schema, dict):
+                    for combinator in ['oneOf', 'anyOf', 'allOf']:
+                        if combinator in schema and isinstance(schema[combinator], list):
+                            for sub_schema in schema[combinator]:
+                                if isinstance(sub_schema, dict):
+                                    if '$ref' in sub_schema:
+                                        ref_name = sub_schema['$ref'].split('/')[-1]
+                                        sub_schema = self.parser.oas.get('components', {}).get('schemas', {}).get(ref_name, {})
+                                    if sub_schema.get('type'):
+                                        schema_type = sub_schema.get('type')
+                                        break
+                        if schema_type: break
+
+                if schema_type == 'string':
+                    # DO NOT WRAP IN QUOTES. 
+                    return value
+                
+                if schema_type in ['number', 'integer']:
+                    # STRING PRESERVATION: Return as RawNumericValue string
+                    return RawNumericValue(value)
+                
+                # Default for numbers if type unknown
+                return RawNumericValue(value)
+            except (ValueError, TypeError):
+                pass
+            
+        # Handle datetime/date specifically to ensure ISO 8601
+        if isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat()
         
         return value
 
@@ -706,15 +788,17 @@ class OASToExcelConverter:
                     # Coerce types based on schema
                     value = self._coerce_example_types(value, schema)
                     if isinstance(value, (dict, list)):
-                        value = yaml.dump(value, default_flow_style=False, allow_unicode=True)
+                        # Use OASDumper for clean, precise output in the Body/Example cell
+                        value = yaml.dump(value, Dumper=OASDumper, default_flow_style=False, allow_unicode=True, sort_keys=False)
                     examples.append({'name': name, 'body': str(value)})
             elif 'example' in media_def:
                 value = media_def['example']
                 # Coerce types based on schema
                 value = self._coerce_example_types(value, schema)
                 if isinstance(value, (dict, list)):
-                    value = yaml.dump(value, default_flow_style=False, allow_unicode=True)
+                    value = yaml.dump(value, Dumper=OASDumper, default_flow_style=False, allow_unicode=True, sort_keys=False)
                 examples.append({'name': 'default', 'body': str(value)})
+
         return examples
     
     def _operation_to_filename(self, operation: OperationInfo) -> str:

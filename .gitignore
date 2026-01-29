@@ -1,7 +1,7 @@
 # Build artifacts
 dist/
 build/
-# *.spec
+OAS_*.spec
 
 # Binaries
 *.exe
@@ -13,9 +13,28 @@ reports/
 debug_*.txt
 analysis_output.txt
 run_final.txt
+generation_deficiencies.log
+pylint_report.json
 
 # Generated Files
 generated_oas_*.yaml
+OAS Generated/
+OAS Imports/
+API Templates/
+Imported Templates/
+Imported Templates_backup/
+Original Templates/
+Reimported_Templates/
+Roundtrip_Output/
+Roundtrip_Templates/
+Roundtrip_Templates_backup/
+TestOutput/
+Test_30/
+Test_Fresh/
+test_gen_output/
+test_output*/
+Generated_From_Reimport/
+Demo Validation Errors/
 
 # Generated HTML docs (Redoc)
 *.html
@@ -25,15 +44,20 @@ generated_oas_*.yaml
 __pycache__/
 *.pyc
 .vscode/
+.spectral.yaml
+oas_debug.json
 
 # Temp Scripts
 debug_build.bat
 clean_icon_cache.bat
 temp_templates_ignore/
-
-# Test files
-test_*.py
+analyze_*.py
+check_*.py
+repro_*.py
 reproduce_*.py
+verify_*.py
+test_*.py
 
 # Excel temp files
 ~$*.xlsm
+~$*.xlsx

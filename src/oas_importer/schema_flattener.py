@@ -11,6 +11,11 @@ Usage:
 
 from typing import Dict, List, Any, Optional, Set
 from dataclasses import dataclass, field
+import datetime
+from collections import OrderedDict
+import pandas as pd
+from .oas_parser import OASParser
+from src.generator_pkg.yaml_output import RawNumericValue, OASDumper
 
 
 @dataclass
@@ -19,6 +24,7 @@ class FlatRow:
     section: Optional[str] = None  # For response sheets: 'headers', 'content', 'links'
     name: str = ''
     parent: Optional[str] = None
+    title: Optional[str] = None
     description: Optional[str] = None
     type: Optional[str] = None
     items_type: Optional[str] = None
@@ -38,6 +44,7 @@ class FlatRow:
             'Section': self.section,
             'Name': self.name,
             'Parent': self.parent,
+            'Title': self.title,
             'Description': self.description,
             'Type': self.type,
             'Items Data Type': self.items_type,
@@ -71,6 +78,16 @@ def _python_type_to_oas(value: Any) -> str:
     return type_map.get(py_type, py_type)
 
 
+def _to_string(value: Any) -> str:
+    """
+    Convert value to string, handling datetime objects explicitly to preserve ISO 8601 format.
+    Python's default str(datetime) uses space separator, we want 'T'.
+    """
+    if isinstance(value, (datetime.datetime, datetime.date)):
+        return value.isoformat()
+    return str(value)
+
+
 class SchemaFlattener:
     """
     Flattens OAS schemas into table rows for Excel templates.
@@ -94,22 +111,22 @@ class SchemaFlattener:
         self.schemas = oas_dict.get('components', {}).get('schemas', {})
         self._visited: Set[str] = set()  # Prevent infinite recursion
     
+    def _get_mandatory_flag(self, required: Optional[bool]) -> Optional[str]:
+        """Convert required boolean to 'M', 'O', or None (empty)."""
+        if required is True:
+            return 'M'
+        if required is False:
+            return 'O'
+        return None  # Not specified
+
     def _populate_row_from_schema(self, row: FlatRow, schema: Dict[str, Any]) -> None:
-        """
-        Populate a FlatRow with ALL available properties from a schema.
-        This ensures complete data capture for min/max, enum, examples, pattern, etc.
-        
-        Args:
-            row: The FlatRow to populate
-            schema: The schema dictionary to extract data from
-        """
         # Format
         if schema.get('format'):
             row.format = schema['format']
         
         # Min constraints (value, length, or items)
         if schema.get('minimum') is not None:
-            row.min_value = str(schema['minimum'])
+            row.min_value = _to_string(schema['minimum'])
         elif schema.get('minLength') is not None:
             row.min_value = str(schema['minLength'])
         elif schema.get('minItems') is not None:
@@ -117,7 +134,7 @@ class SchemaFlattener:
         
         # Max constraints (value, length, or items)
         if schema.get('maximum') is not None:
-            row.max_value = str(schema['maximum'])
+            row.max_value = _to_string(schema['maximum'])
         elif schema.get('maxLength') is not None:
             row.max_value = str(schema['maxLength'])
         elif schema.get('maxItems') is not None:
@@ -129,37 +146,163 @@ class SchemaFlattener:
         
         # Enum values
         if schema.get('enum'):
-            row.allowed_values = ', '.join(str(v) for v in schema['enum'])
+            row.allowed_values = ', '.join(_to_string(v) for v in schema['enum'])
         
+        # Determine if this is a container (combinators only) OR a content root row
+        # OR a combinator alternative root (e.g. Something[0])
+        type_val = schema.get('type')
+        is_combinator = any(k in schema for k in ['oneOf', 'anyOf', 'allOf'])
+        is_branch_root = '[' in row.name and ']' in row.name and row.name.endswith(']')
+        is_content_root = row.section == 'content' and not row.parent
+        
+        is_container = is_combinator or is_branch_root or is_content_root
+        
+        # Description and Title Mapping
+        title = schema.get('title')
+        description = schema.get('description')
+        
+        if title:
+            if is_container:
+                # CONTAINER: Map OAS 'title' to Excel 'Description' column
+                row.description = str(title)
+            else:
+                row.title = str(title)
+        
+        if description and not row.description:
+            row.description = str(description)
+
         # Example (singular)
         if schema.get('example') is not None:
-            example = schema['example']
-            if isinstance(example, (dict, list)):
-                import yaml
-                # Use YAML format (not JSON) for Excel - preserve original key order
-                row.example = yaml.dump(example, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
-            else:
-                row.example = str(example)
+            row.example = self._serialize_example(schema['example'], schema)
         
         # Examples (plural - OAS 3.1 style array)
         if schema.get('examples') and not row.example:
             examples = schema['examples']
             if isinstance(examples, list) and examples:
                 # Take first example if it's a list
-                first = examples[0]
-                if isinstance(first, (dict, list)):
-                    row.example = self._serialize_example(first)
-                else:
-                    row.example = str(first)
+                row.example = self._serialize_example(examples[0], schema)
 
-    def _serialize_example(self, value: Any) -> Optional[str]:
-        """Helper to serialize example value to YAML string."""
+    def _sanitize_for_yaml(self, value: Any) -> Any:
+        """
+        Recursively convert date/datetime objects to ISO strings in complex structures.
+        This prevents PyYAML from dumping them as non-ISO strings or YAML timestamp objects.
+        """
+        if isinstance(value, dict):
+            return {k: self._sanitize_for_yaml(v) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._sanitize_for_yaml(v) for v in value]
+        elif isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat()
+        else:
+            return value
+
+    def _serialize_example(self, value: Any, schema: Optional[Dict[str, Any]] = None) -> Optional[str]:
+        """Helper to serialize example value to YAML string with type-aware coercion."""
         if value is None:
             return None
-        if isinstance(value, (dict, list)):
+        
+        # Apply deep coercion and sanitization (dates to ISO, numbers to quoted strings if schema type is string)
+        coerced = self._coerce_example(value, schema)
+        
+        if isinstance(coerced, (dict, list)):
             import yaml
-            return yaml.dump(value, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
-        return str(value)
+            # Use literal_preserve_order style if needed? OASDump is usually global.
+            # Here we just want a clean YAML block for the Excel cell.
+            return yaml.dump(coerced, Dumper=OASDumper, default_flow_style=False, allow_unicode=True, sort_keys=False).strip()
+        
+        return str(coerced)
+
+    def _coerce_example(self, value: Any, schema: Optional[Dict[str, Any]]) -> Any:
+        """
+        Recursively coerce example values based on schema types.
+        Quotes numeric strings only if the schema type is 'string'.
+        Also sanitizes dates/datetimes to ISO strings.
+        """
+        # Resolve schema $ref if present
+        if schema and isinstance(schema, dict) and '$ref' in schema:
+            schema = self._resolve_ref(schema['$ref'])
+
+        target_type = schema.get('type') if schema and isinstance(schema, dict) else None
+        
+        if isinstance(value, dict):
+            # Gather properties from schema and ALL combinator schemas
+            properties = schema.get('properties', {}).copy() if schema and isinstance(schema, dict) else {}
+            if schema and isinstance(schema, dict):
+                for combinator in ['oneOf', 'anyOf', 'allOf']:
+                    if combinator in schema and isinstance(schema[combinator], list):
+                        for sub_schema in schema[combinator]:
+                            if isinstance(sub_schema, dict):
+                                # Resolve $ref inside combinator
+                                if '$ref' in sub_schema:
+                                    sub_schema = self._resolve_ref(sub_schema['$ref'])
+                                properties.update(sub_schema.get('properties', {}))
+
+            return {
+                k: self._coerce_example(v, properties.get(k, {}))
+                for k, v in value.items()
+            }
+        elif isinstance(value, list):
+            items_schema = schema.get('items', {}) if schema and isinstance(schema, dict) else {}
+            # If items_schema is a ref, resolve it to get accurate type
+            if items_schema and isinstance(items_schema, dict) and '$ref' in items_schema:
+                items_schema = self._resolve_ref(items_schema['$ref'])
+            return [self._coerce_example(item, items_schema) for item in value]
+        elif isinstance(value, (datetime.datetime, datetime.date)):
+            return value.isoformat()
+        elif isinstance(value, str):
+            # 1. Handle explicit strings (sanitize/strip quotes)
+            # PROACTIVE STRIPPING: Always strip redundant quotes from string inputs.
+            # This handles cases where target_type is unknown or resolution failed.
+            if isinstance(value, str):
+                s_val = value.strip()
+                if len(s_val) >= 2 and (
+                    (s_val.startswith("'") and s_val.endswith("'")) or 
+                    (s_val.startswith('"') and s_val.endswith('"'))
+                ):
+                    # Check if stripping makes it a number? 
+                    # If we strip "'1.0'" -> "1.0", it becomes a number candidate below.
+                    # This is DESIRED behavior.
+                    value = s_val[1:-1]
+                    
+            if target_type == 'string':
+                return value
+
+            # 2. Check if it was originally a number preserved by SafeLoaderRawNumbers
+            try:
+                # If it's a valid number, we check if it needs quoting
+                float(value)
+                
+                # PRECISE TYPE DETECTION: If not direct, look into combinators
+                if not target_type and schema and isinstance(schema, dict):
+                    for combinator in ['oneOf', 'anyOf', 'allOf']:
+                        if combinator in schema and isinstance(schema[combinator], list):
+                            for sub_schema in schema[combinator]:
+                                if isinstance(sub_schema, dict):
+                                    # Resolve $ref
+                                    if '$ref' in sub_schema:
+                                        sub_schema = self._resolve_ref(sub_schema['$ref'])
+                                    if sub_schema.get('type'):
+                                        target_type = sub_schema.get('type')
+                                        break
+                        if target_type: break
+
+                # Redundant check (handled above), but harmless
+                if target_type == 'string':
+                    return value
+                
+                if target_type in ['number', 'integer']:
+                    # STRING PRESERVATION: Return as RawNumericValue string
+                    # This ensures Excel and subsequent Generator use exact string.
+                    return RawNumericValue(value)
+                
+                # Default for numbers if type unknown: use RawNumericValue to preserve precision
+                return RawNumericValue(value)
+
+            except (ValueError, TypeError):
+                pass
+            return value
+        else:
+            return value
 
     def flatten_schema(self, schema_name: str, 
                        root_name: Optional[str] = None,
@@ -234,7 +377,7 @@ class SchemaFlattener:
     def _flatten_schema_def(self, schema: Dict[str, Any],
                             name: str,
                             parent: Optional[str],
-                            required: bool,
+                            required: Optional[bool],
                             section: Optional[str] = None,
                             is_root: bool = False) -> List[FlatRow]:
         """Internal method to flatten a schema definition.
@@ -257,9 +400,9 @@ class SchemaFlattener:
                     description=schema.get('description'),  # Capture sibling description
                     type='schema',
                     schema_name=ref_name,
-                    mandatory='M' if required else 'O',
+                    mandatory=self._get_mandatory_flag(required),
                     items_type=None,
-                    example=self._serialize_example(schema.get('example')) if schema.get('example') is not None else None  # Capture sibling example
+                    example=self._serialize_example(schema.get('example'), schema) if schema.get('example') is not None else None  # Capture sibling example
                 )
                 rows.append(row)
             return rows
@@ -281,15 +424,18 @@ class SchemaFlattener:
         
         # Handle primitive type - only emit if not root (root already emitted)
         if not is_root:
-            row = self._create_primitive_row(schema, name, parent, required, section)
-            rows.append(row)
+            res = self._create_primitive_row(schema, name, parent, required, section)
+            if isinstance(res, list):
+                rows.extend(res)
+            else:
+                rows.append(res)
         return rows
     
     def _handle_combinator(self, schema: Dict[str, Any],
                            combinator: str,
                            name: str,
                            parent: Optional[str],
-                           required: bool,
+                           required: Optional[bool],
                            section: Optional[str]) -> List[FlatRow]:
         """Handle allOf, anyOf, oneOf combinators."""
         rows = []
@@ -311,9 +457,9 @@ class SchemaFlattener:
             parent=parent,
             type=combinator,
             schema_name=', '.join(refs) if refs else None,
-            mandatory='M' if required else 'O',
-            description=schema.get('description')
+            mandatory=self._get_mandatory_flag(required)
         )
+        self._populate_row_from_schema(row, schema)
         rows.append(row)
         
         # Flatten inline schemas as children
@@ -332,7 +478,7 @@ class SchemaFlattener:
     def _handle_array(self, schema: Dict[str, Any],
                       name: str,
                       parent: Optional[str],
-                      required: bool,
+                      required: Optional[bool],
                       section: Optional[str],
                       is_root: bool = False) -> List[FlatRow]:
         """Handle array type schemas.
@@ -350,11 +496,11 @@ class SchemaFlattener:
                 name=name,
                 parent=parent,
                 type='array',
-                description=schema.get('description'),
-                mandatory='M' if required else 'O',
+                mandatory=self._get_mandatory_flag(required),
                 min_value=str(schema.get('minItems')) if schema.get('minItems') is not None else None,
                 max_value=str(schema.get('maxItems')) if schema.get('maxItems') is not None else None
             )
+            self._populate_row_from_schema(row, schema)
             
             # Handle items type
             combinator = next((k for k in ['oneOf', 'allOf', 'anyOf'] if k in items), None)
@@ -393,12 +539,17 @@ class SchemaFlattener:
                 )
                 rows.extend(child_rows)
         
+        # Handle custom extensions (x-*)
+        for key, val in schema.items():
+            if key.startswith('x-'):
+                self._flatten_response_extension(rows, key, val, name)
+                
         return rows
     
     def _handle_object(self, schema: Dict[str, Any],
                        name: str,
                        parent: Optional[str],
-                       required: bool,
+                       required: Optional[bool],
                        section: Optional[str],
                        is_root: bool = False) -> List[FlatRow]:
         """Handle object type schemas."""
@@ -412,9 +563,9 @@ class SchemaFlattener:
                 name=name,
                 parent=parent,
                 type='object',
-                description=schema.get('description'),
-                mandatory='M' if required else 'O'
+                mandatory=self._get_mandatory_flag(required)
             )
+            self._populate_row_from_schema(row, schema)
             rows.append(row)
         
         # Flatten properties - children always have this schema as parent
@@ -441,12 +592,17 @@ class SchemaFlattener:
             )
             rows.extend(child_rows)
         
+        # Handle custom extensions (x-*)
+        for key, val in schema.items():
+            if key.startswith('x-'):
+                self._flatten_response_extension(rows, key, val, name)
+                
         return rows
     
     def _create_primitive_row(self, schema: Dict[str, Any],
                               name: str,
                               parent: Optional[str],
-                              required: bool,
+                              required: Optional[bool],
                               section: Optional[str]) -> FlatRow:
         """Create a row for a primitive type."""
         row = FlatRow(
@@ -455,12 +611,22 @@ class SchemaFlattener:
             parent=parent,
             type=schema.get('type'),
             description=schema.get('description'),
-            mandatory='M' if required else 'O'
+            mandatory=self._get_mandatory_flag(required)
         )
         
         # Use helper to populate all other fields consistently
         self._populate_row_from_schema(row, schema)
         
+        # Handle custom extensions (x-*)
+        # For primitives, extensions are added as separate rows
+        extensions_rows = []
+        for key, val in schema.items():
+            if key.startswith('x-'):
+                self._flatten_response_extension(extensions_rows, key, val, name)
+        
+        if extensions_rows:
+            return [row] + extensions_rows
+            
         return row
     
     def _extract_ref_name(self, ref: str) -> str:
@@ -488,12 +654,13 @@ class SchemaFlattener:
             # 1. Content Root Row (Media Type)
             # Reference has explicit row for 'application/json' with Section='content'
             root_row = FlatRow(
-                section='content' if section is None else section, # usually section is None for Body sheet
+                section='content' if section is None else section,
                 name=media_type,
                 type=schema.get('type') or 'object',
                 description=schema.get('description'),
                 mandatory='M'
             )
+            self._populate_row_from_schema(root_row, schema)
             rows.append(root_row)
             
             # 2. Flatten Schema
@@ -570,7 +737,7 @@ class SchemaFlattener:
                         name=media_type,
                         parent=resp_name,
                         type='schema' if '$ref' in schema else schema.get('type'),
-                        description=schema.get('description', '').strip() if schema.get('description') else None  # Get description from schema and strip
+                        description=schema.get('title') or schema.get('description', '').strip() if (schema.get('title') or schema.get('description')) else None  # Use title as description for content root
                     )
                     if '$ref' in schema:
                         content_row.schema_name = self._extract_ref_name(schema['$ref'])
@@ -607,7 +774,7 @@ class SchemaFlattener:
                 name=name,
                 parent=parent,
                 type='object' if isinstance(value, dict) else 'array',
-                example=self._serialize_example(value)
+                example=self._serialize_example(value, None)
             )
             rows.append(row)
         else:
@@ -617,7 +784,7 @@ class SchemaFlattener:
                 name=name,
                 parent=parent,
                 type=_python_type_to_oas(value),
-                example=str(value) if value is not None else None
+                example=_to_string(value) if value is not None else None
             ))
     
     def _flatten_example_child(self, rows: List[FlatRow], name: str,
@@ -634,7 +801,7 @@ class SchemaFlattener:
                  name=name,
                  parent=parent,
                  type='object' if isinstance(value, dict) else 'array',
-                 example=self._serialize_example(value)
+                 example=self._serialize_example(value, None)
              )
              rows.append(row)
              return
@@ -680,7 +847,7 @@ class SchemaFlattener:
                 name=name,
                 parent=parent,
                 type=_python_type_to_oas(value),
-                example=str(value) if value is not None else None
+                example=_to_string(value) if value is not None else None
             ))
     
     def _flatten_response_extension(self, rows: List[FlatRow], name: str,
@@ -716,7 +883,7 @@ class SchemaFlattener:
                         name=key,
                         parent=name,
                         type=_python_type_to_oas(val),
-                        example=str(val) if val is not None else None
+                        example=_to_string(val) if val is not None else None
                     ))
         elif isinstance(value, list):
             rows.append(FlatRow(
@@ -732,7 +899,7 @@ class SchemaFlattener:
                 name=name,
                 parent=parent,
                 type=_python_type_to_oas(value),
-                example=str(value) if value is not None else None
+                example=_to_string(value) if value is not None else None
             ))
     
     def flatten_response(self, response: Dict[str, Any]) -> List[FlatRow]:
@@ -756,6 +923,14 @@ class SchemaFlattener:
             header_rows = self._flatten_header(header_name, header_def)
             for row in header_rows:
                 row.section = 'headers'
+                # Use response description or status code as parent for headers
+                # if no parent is already set (e.g. not a global response)
+                if not row.parent:
+                    # Strip long descriptions for parent field
+                    parent_val = response.get('description', '')
+                    if parent_val:
+                        parent_val = parent_val.split('.')[0].strip()
+                    row.parent = parent_val or response.get('status_code', 'Response')
             rows.extend(header_rows)
         
         # Content
@@ -773,10 +948,11 @@ class SchemaFlattener:
                 section='content',
                 name=media_type,
                 type='schema' if ref_name else (schema.get('type') or 'object'),
-                description=schema.get('description'),
+                description=schema.get('title') or schema.get('description'),
                 mandatory='M',  # Content is usually mandatory if present
                 schema_name=ref_name
             )
+            self._populate_row_from_schema(content_row, schema)
             rows.append(content_row)
             
             # 2. Flatten Schema Children
@@ -823,16 +999,28 @@ class SchemaFlattener:
             )
             rows.append(row)
         
+        # Extensions (x-*)
+        # Flatten all top-level extensions provided in the response_dict
+        for ext_name, ext_val in response.get('extensions', {}).items():
+            self._flatten_response_extension(rows, ext_name, ext_val, 'Response')
+            
         return rows
     
     def _flatten_header(self, name: str, header_def: Dict[str, Any]) -> List[FlatRow]:
         """Flatten a header definition."""
         ref_name = None
         
+        # Priority for Description: Capture local description BEFORE resolving ref
+        # This prevents pulling global component descriptions into local Excel rows
+        local_description = header_def.get('description')
+
         # Handle top-level $ref (common for headers)
         if '$ref' in header_def:
             ref_name = self._extract_ref_name(header_def['$ref'])
-            header_def = self._resolve_ref(header_def['$ref'])
+            # We resolve to get structure (schema, format, etc.)
+            resolved_def = self._resolve_ref(header_def['$ref'])
+            # But we only use description if it was locally overridden
+            header_def = resolved_def
         
         schema = header_def.get('schema', {})
         
@@ -840,10 +1028,17 @@ class SchemaFlattener:
         if not ref_name and '$ref' in schema:
             ref_name = self._extract_ref_name(schema['$ref'])
         
+        # Final description decision:
+        # If local description exists (even as sibling to $ref), use it.
+        # If no local description and NOT a ref, use schema description.
+        description = local_description
+        if not description and not ref_name and isinstance(schema, dict):
+            description = schema.get('description')
+
         row = FlatRow(
             name=name,
-            description=header_def.get('description'),
-            mandatory='M' if header_def.get('required') else 'O'
+            description=description,
+            mandatory=self._get_mandatory_flag(header_def.get('required')),
         )
         
         # Headers always have type='header'
@@ -853,10 +1048,25 @@ class SchemaFlattener:
             # If it's a reference (e.g. FpadResponseIdentifier), set schema name and clear format
              row.schema_name = ref_name
              row.format = None
-        else:
-             # Inline definition
-             row.format = schema.get('format')
         
+        # Ensure we capture examples and format even for non-ref headers
+        # or capture constraints if they exist at header schema level
+        if isinstance(schema, dict):
+            self._populate_row_from_schema(row, schema)
+            
+        # Example priority: Header level > Schema level (already handled by populate)
+        if header_def.get('example') is not None:
+             row.example = self._serialize_example(header_def['example'], schema)
+        elif header_def.get('examples'):
+             # Handle OAS 3.1 header examples dict
+             exs = header_def.get('examples')
+             if isinstance(exs, dict) and exs:
+                 first_ex = next(iter(exs.values()))
+                 if isinstance(first_ex, dict) and 'value' in first_ex:
+                      row.example = self._serialize_example(first_ex['value'], schema)
+                 else:
+                      row.example = self._serialize_example(first_ex, schema)
+
         return [row]
     
     def _resolve_ref(self, ref: str) -> Dict[str, Any]:
