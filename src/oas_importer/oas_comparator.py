@@ -252,8 +252,269 @@ class OASComparator:
             if type_diffs:
                 type_diffs.sort(key=lambda x: abs(x[3]), reverse=True)
                 discrepancies[c_type] = type_diffs
-                
+        
         return discrepancies
+
+    def _format_path(self, parent, key):
+        """Standardize path formatting for reporting (single slash)."""
+        if not parent:
+            return key
+        p = parent.rstrip("/")
+        k = key.lstrip("/")
+        return f"{p}/{k}"
+
+    def _has_semantic_content(self, obj, key=None):
+        """
+        Recursively checks if an object has meaningful content.
+        Significant leaves (like operations) are content even if empty.
+        Noise containers (like 'headers' blocks) are only content if they have non-noise children.
+        """
+        if not isinstance(obj, (dict, list)):
+            return True # Primitives are always content
+        
+        if not obj:
+            # Empty container. Is it significant?
+            k_lower = str(key).lower() if key else ""
+            always_significant = {"get", "put", "post", "delete", "options", "head", "patch", "trace"}
+            if k_lower in always_significant:
+                return True
+            
+            # Known noise blocks
+            noise_containers = {"headers", "parameters", "responses", "schemas", 
+                                "securityschemes", "tags", "servers", "security", "properties"}
+            if k_lower in noise_containers:
+                return False
+            
+            # Default for other empty containers (e.g. empty component names)
+            return False 
+
+        # Non-empty container: check children
+        if isinstance(obj, dict):
+            return any(self._has_semantic_content(v, k) for k, v in obj.items())
+        return any(self._has_semantic_content(v) for v in obj)
+
+    def _is_noise(self, path):
+        """Returns True if the path points to an auto-generated or irrelevant attribute."""
+        noise_keys = [
+            "x-info-creation-date", 
+            "x-info-release", 
+            "info/version"
+        ]
+        return any(path.endswith(key) for key in noise_keys)
+
+    def _is_equivalent(self, val1, val2):
+        """
+        Aggressively treats None, empty strings, and whitespace-only strings as identical.
+        Also strips trailing spaces from each line in multi-line strings.
+        """
+        def _normalize(v):
+            if v is None:
+                return ""
+            # Split into lines, strip trailing whitespace from each, rejoin
+            lines = str(v).splitlines()
+            cleaned = "\n".join(line.rstrip() for line in lines)
+            return cleaned.strip()
+        
+        s1 = _normalize(val1)
+        s2 = _normalize(val2)
+        
+        # Normalize common empty-like values
+        if s1.lower() in ["", "none", "nan"]: s1 = ""
+        if s2.lower() in ["", "none", "nan"]: s2 = ""
+        
+        return s1 == s2
+
+    def get_attribute_diff(self) -> dict:
+        """
+        Deep comparison of attributes between Source and Generated OAS.
+        Returns categorized results.
+        """
+        raw_results = {
+            "added": [],    # Paths present in Generated but not in Source
+            "removed": [],   # Paths present in Source but not in Generated
+            "modified": []   # Values differ between Source and Generated
+        }
+        
+        self._compare_structures(self.gold_oas, self.gen_oas, "", raw_results)
+        
+        # Categorize results
+        categorized = {
+            "Info": {"added": [], "removed": [], "modified": []},
+            "Paths": {"added": [], "removed": [], "modified": []},
+            "Components": {"added": [], "removed": [], "modified": []},
+            "Security": {"added": [], "removed": [], "modified": []},
+            "Other": {"added": [], "removed": [], "modified": []}
+        }
+        
+        for action in ["added", "removed", "modified"]:
+            for item in raw_results[action]:
+                # Handle both plain strings (added/removed) and dicts (modified)
+                path = item["path"] if isinstance(item, dict) else item
+                p_lower = path.lower()
+                
+                if p_lower.startswith("info"):
+                    categorized["Info"][action].append(item)
+                elif p_lower.startswith("paths"):
+                    categorized["Paths"][action].append(item)
+                elif p_lower.startswith("components"):
+                    categorized["Components"][action].append(item)
+                elif p_lower.startswith("security"):
+                    categorized["Security"][action].append(item)
+                else:
+                    categorized["Other"][action].append(item)
+                    
+        return categorized
+
+    def _compare_structures(self, gold, gen, path, results):
+        """
+        Recursive helper to compare dictionaries and lists.
+        """
+        if isinstance(gold, dict) and isinstance(gen, dict):
+            # Compare Keys
+            gold_keys = set(gold.keys())
+            gen_keys = set(gen.keys())
+            
+            # Removed from Source
+            for k in gold_keys - gen_keys:
+                full_path = self._format_path(path, k)
+                if self._is_noise(full_path):
+                    continue
+                
+                # Check if this removal has any semantic content.
+                # If we are removing an empty block like 'headers: {}', it's not a real discrepancy.
+                if not self._has_semantic_content(gold[k], k):
+                    continue
+                    
+                results["removed"].append(full_path)
+            
+            # Added to Generated
+            for k in gen_keys - gold_keys:
+                full_path = self._format_path(path, k)
+                if self._is_noise(full_path):
+                    continue
+                
+                # Check if this addition has any semantic content recursively.
+                if not self._has_semantic_content(gen[k], k):
+                    continue
+                    
+                results["added"].append(full_path)
+                
+            # Recursively compare common keys
+            for k in gold_keys & gen_keys:
+                full_path = self._format_path(path, k)
+                self._compare_structures(gold[k], gen[k], full_path, results)
+                
+        elif isinstance(gold, list) and isinstance(gen, list):
+            # Special handling for lists like parameters, tags, etc.
+            # We try to match items by specific keys
+            
+            # 0. REQUIRED (treat as set - order doesn't matter)
+            if path.endswith("/required"):
+                self._compare_required_as_set(gold, gen, path, results)
+            
+            # 1. PARAMETERS (Match by name + in)
+            elif "parameters" in path.lower():
+                self._compare_keyed_lists(gold, gen, path, results, ["name", "in"])
+            
+            # 2. TAGS (Match by name)
+            elif "tags" in path.lower() and (path == "tags" or path.endswith("/tags")):
+                self._compare_keyed_lists(gold, gen, path, results, ["name"])
+            
+            # 3. SECURITY (Match by keys of dict items)
+            elif "security" in path.lower():
+                 self._compare_security_lists(gold, gen, path, results)
+            
+            # 4. GENERIC LISTS (oneOf, anyOf, enum, etc.) - RECURSIVE
+            else:
+                self._compare_generic_lists(gold, gen, path, results)
+        
+        elif not self._is_equivalent(gold, gen):
+            # Value mismatch
+            if not self._is_noise(path):
+                results["modified"].append({
+                    "path": path,
+                    "old": str(gold),
+                    "new": str(gen)
+                })
+
+    def _compare_keyed_lists(self, gold_list, gen_list, path, results, key_names):
+        """Helper to compare lists of objects using one or more keys for identification."""
+        def get_id(obj):
+            if not isinstance(obj, dict): return str(obj)
+            return "|".join([str(obj.get(kn, "")) for kn in key_names])
+            
+        gold_map = {get_id(o): o for o in gold_list if isinstance(o, dict)}
+        gen_map = {get_id(o): o for o in gen_list if isinstance(o, dict)}
+        
+        gold_ids = set(gold_map.keys())
+        gen_ids = set(gen_map.keys())
+        
+        # Missing items
+        for gid in gold_ids - gen_ids:
+            results["removed"].append(f"{path}[{gid}]")
+            
+        # Added items
+        for gid in gen_ids - gold_ids:
+            results["added"].append(f"{path}[{gid}]")
+            
+        # Recursive compare common items
+        for gid in gold_ids & gen_ids:
+            self._compare_structures(gold_map[gid], gen_map[gid], f"{path}[{gid}]", results)
+
+    def _compare_security_lists(self, gold_list, gen_list, path, results):
+        """Special handling for security requirement lists."""
+        def get_sec_id(obj):
+            if not isinstance(obj, dict): return str(obj)
+            keys = sorted(obj.keys())
+            return ",".join(keys)
+            
+        gold_map = {get_sec_id(o): o for o in gold_list}
+        gen_map = {get_sec_id(o): o for o in gen_list}
+        
+        gold_ids = set(gold_map.keys())
+        gen_ids = set(gen_map.keys())
+        
+        for sid in gold_ids - gen_ids:
+            results["removed"].append(f"{path}[{sid}]")
+        for sid in gen_ids - gold_ids:
+            results["added"].append(f"{path}[{sid}]")
+        for sid in gold_ids & gen_ids:
+            self._compare_structures(gold_map[sid], gen_map[sid], f"{path}[{sid}]", results)
+
+    def _compare_required_as_set(self, gold_list, gen_list, path, results):
+        """Compares 'required' arrays as sets - order doesn't matter."""
+        gold_set = set(str(x) for x in gold_list)
+        gen_set = set(str(x) for x in gen_list)
+        
+        # Only report if actual content differs
+        removed = gold_set - gen_set
+        added = gen_set - gold_set
+        
+        for item in removed:
+            results["removed"].append(f"{path}/{item}")
+        for item in added:
+            results["added"].append(f"{path}/{item}")
+
+    def _compare_generic_lists(self, gold_list, gen_list, path, results):
+        """Recursively compares generic lists by index."""
+        max_idx = max(len(gold_list), len(gen_list))
+        for i in range(max_idx):
+            current_path = f"{path}[{i}]"
+            
+            if i >= len(gold_list):
+                # Added in Generated
+                if self._has_semantic_content(gen_list[i]):
+                     results["added"].append(current_path)
+                continue
+                
+            if i >= len(gen_list):
+                # Removed from Source
+                if self._has_semantic_content(gold_list[i]):
+                    results["removed"].append(current_path)
+                continue
+                
+            # Both exist - recurse
+            self._compare_structures(gold_list[i], gen_list[i], current_path, results)
 
     def _count_operations(self, paths: dict) -> int:
         count = 0

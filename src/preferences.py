@@ -26,6 +26,8 @@ class PreferencesManager:
         "gen_oas_30": True,
         "gen_oas_31": True,
         "gen_oas_swift": False,
+        "excel_gen_attr_diff": True,
+        "excel_gen_line_diff": False,
         # File Display
         "file_sort_order": "alphabetical",  # alphabetical, newest_first, oldest_first
         # View Options

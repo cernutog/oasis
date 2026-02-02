@@ -1,30 +1,29 @@
-# OAS Generation Tool - Project Overview
-**Current Version**: `v1.2.1`
+# OASIS - Project Overview
+**Current Version**: `v2.0.36` (Stable)
 
 ## Project Purpose
-This tool generates OpenAPI Specification (OAS) 3.0 and 3.1 YAML files from Excel templates (.xlsm files). It reads API definitions from structured Excel sheets and produces compliant OpenAPI specifications.
+OASIS (**O**penAPI **S**pecification **I**ntegration **S**uite) generates OpenAPI Specification (OAS) 3.0 and 3.1 YAML files from Excel templates. It provides a robust pipeline for importing, generating, validating, and documenting professional-grade API specifications.
 
-## Directory Structure
-... (unchanged)
-
-## Recent Major Changes
-1. **SWIFT OAS Support**: Dedicated generation stream for SWIFT-compliant specs (custom servers, security, headers).
-2. **Dynamic Filenames**: Output files named based on Excel patterns (e.g., `EBACL_FPAD_<date>...`).
-3. **Visualization**: 3D Stacking Pie Charts for validation reports.
-4. **Stability**: Sanitized OAS Info object and robust icon/path handling for Windows.
+## Recent Major Changes (v2.0.x)
+1. **Multiple Examples**: Support for multiple examples per property via CSV-style smart quoting.
+2. **Precision Roundtrip**: Fixed array item description displacement and inheritance issues.
+3. **Clean Metadata**: Removed hard-coded strings in servers and enabled dynamic description parsing.
+4. **Natural Ordering**: Restored Excel-defined property order for schema data (preserving metadata prioritization only for docs).
+5. **OAS Importer**: Full bidirectional engine to transform existing OAS back into Excel templates.
+6. **Hybrid Documentation**: Bundled local User Manual with online GitHub Pages fallback.
 
 ```
-OAS_Generation_Tool/
+OASIS/
 ├── src/
 │   ├── main.py          # Entry point - orchestrates generation process
-│   ├── generator.py     # Core OAS generation logic
-│   ├── parser.py        # Excel file parsing
-│   └── schema_builder.py # JSON Schema construction
-├── API Templates/
-│   ├── $index.xlsm      # Main index file listing all operations
-│   ├── *.xlsm           # Individual operation definition files
-│   └── generated/       # Output directory for generated YAML files
-└── project history/     # This documentation folder
+│   ├── gui.py           # Main UI logic (Integrated Editor & Logs)
+│   ├── generator.py     # High-level OAS orchestrator
+│   ├── generator_pkg/   # Specialized generation modules (Schema/Response builders)
+│   └── oas_importer/    # Importer engine (YAML/JSON -> Excel)
+├── docs/                # User Manual & Documentation (online/offline)
+├── Templates Master/    # Core Excel templates
+├── project history/     # Technical documentation & release history
+└── dist/                # Compiled executable (OASIS.exe)
 
 ```
 

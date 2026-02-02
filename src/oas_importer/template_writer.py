@@ -275,6 +275,10 @@ class TemplateExcelWriter:
                         cell.border = style['border']
                         cell.number_format = style['number_format']
                     
+                    # Force TEXT format for Min/Max columns to preserve exact numeric representation
+                    if 'Min' in header or 'Max' in header:
+                        cell.number_format = '@'
+                    
                     # Apply global alignment (left, top, word wrap) to ALL cells
                     cell.alignment = DEFAULT_ALIGNMENT
 

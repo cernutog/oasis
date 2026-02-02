@@ -35,7 +35,8 @@ def load_excel_sheet(file_path, sheet_name):
                 break
 
         if header_row_idx != -1:
-            df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_row_idx)
+            # Read with dtype=str to preserve exact numeric format (e.g., 100000000000000 not 1e14)
+            df = pd.read_excel(file_path, sheet_name=sheet_name, header=header_row_idx, dtype=str)
 
             # Capture Metadata from rows above header (Gener generalized parsing)
             # Scan rows preceding the header for "Response" definition layout
@@ -78,8 +79,8 @@ def load_excel_sheet(file_path, sheet_name):
                     pass
 
         else:
-            # Fallback to default
-            df = pd.read_excel(file_path, sheet_name=sheet_name)
+            # Fallback to default - still use dtype=str for consistency
+            df = pd.read_excel(file_path, sheet_name=sheet_name, dtype=str)
 
         df.columns = df.columns.str.strip()
         df.attrs["sheet_name"] = sheet_name
@@ -166,7 +167,13 @@ def parse_info(df_info):
 
             # Servers (Inline)
             if "servers" in key and "url" in key:
-                servers.append({"url": val, "description": "Server base path"})
+                server_obj = {"url": val}
+                # Check if description exists in column D (index 3)
+                if len(row) > 3:
+                    desc_val = row.iloc[3]
+                    if pd.notna(desc_val) and str(desc_val).strip():
+                        server_obj["description"] = str(desc_val).strip()
+                servers.append(server_obj)
 
     return info, servers
 
@@ -240,7 +247,7 @@ def parse_tags(df_tags):
                 ("name", row.get("Name")),
                 ("description", row.get("Description"))
             ])
-            if tag["name"]:
+            if pd.notna(tag["name"]) and str(tag["name"]).strip():
                 tags.append(tag)
     return tags
 

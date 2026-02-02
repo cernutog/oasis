@@ -525,3 +525,92 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Refinement**: Entry point restoration.
     - Restored `run_gui.py` (accidentally removed during cleanup) to fix the build process.
 - **Key Modules**: `run_gui.py`.
+
+## v2.0: Stable Release & Doc Migration (2026-01-29)
+
+### 1. OAS Importer Engine
+**Feature**: Full bidirectional support.
+- Implemented `oas_importer` package to transform OAS 3.0/3.1 files back into Excel Templates.
+- High-fidelity conversion preserving schemas, parameters, and custom extensions.
+
+### 2. Documentation Hybrid Strategy
+**Feature**: Offline-first documentation with online mirror.
+- Moved documentation to root `/docs` for GitHub Pages compatibility.
+- Implemented "Local Priority" in `gui.py`: checks for bundled `user_manual.html` before falling back to `https://cernutog.github.io/oasis/`.
+- Created `index.html` redirect for easy online navigation.
+
+### 3. Repository Performance Optimization
+**Action**: Squash Rebase.
+- Consolidated hundreds of historical commits (and large deleted binary assets) into a single baseline commit.
+- Drastically reduced repository size and fixed Git push timeout issues.
+
+### 4. Stability & Precision Fixes
+- Unified numeric precision handling across the suite.
+- Optimized polymorphic schema generation (`oneOf` exclusivity).
+- Standardized release-ready `.gitignore`.
+
+### Release
+- **Tag**: `v2.0`
+- **GitHub Release**: Attached finalized `OASIS.exe` with bundled docs and release notes.
+
+### Build v2.0.1 (2026-01-29)
+- **Feature**: Attribute Diff (RoundTrip Check).
+    - Implemented a recursive deep-comparison engine in `OASComparator` to identify missing or added attributes.
+    - Added "Attribute Diff" checkbox to the Import tab.
+    - Specialized logic for matching parameters by `name`/`in` and security by requirement keys.
+- **Fix**: Browse Button Initialization.
+    - Implemented `_get_initial_dir` helper to ensure all directory dialogs open in the most relevant folder (preferring the current field content or its parent).
+- **Key Modules**: `src/oas_importer/oas_comparator.py`, `src/gui.py`.
+
+### Build v2.0.2 (2026-01-29)
+- **Feature**: Refined Attribute Diff (Noise Reduction).
+    - Implemented `_has_semantic_content` logic to filter out structural noise.
+    - Added "Noise Container" check to skip empty `headers`, `parameters`, `responses`, etc.
+    - Categorized diff output into **Info, Paths, Components, Security** groups for better visibility.
+    - Standardized path formatting (single slashes).
+- **Fix**: Empty Tag Generation (.nan).
+    - Added `nan` and empty string safety checks in `ExcelParser.parse_tags` and `build_paths`.
+    - Prevented propagation of invalid tag values into the final OAS document.
+- **Key Modules**: `src/oas_importer/oas_comparator.py`, `src/generator.py`, `src/excel_parser.py`, `src/gui.py`.
+
+### Build v2.0.3 (2026-01-29)
+- **Feature**: OAS Cleanup (Pruning Empty Blocks).
+    - Modified `OASGenerator.build_paths` to omit empty `tags` and `parameters` at the operation level.
+    - Modified `OASGenerator.get_yaml` to prune empty global `components` sub-blocks (`parameters`, `headers`, `schemas`, `responses`, `securitySchemes`).
+    - Entire `components` section is omitted if it becomes empty after pruning.
+- **Key Modules**: `src/generator.py`.
+### Build v2.0.31 (2026-02-02)
+- **Feature**: Multiple Examples Support.
+    - Updated `schema_flattener.py` to join multiple examples into a single comma-separated string for Excel.
+    - Updated `schema_builder.py` to parse these strings back into a list of examples in the generated OAS.
+- **Key Modules**: `src/oas_importer/schema_flattener.py`, `src/generator_pkg/schema_builder.py`.
+
+### Build v2.0.32 (2026-02-02)
+- **Refinement**: CSV-style Smart Quoting.
+    - Implemented `csv`-based parsing for multiple examples in `schema_builder.py` to correctly handle examples containing commas (e.g., `"Value 1, with comma", Value 2`).
+- **Key Modules**: `src/generator_pkg/schema_builder.py`.
+
+### Build v2.0.33 (2026-02-02)
+- **Fix**: Array Item Description Capture.
+    - Updated `schema_flattener.py` to capture descriptions from the `items` object of an array if the top-level property lacks one.
+    - Updated `schema_builder.py` to restore descriptions within the `items` object when using `$ref`.
+- **Key Modules**: `src/oas_importer/schema_flattener.py`, `src/generator_pkg/schema_builder.py`.
+
+### Build v2.0.34 (2026-02-02)
+- **Fix**: Array Description Displacement & Inheritance.
+    - Resolved issue where descriptions were "pushed up" from `items` to the parent property.
+    - Prevented redundant top-level descriptions that were causing "Added Attribute" warnings in Roundtrip Check.
+    - Added OAS 3.0 compatible `allOf` workaround for descriptions alongside `$ref` in array items.
+- **Key Modules**: `src/generator_pkg/schema_builder.py`.
+
+### Build v2.0.35 (2026-02-02)
+- **Fix**: Hard-coded Server Description.
+    - Removed hard-coded `"Server base path"` from `excel_parser.py`.
+    - Enabled parsing of server descriptions from **Column D** of the `General Description` sheet.
+- **Key Modules**: `src/excel_parser.py`.
+
+### Build v2.0.36 (2026-02-02)
+- **Fix**: Schema Property Ordering.
+    - Refined `_recursive_schema_fix` to preserve original Excel order for schema properties named `name` or `title`.
+    - Maintained metadata prioritization (placing `name` at the top) only for non-property contexts like Parameters or Tags.
+- **Key Modules**: `src/generator.py`.

@@ -171,16 +171,35 @@ class SchemaFlattener:
         if description and not row.description:
             row.description = str(description)
 
-        # Example (singular)
+        # Examples (collect all from both 'example' and 'examples')
+        all_examples = []
         if schema.get('example') is not None:
-            row.example = self._serialize_example(schema['example'], schema)
+            all_examples.append(schema['example'])
         
-        # Examples (plural - OAS 3.1 style array)
-        if schema.get('examples') and not row.example:
-            examples = schema['examples']
-            if isinstance(examples, list) and examples:
-                # Take first example if it's a list
-                row.example = self._serialize_example(examples[0], schema)
+        if 'examples' in schema:
+            exs = schema['examples']
+            if isinstance(exs, list):
+                for ex in exs:
+                    if ex not in all_examples:
+                        all_examples.append(ex)
+            elif exs is not None and exs not in all_examples:
+                all_examples.append(exs)
+        
+        if all_examples:
+            serialized_examples = [self._serialize_example(ex, schema) for ex in all_examples]
+            # Smart Quoting for CSV-style preservation with comma + space
+            quoted_parts = []
+            for ex in serialized_examples:
+                if ex is None:
+                    continue
+                ex_str = str(ex)
+                if ',' in ex_str or '"' in ex_str:
+                    # CSV quote rule: double existing quotes, wrap in quotes
+                    ex_str = '"' + ex_str.replace('"', '""') + '"'
+                quoted_parts.append(ex_str)
+            
+            # Join with comma and space as requested
+            row.example = ", ".join(quoted_parts)
 
     def _sanitize_for_yaml(self, value: Any) -> Any:
         """
@@ -501,6 +520,10 @@ class SchemaFlattener:
                 max_value=str(schema.get('maxItems')) if schema.get('maxItems') is not None else None
             )
             self._populate_row_from_schema(row, schema)
+            
+            # Capture description from items if row's description is empty
+            if not row.description and isinstance(items, dict) and items.get('description'):
+                row.description = str(items['description'])
             
             # Handle items type
             combinator = next((k for k in ['oneOf', 'allOf', 'anyOf'] if k in items), None)

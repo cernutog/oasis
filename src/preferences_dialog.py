@@ -166,7 +166,8 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # Create Tabs
         self.tab_gen = self.tabview.add("General")
-        self.tab_output = self.tabview.add("Generation")
+        self.tab_excel = self.tabview.add("Excel Generation")
+        self.tab_output = self.tabview.add("OAS Generation")
         self.tab_val = self.tabview.add("Validation")
         self.tab_view = self.tabview.add("View")
         self.tab_logs = self.tabview.add("Logs")
@@ -198,7 +199,15 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_window_pos.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=10)
 
 
-        # === 2. GENERATION TAB (OAS Defaults) ===
+        # === 2. EXCEL GENERATION TAB ===
+        self.chk_excel_attr_diff = ctk.CTkSwitch(self.tab_excel, text="Attribute Diff", progress_color="#0A809E")
+        self.chk_excel_attr_diff.pack(anchor="w", padx=20, pady=(20, 10))
+
+        self.chk_excel_line_diff = ctk.CTkSwitch(self.tab_excel, text="Line Diff", progress_color="#0A809E")
+        self.chk_excel_line_diff.pack(anchor="w", padx=20, pady=10)
+
+
+        # === 3. OAS GENERATION TAB ===
         self.chk_oas31 = ctk.CTkSwitch(self.tab_output, text="OAS 3.1", progress_color="#0A809E")
         self.chk_oas31.pack(anchor="w", padx=20, pady=(20, 10))
 
@@ -209,14 +218,14 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_swift.pack(anchor="w", padx=20, pady=10)
 
 
-        # === 3. VALIDATION TAB ===
+        # === 4. VALIDATION TAB ===
         self.chk_ignore_br = ctk.CTkSwitch(
             self.tab_val, text="Ignore 'Bad Request' Examples", progress_color="#0A809E"
         )
         self.chk_ignore_br.pack(anchor="w", padx=20, pady=20)
 
 
-        # === 4. VIEW TAB ===
+        # === 5. VIEW TAB ===
         ctk.CTkLabel(self.tab_view, text="Theme:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
         self.cbo_theme = ctk.CTkComboBox(self.tab_view, values=self.THEMES, width=200, button_color="#0A809E")
         self.cbo_theme.grid(row=0, column=1, sticky="w", pady=10)
@@ -243,7 +252,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_snap_default.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=20)
 
 
-        # === 5. LOGS TAB ===
+        # === 6. LOGS TAB ===
         self.tab_logs.grid_columnconfigure(1, weight=1)
 
         # OAS to Excel Theme
@@ -299,10 +308,16 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_remember.set(self.prefs_manager.get("remember_paths", False))
         if prefs.get("remember_window_pos", True): self.chk_window_pos.select()
 
-        # OAS to Excel
+        # OAS Generation
         if prefs.get("gen_oas_30", True): self.chk_oas30.select()
         if prefs.get("gen_oas_31", True): self.chk_oas31.select()
         if prefs.get("gen_oas_swift", False): self.chk_swift.select()
+
+        # Excel Generation
+        if prefs.get("excel_gen_attr_diff", True): self.chk_excel_attr_diff.select()
+        else: self.chk_excel_attr_diff.deselect()
+        if prefs.get("excel_gen_line_diff", False): self.chk_excel_line_diff.select()
+        else: self.chk_excel_line_diff.deselect()
 
         # Validation
         if prefs.get("ignore_bad_request", True): self.chk_ignore_br.select()
@@ -338,10 +353,14 @@ class PreferencesDialog(ctk.CTkToplevel):
             "remember_paths": self.var_remember.get(),
             "remember_window_pos": bool(self.chk_window_pos.get()),
             
-            # OAS to Excel
+            # OAS Generation
             "gen_oas_30": bool(self.chk_oas30.get()),
             "gen_oas_31": bool(self.chk_oas31.get()),
             "gen_oas_swift": bool(self.chk_swift.get()),
+            
+            # Excel Generation
+            "excel_gen_attr_diff": bool(self.chk_excel_attr_diff.get()),
+            "excel_gen_line_diff": bool(self.chk_excel_line_diff.get()),
             
             # Validation
             "ignore_bad_request": bool(self.chk_ignore_br.get()),
@@ -390,6 +409,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_oas30.select()
         self.chk_oas31.select()
         self.chk_swift.deselect()
+
+        self.chk_excel_attr_diff.select()
+        self.chk_excel_line_diff.deselect()
         
         self.chk_ignore_br.select()
         

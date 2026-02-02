@@ -163,6 +163,8 @@ def generate_oas(
         log_callback("Generating OAS 3.0...")
         generator_30 = OASGenerator(version="3.0.0")
         generator_30.build_info(clean_info)
+        # Always record tags source - needed for validation warnings even when tags are empty
+        generator_30._record_source("tags", "$index.xlsx", "Tags")
         if tags_data:
             generator_30.oas["tags"] = tags_data
         if servers_data:
@@ -202,6 +204,8 @@ def generate_oas(
         log_callback("Generating OAS 3.1...")
         generator_31 = OASGenerator(version="3.1.0")
         generator_31.build_info(clean_info)
+        # Always record tags source - needed for validation warnings even when tags are empty
+        generator_31._record_source("tags", "$index.xlsx", "Tags")
         if tags_data:
             generator_31.oas["tags"] = tags_data
         if servers_data:

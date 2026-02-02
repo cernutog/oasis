@@ -18,6 +18,7 @@ datas = [
     (os.path.join(TCL_ROOT, "tcl8.6"), "tcl/tcl8.6"),
     (os.path.join(TCL_ROOT, "tk8.6"), "tcl/tk8.6"),
     ('src/bin/spectral.exe', 'src/bin'),
+    ('docs', 'docs'), # Asset migration for GitHub Pages & Local Fallback
     ('Templates Master', 'Templates Master'), # Bundle Templates
     # Explicitly include tkinter Python module
     (TKINTER_LIB, "tkinter"),

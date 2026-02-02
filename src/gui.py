@@ -1100,51 +1100,46 @@ class OASGenApp(ctk.CTk):
             print(f"Error showing about dialog: {e}")
 
     def open_user_guide(self):
-        """Open the HTML User Guide."""
+        """Open the HTML User Guide (Local Priority)."""
         import webbrowser
         try:
+            # 1. Local path (bundled in .exe)
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS
             else:
                 base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             
-            doc_path = os.path.join(base_path, 'src', 'docs', 'user_manual.html')
+            doc_path = os.path.join(base_path, 'docs', 'user_manual.html')
             
             if os.path.exists(doc_path):
                 webbrowser.open_new_tab(f"file:///{doc_path}")
             else:
-                # Fallback or dev mode simplified path check
-                # Try finding it relative to current script if above failed
-                dev_path = os.path.join(os.getcwd(), 'src', 'docs', 'user_manual.html')
-                if os.path.exists(dev_path):
-                    webbrowser.open_new_tab(f"file:///{dev_path}")
-                else:
-                    self.val_log_print(f"Documentation not found at: {doc_path}")
-                    tk.messagebox.showerror("Error", "User Guide not found.")
+                # 2. Online Fallback (only if local is missing - should not happen if bundled correctly)
+                online_url = "https://cernutog.github.io/oasis/user_manual.html"
+                self.val_log_print(f"Local guide missing at {doc_path}. Trying online...")
+                webbrowser.open_new_tab(online_url)
         except Exception as e:
             print(f"Error opening user guide: {e}")
 
     def open_faq(self):
-        """Open the HTML FAQ."""
+        """Open the HTML FAQ (Local Priority)."""
         import webbrowser
         try:
+            # 1. Local path
             if getattr(sys, 'frozen', False):
                 base_path = sys._MEIPASS
             else:
                 base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             
-            doc_path = os.path.join(base_path, 'src', 'docs', 'faq.html')
+            doc_path = os.path.join(base_path, 'docs', 'faq.html')
             
             if os.path.exists(doc_path):
                 webbrowser.open_new_tab(f"file:///{doc_path}")
             else:
-                # Fallback or dev mode simplified path check
-                dev_path = os.path.join(os.getcwd(), 'src', 'docs', 'faq.html')
-                if os.path.exists(dev_path):
-                    webbrowser.open_new_tab(f"file:///{dev_path}")
-                else:
-                    self.val_log_print(f"FAQ not found at: {doc_path}")
-                    tk.messagebox.showerror("Error", "FAQ not found.")
+                # 2. Online Fallback
+                online_url = "https://cernutog.github.io/oasis/faq.html"
+                self.val_log_print(f"Local FAQ missing. Trying online...")
+                webbrowser.open_new_tab(online_url)
         except Exception as e:
             print(f"Error opening FAQ: {e}")
 
@@ -1188,10 +1183,18 @@ class OASGenApp(ctk.CTk):
             self.var_swift.set(False)
 
         # Apply validation checkbox
-        if new_prefs.get("ignore_bad_request", True):
-            self.chk_ignore_br.select()
-        else:
-            self.chk_ignore_br.deselect()
+        if "ignore_bad_request" in new_prefs:
+            if new_prefs["ignore_bad_request"]:
+                self.chk_ignore_br.select()
+            else:
+                self.chk_ignore_br.deselect()
+
+        # Apply Excel Generation preferences
+        if "excel_gen_attr_diff" in new_prefs:
+            self.var_attr_diff.set(new_prefs["excel_gen_attr_diff"])
+            
+        if "excel_gen_line_diff" in new_prefs:
+            self.var_line_diff.set(new_prefs["excel_gen_line_diff"])
 
         # Apply log themes immediately
         if "gen_log_theme" in new_prefs:
@@ -1248,9 +1251,35 @@ class OASGenApp(ctk.CTk):
             
         print(f"[Validation] {msg}") # Keep stdout for debugging
 
+    def _get_initial_dir(self, current_path):
+        """Helper to determine the best initial directory for file dialogs."""
+        if not current_path or not isinstance(current_path, str):
+            # Fallback to last known good directory if any
+            last_excel = self.prefs_manager.get("last_excel_input", "")
+            if last_excel and os.path.exists(last_excel):
+                return last_excel if os.path.isdir(last_excel) else os.path.dirname(last_excel)
+            return os.getcwd()
+        
+        try:
+            abs_path = os.path.abspath(current_path)
+            if os.path.exists(abs_path):
+                if os.path.isdir(abs_path):
+                    return abs_path
+                else:
+                    return os.path.dirname(abs_path)
+            
+            # If path doesn't exist, try its parent
+            parent = os.path.dirname(abs_path)
+            if parent and os.path.exists(parent):
+                return parent
+        except:
+            pass
+            
+        return os.getcwd()
+
     def browse_dir(self):
         current_path = self.entry_dir.get()
-        initial_dir = current_path if os.path.exists(current_path) else os.getcwd()
+        initial_dir = self._get_initial_dir(current_path)
         directory = filedialog.askdirectory(initialdir=initial_dir)
         if directory:
             self.entry_dir.delete(0, "end")
@@ -1284,7 +1313,7 @@ class OASGenApp(ctk.CTk):
     def browse_oas_folder(self):
         """Browse for OAS folder (Generation tab)."""
         current_path = self.entry_oas_folder.get()
-        initial_dir = current_path if os.path.exists(current_path) else os.getcwd()
+        initial_dir = self._get_initial_dir(current_path)
         directory = filedialog.askdirectory(initialdir=initial_dir)
         if directory:
             self._sync_oas_folders(directory)
@@ -1292,7 +1321,7 @@ class OASGenApp(ctk.CTk):
     def browse_oas_folder_validation(self):
         """Browse for OAS folder (Validation tab)."""
         current_path = self.entry_val_oas_folder.get()
-        initial_dir = current_path if os.path.exists(current_path) else os.getcwd()
+        initial_dir = self._get_initial_dir(current_path)
         directory = filedialog.askdirectory(initialdir=initial_dir)
         if directory:
             self._sync_oas_folders(directory)
@@ -1300,7 +1329,7 @@ class OASGenApp(ctk.CTk):
     def browse_oas_folder_view(self):
         """Browse for OAS folder (View tab)."""
         current_path = self.entry_view_oas_folder.get()
-        initial_dir = current_path if os.path.exists(current_path) else os.getcwd()
+        initial_dir = self._get_initial_dir(current_path)
         directory = filedialog.askdirectory(initialdir=initial_dir)
         if directory:
             self._sync_oas_folders(directory)
@@ -3344,7 +3373,11 @@ class OASGenApp(ctk.CTk):
         self.btn_roundtrip = ctk.CTkButton(self.frame_imp_act, text="Roundtrip Check", width=150, font=ctk.CTkFont(weight="bold"), command=self.start_roundtrip_check)
         self.btn_roundtrip.pack(side="left", padx=(0, 10))
         
-        self.var_line_diff = ctk.BooleanVar(value=False)
+        self.var_attr_diff = tk.BooleanVar(value=self.prefs_manager.get("excel_gen_attr_diff", True))
+        self.chk_attr_diff = ctk.CTkCheckBox(self.frame_imp_act, text="Attribute Diff", variable=self.var_attr_diff)
+        self.chk_attr_diff.pack(side="left", padx=(0, 10))
+
+        self.var_line_diff = tk.BooleanVar(value=self.prefs_manager.get("excel_gen_line_diff", False))
         self.chk_line_diff = ctk.CTkCheckBox(self.frame_imp_act, text="Line Diff", variable=self.var_line_diff)
         self.chk_line_diff.pack(side="left", padx=(0, 20))
 
@@ -3364,8 +3397,9 @@ class OASGenApp(ctk.CTk):
         # Log Area
         self.import_log_area = ctk.CTkTextbox(self.tab_import, font=("Consolas", 11), wrap="word") 
         self.import_log_area.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
-        # self.import_log_area.insert("0.0", "Ready for Import/Roundtrip.\n") # Removed
         self.import_log_area.configure(state="disabled")
+        # Add tag for highlighting differences (light peach background)
+        self.import_log_area._textbox.tag_config("diff_highlight", background="#FFE0B2", foreground="black")
 
 
 
@@ -3377,7 +3411,9 @@ class OASGenApp(ctk.CTk):
         self.lbl_font_size_imp_val.configure(text=str(val))
 
     def browse_import_file(self):
-        f = filedialog.askopenfilename(filetypes=[("OAS Files", "*.yaml *.yml *.json")])
+        current_path = self.entry_imp_file.get()
+        initial_dir = self._get_initial_dir(current_path)
+        f = filedialog.askopenfilename(initialdir=initial_dir, filetypes=[("OAS Files", "*.yaml *.yml *.json")])
         if f:
             self.entry_imp_file.delete(0, "end")
             self.entry_imp_file.insert(0, f)
@@ -3385,7 +3421,9 @@ class OASGenApp(ctk.CTk):
             self.prefs_manager.save()
 
     def browse_import_template_folder(self):
-        d = filedialog.askdirectory()
+        current_path = self.entry_imp_dst.get()
+        initial_dir = self._get_initial_dir(current_path)
+        d = filedialog.askdirectory(initialdir=initial_dir)
         if d:
             self.entry_imp_dst.delete(0, "end")
             self.entry_imp_dst.insert(0, d)
@@ -3407,6 +3445,81 @@ class OASGenApp(ctk.CTk):
             self.log_app(f"[Import] {msg}") 
             
         self.after(0, _append)
+
+    def _log_import_diff_boxed(self, old_val, new_val, sep_line):
+        """Logs Source and Generated values with character-level diff highlighting.
+        Only applies highlighting if values are >50% similar (otherwise it's noise).
+        """
+        import difflib
+        
+        # Normalize simple case where one value is None or nan
+        v1 = str(old_val) if old_val is not None else ""
+        v2 = str(new_val) if new_val is not None else ""
+        if v1.lower() == "nan": v1 = ""
+        if v2.lower() == "nan": v2 = ""
+
+        # Calculate similarity ratio
+        similarity = difflib.SequenceMatcher(None, v1, v2).ratio()
+        use_highlighting = similarity >= 0.5  # Only highlight if >50% similar
+
+        def get_segments(val1, val2, highlight):
+            if not highlight:
+                # No highlighting - return plain text
+                return [(val1, None)], [(val2, None)]
+            
+            s = difflib.SequenceMatcher(None, val1, val2)
+            seg1, seg2 = [], []
+            for tag, i1, i2, j1, j2 in s.get_opcodes():
+                c1, c2 = val1[i1:i2], val2[j1:j2]
+                if tag == 'equal':
+                    seg1.append((c1, None)); seg2.append((c2, None))
+                else:
+                    if c1: seg1.append((c1, "diff_highlight"))
+                    if c2: seg2.append((c2, "diff_highlight"))
+            return seg1, seg2
+
+        s1, s2 = get_segments(v1, v2, use_highlighting)
+        
+        def _append():
+            self.import_log_area.configure(state="normal")
+            
+            def log_side(label, segments):
+                # Flatten segments by lines
+                flat = []
+                for t, tag in segments:
+                    if not t: continue
+                    lines = t.splitlines(True)
+                    for l in lines:
+                        flat.append((l, tag))
+                
+                if not flat:
+                    flat = [("", None)]
+                
+                first_line = True
+                for idx, (text, tag) in enumerate(flat):
+                    if first_line:
+                        self.import_log_area.insert("end", f"    [{label:<9}] | ")
+                        first_line = False
+                    
+                    self.import_log_area.insert("end", text, tag if tag else ())
+                    
+                    if text.endswith("\n") and idx < len(flat) - 1:
+                        self.import_log_area.insert("end", "    " + " " * 12 + "| ")
+                
+                # Ensure it ends with a newline
+                if not flat[-1][0].endswith("\n"):
+                    self.import_log_area.insert("end", "\n")
+            
+            log_side("SOURCE", s1)
+            self.import_log_area.insert("end", f"    {sep_line}\n")
+            log_side("GENERATED", s2)
+            self.import_log_area.insert("end", f"    {sep_line}\n")
+            
+            self.import_log_area.see("end")
+            self.import_log_area.configure(state="disabled")
+
+        self.after(0, _append)
+
 
     def start_oas_import(self):
         src_path = self.entry_imp_file.get()
@@ -3625,6 +3738,7 @@ class OASGenApp(ctk.CTk):
         src_path = self.entry_imp_file.get()
         dst_folder = self.entry_imp_dst.get()
         line_diff = self.var_line_diff.get()
+        attr_diff = self.var_attr_diff.get()
         
         if not src_path or not os.path.exists(src_path):
             self.show_custom_error_dialog("Error", "Invalid OAS File")
@@ -3639,9 +3753,9 @@ class OASGenApp(ctk.CTk):
         # self.import_log_area.delete("1.0", "end")
         self.import_log_area.configure(state="disabled")
         
-        threading.Thread(target=self._run_roundtrip_check, args=(src_path, dst_folder, line_diff)).start()
+        threading.Thread(target=self._run_roundtrip_check, args=(src_path, dst_folder, line_diff, attr_diff)).start()
 
-    def _run_roundtrip_check(self, src_path, dst_folder, line_diff):
+    def _run_roundtrip_check(self, src_path, dst_folder, line_diff, attr_diff):
         try:
             self._log_import("\n=== STARTING ROUNDTRIP CHECK ===")
             
@@ -3705,7 +3819,7 @@ class OASGenApp(ctk.CTk):
             
             comparator = OASComparator(src_path, gen_path)
             
-            # Structure Diff
+            # 1. Structure Summary (Item Counts)
             struct_stats = comparator.get_structure_comparison()
             
             self._log_import("\n=== STRUCTURE SUMMARY ===")
@@ -3716,10 +3830,50 @@ class OASGenApp(ctk.CTk):
             self._log_import("-" * 75)
             
             for metric, (source_val, gen_val) in struct_stats.items():
-                delta = gen_val - source_val  # Generated - Source (positive = more in generated)
+                delta = gen_val - source_val
                 match_symbol = "✓" if delta == 0 else "✗"
                 delta_str = f"+{delta}" if delta > 0 else str(delta)
                 self._log_import(row_fmt.format(metric, str(source_val), str(gen_val), match_symbol, delta_str))
+
+            # 2. Attribute Diff (Deep Analysis)
+            if attr_diff:
+                self._log_import("\n=== ATTRIBUTE DIFF (Deep Analysis) ===")
+                categorized_results = comparator.get_attribute_diff()
+                
+                any_diff = False
+                for category, res in categorized_results.items():
+                    added = res.get("added", [])
+                    removed = res.get("removed", [])
+                    modified = res.get("modified", [])
+                    
+                    if not added and not removed and not modified:
+                        continue
+                    
+                    any_diff = True
+                    self._log_import(f"\n[{category.upper()}]")
+                    
+                    if removed:
+                        self._log_import(f"  Missing Attributes ({len(removed)}):")
+                        for p in sorted(removed):
+                            self._log_import(f"    - {p}")
+
+                    if modified:
+                        self._log_import(f"  Modified Attributes ({len(modified)}):")
+                        sep = "-" * 80
+                        for m in sorted(modified, key=lambda x: x["path"]):
+                            self._log_import(f"\n    {sep}")
+                            self._log_import(f"    Attribute: {m['path']}")
+                            self._log_import(f"    {sep}")
+                            self._log_import_diff_boxed(m['old'], m['new'], sep)
+                        self._log_import("") 
+                    
+                    if added:
+                        self._log_import(f"  Added Attributes ({len(added)}):")
+                        for p in sorted(added):
+                            self._log_import(f"    - {p}")
+                
+                if not any_diff:
+                    self._log_import("No significant attribute differences found.")
             
             if line_diff:
                 # Line Difference Stats (Global Delta)

@@ -38,6 +38,7 @@ Demo Validation Errors/
 
 # Generated HTML docs (Redoc)
 *.html
+!docs/*.html
 !src/docs/*.html
 
 # IDE & Python

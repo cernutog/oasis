@@ -29,6 +29,12 @@ def _to_string(value: Any) -> str:
     return str(value)
 
 
+def _set_cell_as_text(ws, row: int, col: int, value: str) -> None:
+    """Write value to cell and force TEXT format to prevent Excel number conversion."""
+    cell = ws.cell(row=row, column=col, value=value)
+    cell.number_format = '@'  # Text format
+
+
 class OASToExcelConverter:
     """
     Converts OAS files to OASIS Excel template format.
@@ -307,8 +313,8 @@ class OASToExcelConverter:
             ws.cell(row=row_idx, column=6, value=items.get('type', ''))
             ws.cell(row=row_idx, column=7, value=schema.get('format', ''))
             ws.cell(row=row_idx, column=8, value='M' if param_def.get('required', False) else '')
-            ws.cell(row=row_idx, column=9, value=str(schema.get('minLength', schema.get('minimum', ''))) or '')
-            ws.cell(row=row_idx, column=10, value=str(schema.get('maxLength', schema.get('maximum', ''))) or '')
+            _set_cell_as_text(ws, row_idx, 9, str(schema.get('minLength', schema.get('minimum', ''))) or '')
+            _set_cell_as_text(ws, row_idx, 10, str(schema.get('maxLength', schema.get('maximum', ''))) or '')
             ws.cell(row=row_idx, column=11, value='')  # PatternEba - not standard OAS
             ws.cell(row=row_idx, column=12, value=schema.get('pattern', ''))  # Regex
             # Allowed values (enum) - col 13
@@ -363,8 +369,8 @@ class OASToExcelConverter:
             ws.cell(row=row_idx, column=5, value=items.get('type', ''))
             ws.cell(row=row_idx, column=6, value=schema.get('format', ''))
             ws.cell(row=row_idx, column=7, value='M' if header_def.get('required', False) else '')
-            ws.cell(row=row_idx, column=8, value=str(schema.get('minLength', schema.get('minimum', ''))) or '')
-            ws.cell(row=row_idx, column=9, value=str(schema.get('maxLength', schema.get('maximum', ''))) or '')
+            _set_cell_as_text(ws, row_idx, 8, str(schema.get('minLength', schema.get('minimum', ''))) or '')
+            _set_cell_as_text(ws, row_idx, 9, str(schema.get('maxLength', schema.get('maximum', ''))) or '')
             ws.cell(row=row_idx, column=10, value='')  # PatternEba - not standard OAS
             ws.cell(row=row_idx, column=11, value=schema.get('pattern', ''))  # Regex
             enum = schema.get('enum', [])
@@ -421,8 +427,8 @@ class OASToExcelConverter:
                 if mand == 'O':
                     mand = ''
                 ws.cell(row=row_idx, column=8, value=mand or '')
-                ws.cell(row=row_idx, column=9, value=flat_row.min_value or '')
-                ws.cell(row=row_idx, column=10, value=flat_row.max_value or '')
+                _set_cell_as_text(ws, row_idx, 9, flat_row.min_value or '')
+                _set_cell_as_text(ws, row_idx, 10, flat_row.max_value or '')
                 ws.cell(row=row_idx, column=11, value=flat_row.pattern or '')
                 ws.cell(row=row_idx, column=12, value=flat_row.regex or '')
                 ws.cell(row=row_idx, column=13, value=flat_row.allowed_values or '')
@@ -465,8 +471,8 @@ class OASToExcelConverter:
                 if mand == 'O':
                     mand = ''
                 ws.cell(row=row_idx, column=9, value=mand or '')
-                ws.cell(row=row_idx, column=10, value=flat_row.min_value or '')
-                ws.cell(row=row_idx, column=11, value=flat_row.max_value or '')
+                _set_cell_as_text(ws, row_idx, 10, flat_row.min_value or '')
+                _set_cell_as_text(ws, row_idx, 11, flat_row.max_value or '')
                 ws.cell(row=row_idx, column=12, value=flat_row.pattern or '')
                 ws.cell(row=row_idx, column=13, value=flat_row.regex or '')
                 ws.cell(row=row_idx, column=14, value=flat_row.allowed_values or '')
