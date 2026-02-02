@@ -579,38 +579,36 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
     - Modified `OASGenerator.get_yaml` to prune empty global `components` sub-blocks (`parameters`, `headers`, `schemas`, `responses`, `securitySchemes`).
     - Entire `components` section is omitted if it becomes empty after pruning.
 - **Key Modules**: `src/generator.py`.
-### Build v2.0.31 (2026-02-02)
-- **Feature**: Multiple Examples Support.
-    - Updated `schema_flattener.py` to join multiple examples into a single comma-separated string for Excel.
-    - Updated `schema_builder.py` to parse these strings back into a list of examples in the generated OAS.
-- **Key Modules**: `src/oas_importer/schema_flattener.py`, `src/generator_pkg/schema_builder.py`.
+## v2.1: Attribute Diff & Precision Overhaul (2026-02-02)
 
-### Build v2.0.32 (2026-02-02)
-- **Refinement**: CSV-style Smart Quoting.
-    - Implemented `csv`-based parsing for multiple examples in `schema_builder.py` to correctly handle examples containing commas (e.g., `"Value 1, with comma", Value 2`).
-- **Key Modules**: `src/generator_pkg/schema_builder.py`.
+### 1. Attribute Diff Engine
+**Goal**: Identify semantic differences between source and generated OAS to ensure 100% roundtrip fidelity.
+**Implementation**:
+- Recursive deep-comparison in `OASComparator`.
+- Categorized reporting (Info, Paths, Components, Security).
+- Integrated into the GUI (Import tab) with color-coded highlighting.
 
-### Build v2.0.33 (2026-02-02)
-- **Fix**: Array Item Description Capture.
-    - Updated `schema_flattener.py` to capture descriptions from the `items` object of an array if the top-level property lacks one.
-    - Updated `schema_builder.py` to restore descriptions within the `items` object when using `$ref`.
-- **Key Modules**: `src/oas_importer/schema_flattener.py`, `src/generator_pkg/schema_builder.py`.
+### 2. Multiple Examples Support
+**Goal**: Allow multiple example values per schema property from Excel.
+**Implementation**:
+- **Importer**: Joins examples in Excel cells using `, `.
+- **Generator**: Parses comma-separated values using `csv` smart-quoting to handle values containing commas.
+- Refined `schema_builder.py` and `schema_flattener.py`.
 
-### Build v2.0.34 (2026-02-02)
-- **Fix**: Array Description Displacement & Inheritance.
-    - Resolved issue where descriptions were "pushed up" from `items` to the parent property.
-    - Prevented redundant top-level descriptions that were causing "Added Attribute" warnings in Roundtrip Check.
-    - Added OAS 3.0 compatible `allOf` workaround for descriptions alongside `$ref` in array items.
-- **Key Modules**: `src/generator_pkg/schema_builder.py`.
+### 3. High-Fidelity Schema Rules
+**Goal**: Prevent "Added Attribute" warnings caused by generator heuristics.
+**Implementation**:
+- **Array Integrity**: Fixed displacement of descriptions from `items` to parent. Supported OAS 3.0 `$ref` description via `allOf` workaround.
+- **Natural Ordering**: Restricted `name`/`title` prioritization to metadata only; data properties now follow Excel order.
+- **Servers**: Removed hard-coded "Server base path" and enabled parsing from Column D of the index file.
+- **Numeric Fidelity**: Universal use of `RawNumericValue` to preserve string formatting (e.g., `4800.00`).
 
-### Build v2.0.35 (2026-02-02)
-- **Fix**: Hard-coded Server Description.
-    - Removed hard-coded `"Server base path"` from `excel_parser.py`.
-    - Enabled parsing of server descriptions from **Column D** of the `General Description` sheet.
-- **Key Modules**: `src/excel_parser.py`.
+### 4. Hybrid Documentation
+**Goal**: Clean up repository while maintaining accessible docs.
+**Implementation**:
+- Migrated user guide to root `/docs` for GitHub Pages.
+- Implemented hybrid loading in `gui.py` (Local mirror vs. Online fallback).
 
-### Build v2.0.36 (2026-02-02)
-- **Fix**: Schema Property Ordering.
-    - Refined `_recursive_schema_fix` to preserve original Excel order for schema properties named `name` or `title`.
-    - Maintained metadata prioritization (placing `name` at the top) only for non-property contexts like Parameters or Tags.
-- **Key Modules**: `src/generator.py`.
+### Release
+- **Tag**: `v2.1`
+- **GitHub Release**: Consolidated 40+ incremental builds into a single stable release with attached `OASIS.exe`.
