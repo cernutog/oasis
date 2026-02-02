@@ -612,3 +612,12 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 ### Release
 - **Tag**: `v2.1`
 - **GitHub Release**: Consolidated 40+ incremental builds into a single stable release with attached `OASIS.exe`.
+
+### Build v2.1.1 (2026-02-02)
+- **Feature**: Legacy Template Converter Refinements.
+    - **General Description Mapping**: Implemented robust key-value mapping to transfer legacy metadata (`info title`, `version`, `servers`, etc.) to the modern vertical layout in `$index.xlsx`.
+    - **Schema Precision**: Fixed `Schemas` sheet start row (Row 2) and improved technical identifier vs. description mapping.
+    - **UI Persistence**: Restored missing preference keys (`last_legacy_src`, `last_legacy_dst`) in `PreferencesManager` and defaulted `remember_paths` to `True`.
+    - **Window Grouping**: Implemented focus-synchronized window lifting to bring the main window along with the converter without forcing a "top-most" constraint.
+    - **Path Neutrality**: Standardized on forward slashes (`/`) for all persisted paths to ensure consistency in `preferences.json`.
+- **Key Modules**: `src/legacy_converter.py`, `src/legacy_converter_dialog.py`, `src/preferences.py`.

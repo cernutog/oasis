@@ -31,6 +31,8 @@ try:
     from .splash_screen import SplashScreen
     from .oas_importer.oas_converter import OASToExcelConverter
     from .oas_importer.oas_comparator import OASComparator
+    from .legacy_converter import LegacyConverter
+    from .legacy_converter_dialog import LegacyConverterDialog
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
     import main as main_script
@@ -44,6 +46,8 @@ except ImportError:
     from splash_screen import SplashScreen
     from oas_importer.oas_converter import OASToExcelConverter
     from oas_importer.oas_comparator import OASComparator
+    from legacy_converter import LegacyConverter
+    from legacy_converter_dialog import LegacyConverterDialog
 
 from chlorophyll import CodeView
 import pygments.lexers
@@ -913,6 +917,11 @@ class OASGenApp(ctk.CTk):
         edit_menu.add_command(label="Preferences", command=self.open_preferences)
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
+        # Tools Menu
+        tools_menu = tk.Menu(menubar, tearoff=0)
+        tools_menu.add_command(label="Legacy Template Converter", command=self.open_legacy_converter)
+        menubar.add_cascade(label="Tools", menu=tools_menu)
+
         # View Menu (Generation, Validation, YAML Viewer)
         self.view_menu = tk.Menu(menubar, tearoff=0)
         self.view_menu.add_command(label="OAS to Excel", command=self._view_import)
@@ -1077,6 +1086,12 @@ class OASGenApp(ctk.CTk):
             self, self.prefs_manager, on_save_callback=self._apply_preferences
         )
         self.wait_window(dialog)
+
+    def open_legacy_converter(self):
+        """Open the Legacy Template Converter dialog."""
+        # Pass master template directory and preferences
+        master_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "Templates Master")
+        LegacyConverterDialog(self, master_dir=master_dir, prefs_manager=self.prefs_manager)
 
     def show_about_dialog(self):
         """Show About dialog using SplashScreen."""

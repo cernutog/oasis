@@ -13,7 +13,7 @@ class PreferencesManager:
 
     DEFAULT_PREFERENCES = {
         # Paths
-        "remember_paths": False,  # Default: Remember last used paths
+        "remember_paths": True,  # Default: Remember last used paths
         "excel_input_folder": "",  # Specific preference (alias template_directory)
         "excel_output_folder": "", # Specific preference for Tab 1
         "oas_folder": "",  # Key for generated OAS
@@ -22,6 +22,8 @@ class PreferencesManager:
         "last_excel_input": "",
         "last_excel_output": "",
         "last_oas_folder": "",
+        "last_legacy_src": "",
+        "last_legacy_dst": "",
         # Generation Options
         "gen_oas_30": True,
         "gen_oas_31": True,
