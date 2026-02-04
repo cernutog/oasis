@@ -45,6 +45,12 @@ def generate_report():
         
         f.write(f"- Missing Schemas in Gen (non-native): {len(missing)}\n")
         
+        extra_schemas = [k for k in gen_schemas.keys() if k.lower() not in ref_keys_lower]
+        # Ignore technical native types
+        extra_schemas = [m for m in extra_schemas if m.lower() not in ["boolean", "number", "string", "integer", "object", "array"]]
+        
+        f.write(f"- Extra Schemas in Gen: {len(extra_schemas)}\n")
+        
         # 2. Detailed Schema Parity
         f.write("\n## Schema Property Comparison\n\n")
         f.write("| Reference Schema | Generated Schema | Match Status | Details |\n")
@@ -55,7 +61,7 @@ def generate_report():
         
         # Iterate over all reference schemas (excluding technical ones)
         for ref_k in sorted(ref_schemas.keys()):
-            if ref_k.lower() in ["boolean", "number", "string", "integer", "object"]: continue
+            if ref_k.lower() in ["boolean", "number", "string", "integer", "object", "array"]: continue
             
             lk = ref_k.lower()
             if lk not in gen_keys_lower:
@@ -80,10 +86,19 @@ def generate_report():
             # Type check for matched properties
             type_mismatches = []
             for common_p in (ref_p_set & gen_p_set):
-                ref_t = ref_props[common_p].get('type') or ref_props[common_p].get('$ref', 'Complex')
-                gen_t = gen_props[common_p].get('type') or gen_props[common_p].get('$ref', 'Complex')
+                ref_node = ref_props[common_p]
+                gen_node = gen_props[common_p]
+                
+                ref_t = ref_node.get('type') or ref_node.get('$ref', 'Complex')
+                gen_t = gen_node.get('type') or gen_node.get('$ref', 'Complex')
+                
+                # Normalize ref path for comparison if it exists
+                if isinstance(ref_t, str) and '#/components/schemas/' in ref_t:
+                    ref_t = ref_t.split('/')[-1]
+                if isinstance(gen_t, str) and '#/components/schemas/' in gen_t:
+                    gen_t = gen_t.split('/')[-1]
+                
                 if str(ref_t).lower() != str(gen_t).lower():
-                    # Check if it's just a ref vs inline
                     type_mismatches.append(f"`{common_p}`: {ref_t} vs {gen_t}")
 
             if not missing_props and not extra_props and not type_mismatches:
@@ -99,7 +114,14 @@ def generate_report():
                 f.write(f"| {ref_k} | {gen_k} | {status} | {'; '.join(details)} |\n")
                 mismatch_count += 1
 
-        f.write(f"\n\n**Final Statistics:** {matched_count} Exact Matches, {mismatch_count} Discrepancies.\n")
+        # 3. Extra Schemas Details
+        if extra_schemas:
+            f.write("\n## Extra Schemas in Generated OAS\n\n")
+            f.write("The following schemas are in the generated OAS but NOT in the reference. These might be redundant variants or incorrectly hoisted properties.\n\n")
+            for ex in sorted(extra_schemas):
+                f.write(f"- {ex}\n")
+
+        f.write(f"\n\n**Final Statistics:** {matched_count} Exact Matches, {mismatch_count} Discrepancies (including missing ref schemas).\n")
 
     print(f"Report generated at: {report_path}")
 
