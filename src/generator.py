@@ -944,7 +944,6 @@ class OASGenerator:
 
         # 1. Build nodes & Map
         debug_log = []
-        last_seen = {} # Tracking for index-based linking (name -> last idx)
         
         for idx, row in df.iterrows():
             name = self._get_name(row)
@@ -973,10 +972,8 @@ class OASGenerator:
                     parent = p_str
                 # Else parent remains None (Root)
             
-            # Resolve parent_idx using proximity (most recent node with that name)
-            parent_idx = last_seen.get(parent) if parent else None
-
-            debug_log.append(f"Row {idx}: Name='{name}' (Raw: {raw_name}), Parent='{parent}' (Raw: {raw_parent}, Idx: {parent_idx})")
+            # NOTE: parent_idx will be resolved in second pass (order-independent)
+            debug_log.append(f"Row {idx}: Name='{name}' (Raw: {raw_name}), Parent='{parent}' (Raw: {raw_parent})")
 
             node = {
                 "idx": idx,
@@ -984,15 +981,14 @@ class OASGenerator:
                 "type": self._get_type(row),
                 "description": self._get_description(row),
                 "parent": parent,
-                "parent_idx": parent_idx,
+                "parent_idx": None,  # Resolved in second pass
                 "mandatory": is_mandatory,
                 "schema_obj": self._map_type_to_schema(row, is_node=True),
             }
 
             nodes[idx] = node
-            last_seen[name] = idx # Update for children
             
-            # FIX: Node Map Prioritization
+            # FIX: Node Map Prioritization - prefer ROOT definitions
             if name not in node_map:
                 node_map[name] = node
             else:
@@ -1008,6 +1004,18 @@ class OASGenerator:
                     node_map[name] = node
                 # Else: Existing is Root, Current is Child -> Keep Root (Do nothing)
 
+        # SECOND PASS: Resolve parent_idx by NAME lookup (ORDER-INDEPENDENT)
+        # This fixes the bug where children appearing before parents would fail to link
+        for idx, node in nodes.items():
+            parent_name = node.get("parent")
+            if parent_name:
+                # Find the ROOT node for this parent name
+                parent_node = node_map.get(parent_name)
+                if parent_node:
+                    node["parent_idx"] = parent_node["idx"]
+                else:
+                    # Parent not found - may be a combinator branch or missing schema
+                    debug_log.append(f"  Warning: Parent '{parent_name}' not found for node '{node['name']}'")
 
         # Optimization: Build children map (Parent Index -> [Children Nodes])
         children_map = {}
@@ -1017,6 +1025,7 @@ class OASGenerator:
                 if p_idx not in children_map:
                     children_map[p_idx] = []
                 children_map[p_idx].append(node)
+
 
         # 2. Process combinators FIRST (before regular linking)
         for idx, node in nodes.items():

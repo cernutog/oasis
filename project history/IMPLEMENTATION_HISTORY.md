@@ -621,3 +621,10 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
     - **Window Grouping**: Implemented focus-synchronized window lifting to bring the main window along with the converter without forcing a "top-most" constraint.
     - **Path Neutrality**: Standardized on forward slashes (`/`) for all persisted paths to ensure consistency in `preferences.json`.
 - **Key Modules**: `src/legacy_converter.py`, `src/legacy_converter_dialog.py`, `src/preferences.py`.
+
+### Build v2.1.2 (2026-02-04)
+- **Fix**: Schema Collisions & regression in `Schemas` sheet grouping/sorting.
+    - **SearchCriteria Variants**: Restored all 12 variants in the generated OAS by ensuring correct usage registration in the converter loop.
+    - **Grouping & Sorting**: Refactored the `Schemas` sheet generation to a block-per-parent architecture.
+    - **Normalization**: Enforced strict case-insensitive normalization for root names to prevent block duplication and ensure perfect alphabetical order.
+- **Key Modules**: `src/legacy_converter.py`, `run_oas_generation.py`, `check_index.py`.
