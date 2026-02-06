@@ -1,0 +1,2702 @@
+{
+  "info": {
+    "file": "$index.xlsx",
+    "sheet": "General Description"
+  },
+  "info.contact": {
+    "file": "$index.xlsx",
+    "sheet": "General Description"
+  },
+  "info.contact.name": {
+    "file": "$index.xlsx",
+    "sheet": "General Description"
+  },
+  "info.contact.url": {
+    "file": "$index.xlsx",
+    "sheet": "General Description"
+  },
+  "info.contact.email": {
+    "file": "$index.xlsx",
+    "sheet": "General Description"
+  },
+  "info.license": {
+    "file": "$index.xlsx",
+    "sheet": "General Description"
+  },
+  "tags": {
+    "file": "$index.xlsx",
+    "sheet": "Tags"
+  },
+  "components.parameters": {
+    "file": "$index.xlsx",
+    "sheet": "Parameters"
+  },
+  "components.headers": {
+    "file": "$index.xlsx",
+    "sheet": "Headers"
+  },
+  "components.schemas.Amount": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.array": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.BIC11": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Bic11Only": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.BIC8": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Boolean": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.BulkReference": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.CommandReference": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.CommandStatus": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.CommandType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Date": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.DateTime": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Day": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ErrorCode": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ErrorCodeDescription": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.EventDescription": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.EventType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileReference": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileStatus": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.InstructionReference": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.InstructionStatus": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.InstructionTypeRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.InstructionTypeResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.LacNumber": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.LcrStatus": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.MessageType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ModuleIdentifier": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Network": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.NetworkFileName": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Number": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.object": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Offset": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.OperationReference": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ParticipantName": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ParticipantStatus": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.RequestId": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.senderBIC": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Service": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.settlementBICs": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Sign": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Time": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.TransferType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.User": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.YearMonth": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.configuredS2Dp": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.parModhistory": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ClosingFlag": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.EventCode": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileName": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileStatusLAFLPF": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileStatusLIFRIF": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileStatusLMF": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileTypeLAFLPF": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileTypeLIFRIF": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileTypeLNRLMR": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FreezeUnfreeze": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Minutes": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Month": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.OperationStatus": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.OperationType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.RetransmitType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.StandardInteger": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.positionHistory": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.defaultDailyThresholds": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lacDefaultAgenda": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.exceptionLacValues": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.fundingDefunding": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.interestReport": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.dailyReport": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lcrs": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.fileList": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.DateType": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.CalendarDate": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.BusinessDate": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.alerts": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.endOfList": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.commands": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.EndOfList": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lacAgenda": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Operations": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Standard Integer": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listSettlementBICsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SettlementBICs": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listSettlementBICsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listSettlementBICsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.settlementBICDetailsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SettlementBICDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.settlementBICDetailsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.settlementBICDetailsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SettlementBICParameters": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.updateSettlementBICRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.updateSettlementBICResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.updateSettlementBICResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SettlementBIC": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SettlementBICAmend": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.amendChangeSettlementBICRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.amendChangeSettlementBICResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.amendChangeSettlementBICResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.revokeChangeSettlementBICRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.revokeChangeSettlementBICResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.revokeChangeSettlementBICResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.currentPositionRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.CurrentPosition": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.currentPositionResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.currentPositionResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.positionLacRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.PositionHistory": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.positionLacResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.positionLacResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.DefaultDailyThresholds": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.setDefaultAgendaRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.setDefaultAgendaResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.setDefaultAgendaResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.getDefaultAgendaRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.DefaultAgenda": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.getDefaultAgendaResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.getDefaultAgendaResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ExceptionLacValues": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.setCalendarRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.setCalendarResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.setCalendarResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listCalendarRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ExceptionLacValues1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listCalendarResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listCalendarResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listFundingDefundingRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FundingDefunding": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listFundingDefundingResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listFundingDefundingResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria2": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.interestMonthlyReportRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.InterestReport": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.interestMonthlyReportResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.interestMonthlyReportResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria3": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.interestDailyReportRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.InterestReports": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.interestDailyReportResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.interestDailyReportResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria4": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lcrListRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Lcrs": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lcrListResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lcrListResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria5": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lcrDetailsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.LcrDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lcrDetailsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.lcrDetailsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria6": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.revokeLcrRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.revokeLcrResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.revokeLcrResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria7": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listFilesRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileList": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listFilesResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listFilesResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria8": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.fileDetailsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FileDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.fileDetailsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.fileDetailsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.retransmitOutFilesRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.retransmitOutFilesResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.retransmitOutFilesResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.resendAllRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.resendAllResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.resendAllResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria9": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listAlertsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Alerts": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listAlertsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listAlertsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria10": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listCommandsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Commands": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listCommandsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listCommandsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.commandDetailsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.FundingDefundingDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.RevokeLcrDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.RevokeAllLcrDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.RetransmitOutFileDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.ResendAllDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.AgendaDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.commandDetailsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.commandDetailsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria11": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listOperationRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.Operations1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listOperationResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listOperationResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.operationDetailsRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.OperationDetails": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.operationDetailsResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.operationDetailsResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.rejectParticipantOperationRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.rejectParticipantOperationResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.rejectParticipantOperationResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.SearchCriteria12": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listLACsConfigurationRequest": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.LacParameters": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.OtherModuleCutOff": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listLACsConfigurationResponse": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.schemas.listLACsConfigurationResponse1": {
+    "file": "$index.xlsx",
+    "sheet": "Schemas"
+  },
+  "components.responses": {
+    "file": "$index.xlsx",
+    "sheet": "Responses"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.parameters": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.requestBody": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "Body"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.200": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "200"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.204": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "204"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.400": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "400"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.401": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "401"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.403": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "403"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.404": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "404"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.429": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "429"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post.responses.500": {
+    "file": "settlementBICDetails.xlsx",
+    "sheet": "500"
+  },
+  "paths./listSettlementBICs/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.parameters": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.requestBody": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "Body"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.200": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "200"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.204": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "204"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.400": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "400"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.401": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "401"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.403": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "403"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.404": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "404"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.429": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "429"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post.responses.500": {
+    "file": "updateSettlementBIC.xlsx",
+    "sheet": "500"
+  },
+  "paths./settlementBICDetails/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.parameters": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.requestBody": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "Body"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.requestBody.content.application/json.examples": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.200": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "200"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.204": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "204"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.400": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "400"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.401": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "401"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.403": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "403"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.404": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "404"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.429": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "429"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put.responses.500": {
+    "file": "amendChangeSettlementBIC.xlsx",
+    "sheet": "500"
+  },
+  "paths./updateSettlementBIC/{senderBIC}.put": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.parameters": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.requestBody": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "Body"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.200": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "200"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.204": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "204"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.400": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "400"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.401": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "401"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.403": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "403"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.404": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "404"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.429": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "429"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post.responses.500": {
+    "file": "revokeChangeSettlementBIC.xlsx",
+    "sheet": "500"
+  },
+  "paths./amendChangeSettlementBIC/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.parameters": {
+    "file": "currentPosition.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.requestBody": {
+    "file": "currentPosition.xlsx",
+    "sheet": "Body"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "currentPosition.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.200": {
+    "file": "currentPosition.xlsx",
+    "sheet": "200"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.204": {
+    "file": "currentPosition.xlsx",
+    "sheet": "204"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.400": {
+    "file": "currentPosition.xlsx",
+    "sheet": "400"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.401": {
+    "file": "currentPosition.xlsx",
+    "sheet": "401"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.403": {
+    "file": "currentPosition.xlsx",
+    "sheet": "403"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.404": {
+    "file": "currentPosition.xlsx",
+    "sheet": "404"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.429": {
+    "file": "currentPosition.xlsx",
+    "sheet": "429"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post.responses.500": {
+    "file": "currentPosition.xlsx",
+    "sheet": "500"
+  },
+  "paths./revokeChangeSettlementBIC/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./currentPosition/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./currentPosition/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./currentPosition/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./currentPosition/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./currentPosition/{senderBIC}.post.parameters": {
+    "file": "positionLac.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./currentPosition/{senderBIC}.post.requestBody": {
+    "file": "positionLac.xlsx",
+    "sheet": "Body"
+  },
+  "paths./currentPosition/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "positionLac.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.200": {
+    "file": "positionLac.xlsx",
+    "sheet": "200"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.204": {
+    "file": "positionLac.xlsx",
+    "sheet": "204"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.400": {
+    "file": "positionLac.xlsx",
+    "sheet": "400"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.401": {
+    "file": "positionLac.xlsx",
+    "sheet": "401"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.403": {
+    "file": "positionLac.xlsx",
+    "sheet": "403"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.404": {
+    "file": "positionLac.xlsx",
+    "sheet": "404"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.429": {
+    "file": "positionLac.xlsx",
+    "sheet": "429"
+  },
+  "paths./currentPosition/{senderBIC}.post.responses.500": {
+    "file": "positionLac.xlsx",
+    "sheet": "500"
+  },
+  "paths./currentPosition/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./positionLac/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./positionLac/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./positionLac/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./positionLac/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./positionLac/{senderBIC}.post.parameters": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./positionLac/{senderBIC}.post.requestBody": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "Body"
+  },
+  "paths./positionLac/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.200": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "200"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.204": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "204"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.400": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "400"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.401": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "401"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.403": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "403"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.404": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "404"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.429": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "429"
+  },
+  "paths./positionLac/{senderBIC}.post.responses.500": {
+    "file": "setDefaultAgenda.xlsx",
+    "sheet": "500"
+  },
+  "paths./positionLac/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.parameters": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.requestBody": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "Body"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.requestBody.content.application/json.examples": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.200": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "200"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.204": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "204"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.400": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "400"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.401": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "401"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.403": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "403"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.404": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "404"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.429": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "429"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put.responses.500": {
+    "file": "getDefaultAgenda.xlsx",
+    "sheet": "500"
+  },
+  "paths./setDefaultAgenda/{senderBIC}.put": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.parameters": {
+    "file": "setCalendar.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.requestBody": {
+    "file": "setCalendar.xlsx",
+    "sheet": "Body"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "setCalendar.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.200": {
+    "file": "setCalendar.xlsx",
+    "sheet": "200"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.204": {
+    "file": "setCalendar.xlsx",
+    "sheet": "204"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.400": {
+    "file": "setCalendar.xlsx",
+    "sheet": "400"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.401": {
+    "file": "setCalendar.xlsx",
+    "sheet": "401"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.403": {
+    "file": "setCalendar.xlsx",
+    "sheet": "403"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.404": {
+    "file": "setCalendar.xlsx",
+    "sheet": "404"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.429": {
+    "file": "setCalendar.xlsx",
+    "sheet": "429"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post.responses.500": {
+    "file": "setCalendar.xlsx",
+    "sheet": "500"
+  },
+  "paths./getDefaultAgenda/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setCalendar/{senderBIC}.put.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setCalendar/{senderBIC}.put.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setCalendar/{senderBIC}.put.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setCalendar/{senderBIC}.put.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./setCalendar/{senderBIC}.put.parameters": {
+    "file": "listCalendar.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./setCalendar/{senderBIC}.put.requestBody": {
+    "file": "listCalendar.xlsx",
+    "sheet": "Body"
+  },
+  "paths./setCalendar/{senderBIC}.put.requestBody.content.application/json.examples": {
+    "file": "listCalendar.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.200": {
+    "file": "listCalendar.xlsx",
+    "sheet": "200"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.204": {
+    "file": "listCalendar.xlsx",
+    "sheet": "204"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.400": {
+    "file": "listCalendar.xlsx",
+    "sheet": "400"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.401": {
+    "file": "listCalendar.xlsx",
+    "sheet": "401"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.403": {
+    "file": "listCalendar.xlsx",
+    "sheet": "403"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.404": {
+    "file": "listCalendar.xlsx",
+    "sheet": "404"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.429": {
+    "file": "listCalendar.xlsx",
+    "sheet": "429"
+  },
+  "paths./setCalendar/{senderBIC}.put.responses.500": {
+    "file": "listCalendar.xlsx",
+    "sheet": "500"
+  },
+  "paths./setCalendar/{senderBIC}.put": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCalendar/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCalendar/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCalendar/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCalendar/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCalendar/{senderBIC}.post.parameters": {
+    "file": "liquidityManagement1.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./listCalendar/{senderBIC}.post.requestBody": {
+    "file": "liquidityManagement1.xlsx",
+    "sheet": "Body"
+  },
+  "paths./listCalendar/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "liquidityManagement1.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./listCalendar/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.parameters": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.requestBody": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "Body"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.requestBody.content.application/json.examples": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.200": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "200"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.204": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "204"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.400": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "400"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.401": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "401"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.403": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "403"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.404": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "404"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.429": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "429"
+  },
+  "paths./liquidityManagement/{senderBIC}.put.responses.500": {
+    "file": "listFundingDefunding.xlsx",
+    "sheet": "500"
+  },
+  "paths./liquidityManagement/{senderBIC}.put": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.parameters": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.requestBody": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "Body"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.200": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "200"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.204": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "204"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.400": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "400"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.401": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "401"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.403": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "403"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.404": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "404"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.429": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "429"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post.responses.500": {
+    "file": "interestMonthlyReport.xlsx",
+    "sheet": "500"
+  },
+  "paths./listFundingDefunding/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.parameters": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.requestBody": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "Body"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.200": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "200"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.204": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "204"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.400": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "400"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.401": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "401"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.403": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "403"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.404": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "404"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.429": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "429"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post.responses.500": {
+    "file": "interestDailyReport.xlsx",
+    "sheet": "500"
+  },
+  "paths./interestMonthlyReport/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.parameters": {
+    "file": "lcrList.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.requestBody": {
+    "file": "lcrList.xlsx",
+    "sheet": "Body"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "lcrList.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.200": {
+    "file": "lcrList.xlsx",
+    "sheet": "200"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.204": {
+    "file": "lcrList.xlsx",
+    "sheet": "204"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.400": {
+    "file": "lcrList.xlsx",
+    "sheet": "400"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.401": {
+    "file": "lcrList.xlsx",
+    "sheet": "401"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.403": {
+    "file": "lcrList.xlsx",
+    "sheet": "403"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.404": {
+    "file": "lcrList.xlsx",
+    "sheet": "404"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.429": {
+    "file": "lcrList.xlsx",
+    "sheet": "429"
+  },
+  "paths./interestDailyReport/{senderBIC}.post.responses.500": {
+    "file": "lcrList.xlsx",
+    "sheet": "500"
+  },
+  "paths./interestDailyReport/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrList/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrList/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrList/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrList/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrList/{senderBIC}.post.parameters": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./lcrList/{senderBIC}.post.requestBody": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "Body"
+  },
+  "paths./lcrList/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.200": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "200"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.204": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "204"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.400": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "400"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.401": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "401"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.403": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "403"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.404": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "404"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.429": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "429"
+  },
+  "paths./lcrList/{senderBIC}.post.responses.500": {
+    "file": "lcrDetails.xlsx",
+    "sheet": "500"
+  },
+  "paths./lcrList/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrDetails/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrDetails/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrDetails/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrDetails/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./lcrDetails/{senderBIC}.post.parameters": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./lcrDetails/{senderBIC}.post.requestBody": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "Body"
+  },
+  "paths./lcrDetails/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.200": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "200"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.204": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "204"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.400": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "400"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.401": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "401"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.403": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "403"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.404": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "404"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.429": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "429"
+  },
+  "paths./lcrDetails/{senderBIC}.post.responses.500": {
+    "file": "revokeLcr.xlsx",
+    "sheet": "500"
+  },
+  "paths./lcrDetails/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeLcr/{senderBIC}.put.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeLcr/{senderBIC}.put.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeLcr/{senderBIC}.put.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeLcr/{senderBIC}.put.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./revokeLcr/{senderBIC}.put.parameters": {
+    "file": "listFiles.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./revokeLcr/{senderBIC}.put.requestBody": {
+    "file": "listFiles.xlsx",
+    "sheet": "Body"
+  },
+  "paths./revokeLcr/{senderBIC}.put.requestBody.content.application/json.examples": {
+    "file": "listFiles.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.200": {
+    "file": "listFiles.xlsx",
+    "sheet": "200"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.204": {
+    "file": "listFiles.xlsx",
+    "sheet": "204"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.400": {
+    "file": "listFiles.xlsx",
+    "sheet": "400"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.401": {
+    "file": "listFiles.xlsx",
+    "sheet": "401"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.403": {
+    "file": "listFiles.xlsx",
+    "sheet": "403"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.404": {
+    "file": "listFiles.xlsx",
+    "sheet": "404"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.429": {
+    "file": "listFiles.xlsx",
+    "sheet": "429"
+  },
+  "paths./revokeLcr/{senderBIC}.put.responses.500": {
+    "file": "listFiles.xlsx",
+    "sheet": "500"
+  },
+  "paths./revokeLcr/{senderBIC}.put": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFiles/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFiles/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFiles/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFiles/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listFiles/{senderBIC}.post.parameters": {
+    "file": "fileDetails.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./listFiles/{senderBIC}.post.requestBody": {
+    "file": "fileDetails.xlsx",
+    "sheet": "Body"
+  },
+  "paths./listFiles/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "fileDetails.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.200": {
+    "file": "fileDetails.xlsx",
+    "sheet": "200"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.204": {
+    "file": "fileDetails.xlsx",
+    "sheet": "204"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.400": {
+    "file": "fileDetails.xlsx",
+    "sheet": "400"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.401": {
+    "file": "fileDetails.xlsx",
+    "sheet": "401"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.403": {
+    "file": "fileDetails.xlsx",
+    "sheet": "403"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.404": {
+    "file": "fileDetails.xlsx",
+    "sheet": "404"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.429": {
+    "file": "fileDetails.xlsx",
+    "sheet": "429"
+  },
+  "paths./listFiles/{senderBIC}.post.responses.500": {
+    "file": "fileDetails.xlsx",
+    "sheet": "500"
+  },
+  "paths./listFiles/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./fileDetails/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./fileDetails/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./fileDetails/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./fileDetails/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./fileDetails/{senderBIC}.post.parameters": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./fileDetails/{senderBIC}.post.requestBody": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "Body"
+  },
+  "paths./fileDetails/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.200": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "200"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.204": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "204"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.400": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "400"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.401": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "401"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.403": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "403"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.404": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "404"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.429": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "429"
+  },
+  "paths./fileDetails/{senderBIC}.post.responses.500": {
+    "file": "retransmitOutFiles.xlsx",
+    "sheet": "500"
+  },
+  "paths./fileDetails/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.parameters": {
+    "file": "resendAll.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.requestBody": {
+    "file": "resendAll.xlsx",
+    "sheet": "Body"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "resendAll.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.200": {
+    "file": "resendAll.xlsx",
+    "sheet": "200"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.204": {
+    "file": "resendAll.xlsx",
+    "sheet": "204"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.400": {
+    "file": "resendAll.xlsx",
+    "sheet": "400"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.401": {
+    "file": "resendAll.xlsx",
+    "sheet": "401"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.403": {
+    "file": "resendAll.xlsx",
+    "sheet": "403"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.404": {
+    "file": "resendAll.xlsx",
+    "sheet": "404"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.429": {
+    "file": "resendAll.xlsx",
+    "sheet": "429"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post.responses.500": {
+    "file": "resendAll.xlsx",
+    "sheet": "500"
+  },
+  "paths./retransmitOutFiles/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./resendAll/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./resendAll/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./resendAll/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./resendAll/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./resendAll/{senderBIC}.post.parameters": {
+    "file": "listAlerts.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./resendAll/{senderBIC}.post.requestBody": {
+    "file": "listAlerts.xlsx",
+    "sheet": "Body"
+  },
+  "paths./resendAll/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "listAlerts.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.200": {
+    "file": "listAlerts.xlsx",
+    "sheet": "200"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.204": {
+    "file": "listAlerts.xlsx",
+    "sheet": "204"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.400": {
+    "file": "listAlerts.xlsx",
+    "sheet": "400"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.401": {
+    "file": "listAlerts.xlsx",
+    "sheet": "401"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.403": {
+    "file": "listAlerts.xlsx",
+    "sheet": "403"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.404": {
+    "file": "listAlerts.xlsx",
+    "sheet": "404"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.429": {
+    "file": "listAlerts.xlsx",
+    "sheet": "429"
+  },
+  "paths./resendAll/{senderBIC}.post.responses.500": {
+    "file": "listAlerts.xlsx",
+    "sheet": "500"
+  },
+  "paths./resendAll/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listAlerts/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listAlerts/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listAlerts/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listAlerts/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listAlerts/{senderBIC}.post.parameters": {
+    "file": "listCommands.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./listAlerts/{senderBIC}.post.requestBody": {
+    "file": "listCommands.xlsx",
+    "sheet": "Body"
+  },
+  "paths./listAlerts/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "listCommands.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.200": {
+    "file": "listCommands.xlsx",
+    "sheet": "200"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.204": {
+    "file": "listCommands.xlsx",
+    "sheet": "204"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.400": {
+    "file": "listCommands.xlsx",
+    "sheet": "400"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.401": {
+    "file": "listCommands.xlsx",
+    "sheet": "401"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.403": {
+    "file": "listCommands.xlsx",
+    "sheet": "403"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.404": {
+    "file": "listCommands.xlsx",
+    "sheet": "404"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.429": {
+    "file": "listCommands.xlsx",
+    "sheet": "429"
+  },
+  "paths./listAlerts/{senderBIC}.post.responses.500": {
+    "file": "listCommands.xlsx",
+    "sheet": "500"
+  },
+  "paths./listAlerts/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCommands/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCommands/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCommands/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCommands/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listCommands/{senderBIC}.post.parameters": {
+    "file": "commandDetails.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./listCommands/{senderBIC}.post.requestBody": {
+    "file": "commandDetails.xlsx",
+    "sheet": "Body"
+  },
+  "paths./listCommands/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "commandDetails.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.200": {
+    "file": "commandDetails.xlsx",
+    "sheet": "200"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.204": {
+    "file": "commandDetails.xlsx",
+    "sheet": "204"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.400": {
+    "file": "commandDetails.xlsx",
+    "sheet": "400"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.401": {
+    "file": "commandDetails.xlsx",
+    "sheet": "401"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.403": {
+    "file": "commandDetails.xlsx",
+    "sheet": "403"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.404": {
+    "file": "commandDetails.xlsx",
+    "sheet": "404"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.429": {
+    "file": "commandDetails.xlsx",
+    "sheet": "429"
+  },
+  "paths./listCommands/{senderBIC}.post.responses.500": {
+    "file": "commandDetails.xlsx",
+    "sheet": "500"
+  },
+  "paths./listCommands/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./commandDetails/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./commandDetails/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./commandDetails/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./commandDetails/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./commandDetails/{senderBIC}.post.parameters": {
+    "file": "listOperation.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./commandDetails/{senderBIC}.post.requestBody": {
+    "file": "listOperation.xlsx",
+    "sheet": "Body"
+  },
+  "paths./commandDetails/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "listOperation.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.200": {
+    "file": "listOperation.xlsx",
+    "sheet": "200"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.204": {
+    "file": "listOperation.xlsx",
+    "sheet": "204"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.400": {
+    "file": "listOperation.xlsx",
+    "sheet": "400"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.401": {
+    "file": "listOperation.xlsx",
+    "sheet": "401"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.403": {
+    "file": "listOperation.xlsx",
+    "sheet": "403"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.404": {
+    "file": "listOperation.xlsx",
+    "sheet": "404"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.429": {
+    "file": "listOperation.xlsx",
+    "sheet": "429"
+  },
+  "paths./commandDetails/{senderBIC}.post.responses.500": {
+    "file": "listOperation.xlsx",
+    "sheet": "500"
+  },
+  "paths./commandDetails/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listOperation/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listOperation/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listOperation/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listOperation/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listOperation/{senderBIC}.post.parameters": {
+    "file": "operationDetails.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./listOperation/{senderBIC}.post.requestBody": {
+    "file": "operationDetails.xlsx",
+    "sheet": "Body"
+  },
+  "paths./listOperation/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "operationDetails.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.200": {
+    "file": "operationDetails.xlsx",
+    "sheet": "200"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.204": {
+    "file": "operationDetails.xlsx",
+    "sheet": "204"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.400": {
+    "file": "operationDetails.xlsx",
+    "sheet": "400"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.401": {
+    "file": "operationDetails.xlsx",
+    "sheet": "401"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.403": {
+    "file": "operationDetails.xlsx",
+    "sheet": "403"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.404": {
+    "file": "operationDetails.xlsx",
+    "sheet": "404"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.429": {
+    "file": "operationDetails.xlsx",
+    "sheet": "429"
+  },
+  "paths./listOperation/{senderBIC}.post.responses.500": {
+    "file": "operationDetails.xlsx",
+    "sheet": "500"
+  },
+  "paths./listOperation/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./operationDetails/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./operationDetails/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./operationDetails/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./operationDetails/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./operationDetails/{senderBIC}.post.parameters": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./operationDetails/{senderBIC}.post.requestBody": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "Body"
+  },
+  "paths./operationDetails/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.200": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "200"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.204": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "204"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.400": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "400"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.401": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "401"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.403": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "403"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.404": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "404"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.429": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "429"
+  },
+  "paths./operationDetails/{senderBIC}.post.responses.500": {
+    "file": "rejectParticipantOperation.xlsx",
+    "sheet": "500"
+  },
+  "paths./operationDetails/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.parameters": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "Parameters"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.requestBody": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "Body"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.requestBody.content.application/json.examples": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "Body Example"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.200": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "200"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.204": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "204"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.400": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "400"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.401": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "401"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.403": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "403"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.404": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "404"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.429": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "429"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put.responses.500": {
+    "file": "listLACsConfiguration.xlsx",
+    "sheet": "500"
+  },
+  "paths./rejectParticipantOperation/{senderBIC}.put": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.summary": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.description": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.operationId": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.tags": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.parameters": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "Parameters"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.requestBody": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "Body"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.requestBody.content.application/json.examples": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "Body Example"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.200": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "200"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.204": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "204"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.400": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "400"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.401": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "401"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.403": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "403"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.404": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "404"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.429": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "429"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post.responses.500": {
+    "file": "listLACsConfiguration.230526",
+    "sheet": "500"
+  },
+  "paths./listLACsConfiguration/{senderBIC}.post": {
+    "file": "$index.xlsx",
+    "sheet": "Paths"
+  }
+}
