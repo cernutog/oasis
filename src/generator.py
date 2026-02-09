@@ -106,15 +106,6 @@ class OASGenerator:
             ordered_info[k] = v
             
         self.oas["info"] = ordered_info
-        
-        # Record source mapping for info section - ALWAYS register these
-        # so that validation warnings can link to the correct location to fix missing fields
-        self._record_source("info", "$index.xlsx", "General Description")
-        self._record_source("info.contact", "$index.xlsx", "General Description")
-        self._record_source("info.contact.name", "$index.xlsx", "General Description")
-        self._record_source("info.contact.url", "$index.xlsx", "General Description")
-        self._record_source("info.contact.email", "$index.xlsx", "General Description")
-        self._record_source("info.license", "$index.xlsx", "General Description")
 
 
     def build_paths(self, paths_list, operations_details):
@@ -133,16 +124,10 @@ class OASGenerator:
                 "summary": op_meta.get("summary"),
                 "description": op_meta.get("description"),
                 "operationId": op_meta.get("operationId"),
+                "tags": [op_meta.get("tags")] if op_meta.get("tags") else [],
+                "parameters": [],
+                "responses": {},
             }
-            
-            # Only add tags if non-empty
-            tags = [t for t in [op_meta.get("tags")] if pd.notna(t) and str(t).strip()]
-            if tags:
-                op_obj["tags"] = tags
-
-            # Initialize empty responses (will be populated below, but we'll prune if empty later if needed, 
-            # though responses is technically mandatory)
-            op_obj["responses"] = {}
 
             # Merge Custom Extensions - USE RAW TEXT, don't parse!
             extensions_yaml = op_meta.get("extensions")
@@ -177,9 +162,7 @@ class OASGenerator:
 
             # Parameters
             if details.get("parameters") is not None:
-                params = self._build_parameters(details["parameters"])
-                if params:
-                    op_obj["parameters"] = params
+                op_obj["parameters"] = self._build_parameters(details["parameters"])
 
             # Request Body
             # Skip for GET, DELETE, HEAD
@@ -243,15 +226,9 @@ class OASGenerator:
 
             self.oas["paths"][path_url][method] = op_obj
             
-            # Record Source Map for Operation Metadata (in $index.xlsx Paths sheet)
-            # These are defined in the Paths sheet, not in operation template files
-            self._record_source(f"paths.{path_url}.{method}.summary", "$index.xlsx", "Paths")
-            self._record_source(f"paths.{path_url}.{method}.description", "$index.xlsx", "Paths")
-            self._record_source(f"paths.{path_url}.{method}.operationId", "$index.xlsx", "Paths")
-            if tags:
-                self._record_source(f"paths.{path_url}.{method}.tags", "$index.xlsx", "Paths")
+            self.oas["paths"][path_url][method] = op_obj
             
-            # Record Source Map for Inline Definitions (in operation template files)
+            # Record Source Map (Granular)
             # 1. Parameters
             if details.get("parameters") is not None:
                 sheet = details["parameters"].attrs.get("sheet_name")
@@ -276,9 +253,16 @@ class OASGenerator:
                      self._record_source(f"paths.{path_url}.{method}.responses.{code}", file_ref, sheet)
 
             # 4. Root Operation Fallback
-            # Link the operation root to $index.xlsx Paths sheet for metadata (tags, summary, etc.)
-            # This ensures that warnings about operation-level properties resolve to the correct location
-            self._record_source(f"paths.{path_url}.{method}", "$index.xlsx", "Paths")
+            # Link the operation root to the Parameters sheet (most common entry point) 
+            # or Body if no params.
+            root_sheet = None
+            if details.get("parameters") is not None:
+                root_sheet = details["parameters"].attrs.get("sheet_name")
+            elif details.get("body") is not None:
+                root_sheet = details["body"].attrs.get("sheet_name")
+            # If no params or body, maybe it's just responses? or just metadata.
+            # If root_sheet is None, it will default to just opening the file, which is fine.
+            self._record_source(f"paths.{path_url}.{method}", file_ref, root_sheet)
 
     def _build_parameters(self, df):
         params = []
@@ -643,11 +627,6 @@ class OASGenerator:
             params = self._build_parameters(global_components["parameters"])
             for p in params:
                 self.oas["components"]["parameters"][p["name"]] = p
-            
-            # Record source mapping for parameters
-            if source_file:
-                sheet_name = global_components["parameters"].attrs.get("sheet_name")
-                self._record_source("components.parameters", source_file, sheet_name)
 
         # 2. Headers (Global)
         if global_components.get("headers") is not None:
@@ -679,11 +658,6 @@ class OASGenerator:
                         header_obj["example"] = self._parse_example_string(example)
 
                     self.oas["components"]["headers"][name] = header_obj
-            
-            # Record source mapping for headers
-            if source_file:
-                sheet_name = global_components["headers"].attrs.get("sheet_name")
-                self._record_source("components.headers", source_file, sheet_name)
 
         # 3. Schemas (Global)
         if global_components.get("schemas") is not None:
@@ -789,17 +763,6 @@ class OASGenerator:
                 self.oas["components"]["responses"][str(root_name)] = (
                     self._build_single_response(response_df, description_override=root_description)
                 )
-            
-            # Record source mapping for responses
-            if source_file:
-                sheet_name = global_components["responses"].attrs.get("sheet_name")
-                self._record_source("components.responses", source_file, sheet_name)
-        
-        # 5. Security Schemes (if present in global_components)
-        if global_components.get("securitySchemes") is not None:
-            # Security schemes are already in the components_data, just record source
-            if source_file:
-                self._record_source("components.securitySchemes", source_file, "Security Schemes")
 
         # Rule 10: Check for missing critical schemas and report them
         self._check_and_report_deficiencies()
@@ -972,23 +935,20 @@ class OASGenerator:
                     parent = p_str
                 # Else parent remains None (Root)
             
-            # NOTE: parent_idx will be resolved in second pass (order-independent)
             debug_log.append(f"Row {idx}: Name='{name}' (Raw: {raw_name}), Parent='{parent}' (Raw: {raw_parent})")
 
             node = {
-                "idx": idx,
                 "name": name,
                 "type": self._get_type(row),
                 "description": self._get_description(row),
                 "parent": parent,
-                "parent_idx": None,  # Resolved in second pass
                 "mandatory": is_mandatory,
                 "schema_obj": self._map_type_to_schema(row, is_node=True),
             }
 
             nodes[idx] = node
             
-            # FIX: Node Map Prioritization - prefer ROOT definitions
+            # FIX: Node Map Prioritization
             if name not in node_map:
                 node_map[name] = node
             else:
@@ -1004,28 +964,15 @@ class OASGenerator:
                     node_map[name] = node
                 # Else: Existing is Root, Current is Child -> Keep Root (Do nothing)
 
-        # SECOND PASS: Resolve parent_idx by NAME lookup (ORDER-INDEPENDENT)
-        # This fixes the bug where children appearing before parents would fail to link
-        for idx, node in nodes.items():
-            parent_name = node.get("parent")
-            if parent_name:
-                # Find the ROOT node for this parent name
-                parent_node = node_map.get(parent_name)
-                if parent_node:
-                    node["parent_idx"] = parent_node["idx"]
-                else:
-                    # Parent not found - may be a combinator branch or missing schema
-                    debug_log.append(f"  Warning: Parent '{parent_name}' not found for node '{node['name']}'")
 
-        # Optimization: Build children map (Parent Index -> [Children Nodes])
+        # Optimization: Build children map (Parent -> [Children Nodes])
         children_map = {}
         for idx, node in nodes.items():
-            p_idx = node.get("parent_idx")
-            if p_idx is not None:
-                if p_idx not in children_map:
-                    children_map[p_idx] = []
-                children_map[p_idx].append(node)
-
+            p = node["parent"]
+            if p: # Not None and not empty
+                if p not in children_map:
+                    children_map[p] = []
+                children_map[p].append(node)
 
         # 2. Process combinators FIRST (before regular linking)
         for idx, node in nodes.items():
@@ -1036,7 +983,7 @@ class OASGenerator:
                 # Check for children matching name[n]
                 combinator_key = {"oneof": "oneOf", "anyof": "anyOf", "allof": "allOf"}[type_val]
                 
-                potential_children = children_map.get(idx, [])
+                potential_children = children_map.get(name, [])
                 pattern = re.compile(rf'^{re.escape(name)}\[(\d+)\]$')
                 indexed_children = []
                 
@@ -1122,8 +1069,8 @@ class OASGenerator:
             # FIX: Explicit Root Check (Parent is None)
             if parent_name is None:
                 roots.append(node)
-            elif node.get("parent_idx") is not None:
-                parent = nodes[node["parent_idx"]]
+            elif str(parent_name).strip() in node_map:
+                parent = node_map[str(parent_name).strip()]
                 parent_schema = parent["schema_obj"]
 
                 if parent_schema.get("type") == "array":
@@ -1209,8 +1156,7 @@ class OASGenerator:
         if not children_map:
             return schema
 
-        alt_idx = alt_node.get("idx")
-        children = children_map.get(alt_idx, [])
+        children = children_map.get(alt_name, [])
         
         # But wait! If this node IS a combinator, its children are [0], [1]...
         # Loop 2 already handled them into schema_obj['oneOf']...
@@ -1293,25 +1239,21 @@ class OASGenerator:
 
         # 7. Components
         if "components" in self.oas:
+            # Clean up empty global component sections
             comps = self.oas["components"]
-            # Prune empty sub-blocks
-            sub_blocks = ["parameters", "headers", "schemas", "responses", "securitySchemes"]
-            for block in sub_blocks:
-                if block in comps and not comps[block]:
-                    del comps[block]
+            # Specific cleanups
+            if "securitySchemes" in comps and not comps["securitySchemes"]:
+                del comps["securitySchemes"]
 
-            if comps:
-                # Reorder Components: securitySchemes FIRST
-                ordered_comps = OrderedDict()
-                if "securitySchemes" in comps:
-                    ordered_comps["securitySchemes"] = comps["securitySchemes"]
-                for k, v in comps.items():
-                    if k != "securitySchemes":
-                        ordered_comps[k] = v
-                ordered_oas["components"] = ordered_comps
-            else:
-                # components is empty, remove from self.oas to avoid catch-all logic
-                del self.oas["components"]
+            # Reorder Components: securitySchemes FIRST
+            ordered_comps = OrderedDict()
+            if "securitySchemes" in comps:
+                ordered_comps["securitySchemes"] = comps["securitySchemes"]
+            for k, v in comps.items():
+                if k != "securitySchemes":
+                    ordered_comps[k] = v
+
+            ordered_oas["components"] = ordered_comps
 
         # Add any other missing keys (e.g. externalDocs) at the end
         for k in self.oas:
@@ -1383,21 +1325,18 @@ class OASGenerator:
         """Returns the source map as a JSON string."""
         return json.dumps(self.source_map, indent=2)
 
-    def _recursive_schema_fix(self, obj, in_example=False, in_properties=False):
+    def _recursive_schema_fix(self, obj, in_example=False):
         """
         Recursively traverses the OAS structure and enforces key ordering:
         - 'description' is always first (for human readability)
         - 'example' and 'examples' are always last (for YAML formatting)
-        - 'title' is only reordered when it's an OAS metadata field, not when it's a schema property
         """
 
         if isinstance(obj, dict):
             # 1. Process children first
             for k, v in obj.items():
                 is_ex = k in ["example", "examples", "value"] or in_example
-                # Track if we're entering a properties block
-                is_props = k == "properties"
-                self._recursive_schema_fix(v, in_example=is_ex, in_properties=is_props)
+                self._recursive_schema_fix(v, in_example=is_ex)
 
 
             # 2. Re-order current dict if strictly required keys are present
@@ -1414,7 +1353,7 @@ class OASGenerator:
                 from collections import OrderedDict
                 
                 # Extract special keys
-                name = obj.pop("name", None) if not in_properties else None
+                name = obj.pop("name", None)
                 desc = obj.pop("description", None)
                 ref = obj.pop("$ref", None)
                 ex = obj.pop("example", None)
@@ -1426,8 +1365,7 @@ class OASGenerator:
                 if name is not None:
                     new_d["name"] = name
                 
-                # Only reorder 'title' if it's an OAS metadata field (not a schema property)
-                title = obj.pop("title", None) if not in_properties else None
+                title = obj.pop("title", None)
                 if title is not None:
                     new_d["title"] = title
                     
@@ -1460,7 +1398,7 @@ class OASGenerator:
 
         elif isinstance(obj, list):
             for item in obj:
-                self._recursive_schema_fix(item, in_example=in_example, in_properties=in_properties)
+                self._recursive_schema_fix(item, in_example=in_example)
 
 
     def _coerce_all_example_types(self, oas: dict) -> None:

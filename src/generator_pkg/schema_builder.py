@@ -59,15 +59,7 @@ def handle_schema_reference(type_val: str, schema_ref: str, desc, version: str) 
     ref_path = f"#/components/schemas/{schema_ref}"
 
     if type_val == "array":
-        is_oas30 = version.startswith("3.0")
-        if pd.notna(desc) and is_oas30:
-            # OAS 3.0: items cannot have siblings with $ref. Wrap in allOf.
-            items = {"allOf": [{"$ref": ref_path}], "description": str(desc)}
-        else:
-            items = {"$ref": ref_path}
-            if pd.notna(desc):
-                items["description"] = str(desc)
-        return {"type": "array", "items": items}
+        return {"type": "array", "items": {"$ref": ref_path}}
 
     # OAS 3.0 Workaround: $ref + description requires allOf wrapper
     # OAS 3.1: $ref + description can coexist as siblings
@@ -153,31 +145,25 @@ def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
 
     if pd.notna(min_val):
         try:
-            # Use RawNumericValue for perfect fidelity: Excel string → YAML as-is
-            from .yaml_output import RawNumericValue
-            str_val = str(min_val).strip()
-            
+            val = int(min_val) if float(min_val).is_integer() else float(min_val)
             if type_val == "string":
-                schema["minLength"] = int(float(str_val))
+                schema["minLength"] = int(val)
             elif type_val in ["integer", "number"]:
-                schema["minimum"] = RawNumericValue(str_val)
+                schema["minimum"] = val
             elif type_val == "array":
-                schema["minItems"] = int(float(str_val))
+                schema["minItems"] = int(val)
         except (ValueError, TypeError):
             pass
 
     if pd.notna(max_val):
         try:
-            # Use RawNumericValue for perfect fidelity: Excel string → YAML as-is
-            from .yaml_output import RawNumericValue
-            str_val = str(max_val).strip()
-            
+            val = int(max_val) if float(max_val).is_integer() else float(max_val)
             if type_val == "string":
-                schema["maxLength"] = int(float(str_val))
+                schema["maxLength"] = int(val)
             elif type_val in ["integer", "number"]:
-                schema["maximum"] = RawNumericValue(str_val)
+                schema["maximum"] = val
             elif type_val == "array":
-                schema["maxItems"] = int(float(str_val))
+                schema["maxItems"] = int(val)
         except (ValueError, TypeError):
             pass
 
@@ -201,12 +187,13 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
     desc = get_description(row)
     title = get_title(row)
 
-    # Handle standard $ref
+    # Handle combinators (oneOf/allOf/anyOf)
     if pd.notna(schema_ref):
         combinator_schema = handle_combinator_refs(type_val, schema_ref, desc)
         if combinator_schema:
             return combinator_schema
 
+        # Handle standard $ref
         ref_schema = handle_schema_reference(type_val, schema_ref, desc, version)
         schema.update(ref_schema)
 
@@ -216,10 +203,7 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
         type_val = "string"  # Fallback to string
 
     # Set base type if not already set by ref handling
-    has_ref_in_items = isinstance(schema.get("items"), dict) and "$ref" in schema["items"]
     if type_val != "array" and "$ref" not in schema and "allOf" not in schema:
-        schema["type"] = type_val
-    elif type_val == "array" and "items" not in schema:
         schema["type"] = type_val
 
     # Add title and description
@@ -227,13 +211,7 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
         schema["title"] = str(title)
     
     if pd.notna(desc):
-        # Special case for arrays: if desc is already in items, don't duplicate it at top level
-        should_add_top_desc = True
-        if type_val == "array" and has_ref_in_items:
-             # If we put it in items, don't put it here too
-             should_add_top_desc = False
-        
-        if should_add_top_desc and "description" not in schema:
+        if "description" not in schema:
             schema["description"] = str(desc)
 
     # FINAL DEDUPLICATION: If Title and Description are identical, keep only Description
@@ -269,8 +247,8 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
                 combinator_schema = handle_combinator_refs(item_type, schema_ref)
                 if combinator_schema:
                     schema["items"] = combinator_schema
-            elif not has_ref_in_items:
-                # Set primitive type or reference (only if items not already set by ref)
+            else:
+                # Set primitive type or reference
                 allowed_types = [
                     "string",
                     "number",
@@ -285,10 +263,9 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
                     # Assume it's a reference
                     if pd.isna(schema_ref):
                         ref_name = str(item_type_raw).strip()
-                        items_obj = {"$ref": f"#/components/schemas/{ref_name}"}
-                        if pd.notna(desc):
-                            items_obj["description"] = str(desc)
-                        schema["items"] = items_obj
+                        schema["items"] = {
+                            "$ref": f"#/components/schemas/{ref_name}"
+                        }
         elif "items" not in schema:
             schema["items"] = {}
 
@@ -296,31 +273,16 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
     # Both OAS 3.0 and 3.1 support examples at schema level
     # OAS 3.1 uses `examples` array, OAS 3.0 uses singular `example`
     ex = get_col_value(row, ["Example", "Examples"])
-    if pd.notna(ex) and str(ex).strip():
-        import io
-        import csv
-        # Use csv.reader to handle quoted commas and skipinitialspace for the comma+space separator
-        f = io.StringIO(str(ex).strip())
-        reader = csv.reader(f, skipinitialspace=True)
-        try:
-            raw_parts = next(reader)
-        except (StopIteration, csv.Error):
-            raw_parts = []
-            
-        parsed_examples = []
-        for part in raw_parts:
-            if part is None or (isinstance(part, str) and not part.strip() and not part == ""):
-                continue
-            parsed_ex = parse_example_string(part)
-            # Apply coercion if possible (for primitives and arrays)
-            parsed_ex = coerce_example_types(parsed_ex, schema, components_schemas)
-            parsed_examples.append(parsed_ex)
-            
-        if parsed_examples:
-            if version.startswith("3.1"):
-                schema["examples"] = parsed_examples
-            else:
-                # OAS 3.0: use singular example, take the first one
-                schema["example"] = parsed_examples[0]
+    if pd.notna(ex):
+        parsed_ex = parse_example_string(ex)
+        # Apply coercion if possible (for primitives and arrays)
+        # For complex objects, full coercion happens at response/component building level
+        parsed_ex = coerce_example_types(parsed_ex, schema, components_schemas)
+        
+        if version.startswith("3.1"):
+            schema["examples"] = [parsed_ex]
+        else:
+            # OAS 3.0: use singular example
+            schema["example"] = parsed_ex
 
     return schema
