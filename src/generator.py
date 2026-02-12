@@ -357,8 +357,10 @@ class OASGenerator:
             param = {
                 "name": name,
                 "in": str(in_loc).lower(),
-                "description": self._get_description(row) or "",
             }
+            desc = self._get_description(row)
+            if desc and str(desc).strip():
+                param["description"] = str(desc)
             if pd.notna(mandatory) and str(mandatory).strip():
                 param["required"] = str(mandatory).lower() in ["yes", "y", "true", "m"]
             

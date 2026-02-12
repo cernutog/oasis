@@ -40,7 +40,7 @@ def handle_combinator_refs(type_val: str, schema_ref: str, desc=None) -> dict | 
         combinator_key: [{"$ref": f"#/components/schemas/{r}"} for r in refs if r]
     }
 
-    if pd.notna(desc):
+    if desc and str(desc).strip():
         schema["description"] = str(desc)
 
     return schema
@@ -63,7 +63,7 @@ def handle_schema_reference(type_val: str, schema_ref: str, desc, version: str) 
 
     # OAS 3.0 Workaround: $ref + description requires allOf wrapper
     # OAS 3.1: $ref + description can coexist as siblings
-    has_desc = pd.notna(desc)
+    has_desc = bool(desc and str(desc).strip())
     is_oas30 = version.startswith("3.0")
 
     if has_desc:
@@ -210,7 +210,7 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
     if pd.notna(title):
         schema["title"] = str(title)
     
-    if pd.notna(desc):
+    if desc and str(desc).strip():
         if "description" not in schema:
             schema["description"] = str(desc)
 

@@ -628,3 +628,17 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
     - **Grouping & Sorting**: Refactored the `Schemas` sheet generation to a block-per-parent architecture.
     - **Normalization**: Enforced strict case-insensitive normalization for root names to prevent block duplication and ensure perfect alphabetical order.
 - **Key Modules**: `src/legacy_converter.py`, `run_oas_generation.py`, `check_index.py`.
+
+### Build v2.1.3 (2026-02-10)
+- **Fix**: Baselining audit parity convergence loop.
+- **Key Modules**: `src/generator.py`, `src/v3_writer.py`.
+
+### Build v2.1.4 (2026-02-11)
+- **Fix**: YAML anchor bug in OAS 3.0 headers.
+    - Implemented `deepcopy` during inline header resolution to prevent unintended YAML anchors (`&id001`) when the same component is referenced multiple times.
+- **Key Modules**: `src/generator_pkg/response_builder.py`.
+
+### Build v2.1.5 (2026-02-12)
+- **Hotfix**: Omit empty descriptions for parameters and schemas.
+    - Replaced `pd.notna()` with truthy and whitespace checks (`desc and str(desc).strip()`) to prevent generating `description: ''` in the output YAML when the source cell is empty or contains only whitespace.
+- **Key Modules**: `src/generator.py`, `src/generator_pkg/schema_builder.py`.
