@@ -286,10 +286,15 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.lbl_font_val.pack(side="left", padx=(5, 0))
         self.slider_font.configure(command=lambda v: self.lbl_font_val.configure(text=str(int(v))))
         
+        self.chk_word_wrap = ctk.CTkSwitch(
+            self.tab_view, text="Word wrap in YAML viewer", progress_color="#0A809E"
+        )
+        self.chk_word_wrap.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=20)
+
         self.chk_snap_default = ctk.CTkSwitch(
             self.tab_view, text="Dock documentation viewer to main window", progress_color="#0A809E"
         )
-        self.chk_snap_default.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=20)
+        self.chk_snap_default.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 20))
 
 
         # === 6. LOGS TAB ===
@@ -373,6 +378,10 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.slider_font.set(prefs.get("yaml_font_size", 12))
         self.lbl_font_val.configure(text=str(prefs.get("yaml_font_size", 12)))
         if prefs.get("doc_snap_default_enabled", True): self.chk_snap_default.select()
+        if prefs.get("yaml_word_wrap", True):
+            self.chk_word_wrap.select()
+        else:
+            self.chk_word_wrap.deselect()
 
         # Logs
         self.cbo_gen_log_theme.set(prefs.get("gen_log_theme", "Light"))
@@ -418,6 +427,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             "yaml_font": self.cbo_font.get(),
             "yaml_font_size": int(self.slider_font.get()),
             "doc_snap_default_enabled": bool(self.chk_snap_default.get()),
+            "yaml_word_wrap": bool(self.chk_word_wrap.get()),
             
             # Logs
             "gen_log_theme": self.cbo_gen_log_theme.get(),

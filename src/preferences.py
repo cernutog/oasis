@@ -37,6 +37,7 @@ class PreferencesManager:
         "yaml_theme": "oas-dark",
         "yaml_font": "Consolas",
         "yaml_font_size": 12,
+        "yaml_word_wrap": False,
         # Log Appearance
         "gen_log_theme": "Light",
         "import_log_theme": "Light", # New: Excel to OAS Log

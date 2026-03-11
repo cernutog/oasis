@@ -8,6 +8,11 @@ echo  OASIS STABLE RELEASE BUILD
 echo ============================================
 echo.
 
+REM Step 0: Kill running instances
+echo Step 0: Killing running instances...
+taskkill /F /IM OASIS.exe /T 2>nul
+taskkill /F /IM OAS_Generation.exe /T 2>nul
+
 REM Step 1: Read current version for display
 for /f %%i in ('python -c "from src.version import FULL_VERSION; print(FULL_VERSION)"') do set FULL_VER=%%i
 echo   Target Version: %FULL_VER%

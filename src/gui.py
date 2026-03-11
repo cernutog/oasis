@@ -896,15 +896,26 @@ class OASGenApp(ctk.CTk):
         self._current_marker_line = None
         yaml_font_size = self.prefs_manager.get("yaml_font_size", 12)
         yaml_font_family = self.prefs_manager.get("yaml_font", "Consolas")
+        yaml_word_wrap = self.prefs_manager.get("yaml_word_wrap", True)
         self.txt_yaml = CodeView(
             self.frame_yaml,
             lexer=pygments.lexers.YamlLexer,
             color_scheme="monokai",  # Use built-in initially
             font=(yaml_font_family, yaml_font_size),
+            wrap=("word" if yaml_word_wrap else "none"),
         )
         self.txt_yaml.pack(fill="both", expand=True, padx=2, pady=2)
-        
-        # Bind Ctrl+F for search
+
+        if not hasattr(self, "_tooltip_window"):
+            self._tooltip_window = None
+            self._tooltip_line = None
+        try:
+            self.txt_yaml.bind("<Motion>", self._on_yaml_hover, add="+")
+            self.txt_yaml.bind("<Leave>", self._hide_tooltip, add="+")
+        except Exception:
+            pass
+
+        self.after(0, self._reserve_yaml_hscroll_space)
         self.txt_yaml.bind("<Control-f>", self._show_search_dialog)
         
         # Override Double-Click Selection to trim punctuation
@@ -1098,6 +1109,19 @@ class OASGenApp(ctk.CTk):
             self.prefs_manager.save()
         self.destroy()
 
+    def _reserve_yaml_hscroll_space(self) -> None:
+        try:
+            hs = getattr(self.txt_yaml, "_hs", None)
+            frame = getattr(self.txt_yaml, "_frame", None)
+            if not hs or not frame:
+                return
+            self.txt_yaml.update_idletasks()
+            h = hs.winfo_reqheight()
+            if h and h > 0:
+                frame.grid_rowconfigure(1, minsize=h)
+        except Exception:
+            pass
+
     def open_preferences(self):
         """Open the preferences dialog."""
         dialog = PreferencesDialog(
@@ -1207,6 +1231,13 @@ class OASGenApp(ctk.CTk):
                     else:
                         self.txt_yaml.configure(font=("Consolas", font_size))
             except (tk.TclError, AttributeError, TypeError):
+                pass
+
+        # Apply word wrap
+        if "yaml_word_wrap" in new_prefs:
+            try:
+                self.txt_yaml.configure(wrap=("word" if new_prefs["yaml_word_wrap"] else "none"))
+            except Exception:
                 pass
 
         # Apply generation checkboxes
@@ -1603,7 +1634,7 @@ class OASGenApp(ctk.CTk):
 
                 result = self.linter.run_lint(selected_file, log_callback=thread_logger)
                 # Pass prog_win and prog_lbl for label update and closing
-                self.after(0, lambda: self.show_results(result, prog_win, prog_lbl))
+                self.after(0, lambda: self.show_results(result, prog_win, prog_lbl, fresh_run=True))
             except Exception as e:
                 self.after(0, lambda: self.val_log_print(f"THREAD CRASH: {e}"))
                 self.after(0, prog_win.destroy) # Close on error
@@ -1646,10 +1677,14 @@ class OASGenApp(ctk.CTk):
 
     def on_filter_change(self):
         if self.last_lint_result:
-            self.show_results(self.last_lint_result)
+            self.show_results(self.last_lint_result, fresh_run=False)
 
-    def show_results(self, result, progress_window=None, progress_label=None):
+    def show_results(self, result, progress_window=None, progress_label=None, fresh_run=False):
         self.last_lint_result = result  # Store for filtering
+
+        # Reset interactive filters on a fresh validation run
+        if fresh_run:
+            self.active_filters = set()
 
         # Helper to close progress
         def close_progress():
@@ -2000,7 +2035,7 @@ class OASGenApp(ctk.CTk):
 
         self.chart.set_disabled_codes(self.active_filters)
         if self.last_lint_result:
-            self.show_results(self.last_lint_result)
+            self.show_results(self.last_lint_result, fresh_run=False)
 
     def _filter_exclude_single(self, code):
         """CTRL+right-click: disable only this category, enable all others."""
@@ -2009,7 +2044,7 @@ class OASGenApp(ctk.CTk):
 
         self.chart.set_disabled_codes(self.active_filters)
         if self.last_lint_result:
-            self.show_results(self.last_lint_result)
+            self.show_results(self.last_lint_result, fresh_run=False)
 
     def _handle_filter_resize(self, event=None):
         """Switch between full labels and compact (count-only) based on width."""
@@ -2232,10 +2267,12 @@ class OASGenApp(ctk.CTk):
             with open(filepath, "r", encoding="utf-8") as f:
                 content = f.read()
 
-            # CodeView uses standard tk.Text API
-            self.txt_yaml.config(state="normal")
-            self.txt_yaml.delete("1.0", "end")
-            self.txt_yaml.insert("1.0", content)
+            # Bulk-load optimization:
+            # chlorophyll.CodeView wraps tk.Text and performs syntax highlighting in a command proxy.
+            # Using the normal Text API for large YAML triggers highlight_area on every insert/delete,
+            # which can cause flicker/freezes. Bypass the proxy via the original Tcl widget command
+            # and then do a single highlight pass.
+            self._set_yaml_view_content(content)
 
             # Apply validation markers if this is the validated file
             self._apply_validation_markers(os.path.basename(filepath))
@@ -2274,6 +2311,97 @@ class OASGenApp(ctk.CTk):
 
         # Update sync button visibility based on new file
         self._update_sync_button_visibility()
+
+    def _set_yaml_view_content(self, content: str) -> None:
+        """Set YAML viewer content without triggering per-line highlight loops."""
+        # Ensure writable for update
+        self.txt_yaml.config(state="normal")
+
+        # Cancel any pending highlight job from a previous file load
+        if hasattr(self, "_yaml_highlight_job") and self._yaml_highlight_job is not None:
+            try:
+                self.after_cancel(self._yaml_highlight_job)
+            except Exception:
+                pass
+            self._yaml_highlight_job = None
+
+        # Bypass chlorophyll command proxy if available
+        orig = getattr(self.txt_yaml, "_orig", None)
+        if orig:
+            try:
+                self.txt_yaml.tk.call(orig, "delete", "1.0", "end")
+                if content:
+                    self.txt_yaml.tk.call(orig, "insert", "1.0", content)
+            except Exception:
+                # Fallback to standard API
+                self.txt_yaml.delete("1.0", "end")
+                self.txt_yaml.insert("1.0", content)
+        else:
+            self.txt_yaml.delete("1.0", "end")
+            self.txt_yaml.insert("1.0", content)
+
+        # Keep viewport stable (start at top) and ensure geometry/scrollregion is computed
+        try:
+            self.txt_yaml.mark_set("insert", "1.0")
+            self.txt_yaml.see("1.0")
+        except Exception:
+            pass
+
+        # chlorophyll normally triggers this via the command proxy; since we bypass it we
+        # must update scrollbars/line-numbers manually to avoid scroll jitter at the end.
+        try:
+            self.txt_yaml.event_generate("<<ContentChanged>>")
+            self.txt_yaml.scroll_line_update()
+        except Exception:
+            pass
+
+        try:
+            self.txt_yaml.update_idletasks()
+        except Exception:
+            pass
+
+        # Force line numbers redraw once
+        try:
+            ln = getattr(self.txt_yaml, "_line_numbers", None)
+            if ln:
+                ln.redraw()
+        except Exception:
+            pass
+
+        # Schedule a single highlight pass (debounced) so the UI can paint first
+        def _do_highlight():
+            self._yaml_highlight_job = None
+
+            # If the user scrolls immediately after the content is loaded, the deferred
+            # highlight/line-number refresh can cause a visible yview "bounce" (most
+            # noticeable at the end of the file). Preserve the current viewport.
+            try:
+                yview = self.txt_yaml.yview()
+                xview = self.txt_yaml.xview()
+            except Exception:
+                yview = None
+                xview = None
+            try:
+                self.txt_yaml.highlight_all()
+            except Exception:
+                pass
+
+            # Re-sync scrollbars after highlighting (highlighting adds/removes tags)
+            try:
+                self.txt_yaml.scroll_line_update()
+            except Exception:
+                pass
+
+            # Restore viewport after the redraw.
+            try:
+                if yview is not None:
+                    self.txt_yaml.yview_moveto(yview[0])
+                if xview is not None:
+                    self.txt_yaml.xview_moveto(xview[0])
+            except Exception:
+                pass
+
+        self._yaml_highlight_job = self.after(10, _do_highlight)
 
     def open_in_browser(self):
         """Generate Redoc HTML and open it in the system's default browser."""
@@ -2447,6 +2575,26 @@ class OASGenApp(ctk.CTk):
 
     def _apply_validation_markers(self, filename):
         """Apply visual markers to lines with validation issues."""
+        # Only apply markers for the file that was actually validated.
+        # Otherwise, clearing/retagging thousands of lines can cause redraw flicker.
+        if not getattr(self, "validated_file", None) or self.validated_file != filename or not self.validation_issues:
+            try:
+                self.txt_yaml.tag_remove("error_line", "1.0", "end")
+                self.txt_yaml.tag_remove("warning_line", "1.0", "end")
+                self.txt_yaml.tag_remove("info_line", "1.0", "end")
+            except Exception:
+                pass
+
+            # Hide marker navigation when not applicable
+            try:
+                if hasattr(self, "nav_frame") and self.nav_frame.winfo_ismapped():
+                    self.nav_frame.pack_forget()
+            except Exception:
+                pass
+
+            self._hide_tooltip()
+            return
+
         # Remove previous tags
         self.txt_yaml.tag_remove("error_line", "1.0", "end")
         self.txt_yaml.tag_remove("warning_line", "1.0", "end")
@@ -2511,14 +2659,14 @@ class OASGenApp(ctk.CTk):
         self.current_marker_index = -1
         self._update_marker_position_label()
 
-        # Bind tooltip events
-        self.txt_yaml.bind("<Motion>", self._on_yaml_hover)
-        self.txt_yaml.bind("<Leave>", self._hide_tooltip)
+        # Show marker navigation only when markers exist
+        try:
+            if hasattr(self, "nav_frame") and not self.nav_frame.winfo_ismapped():
+                self.nav_frame.pack(side="right", padx=(10, 0))
+        except Exception:
+            pass
 
-        # Initialize tooltip variables
-        if not hasattr(self, "_tooltip_window"):
-            self._tooltip_window = None
-            self._tooltip_line = None
+        self._hide_tooltip()
 
     def _on_yaml_hover(self, event):
         """Show tooltip when hovering over a line with validation issues."""
@@ -2527,9 +2675,20 @@ class OASGenApp(ctk.CTk):
         line_num = int(index.split(".")[0])
 
         # Check if this line has issues
-        if line_num in self.validation_issues and self._tooltip_line != line_num:
+        issues = None
+        try:
+            issues = self.validation_issues.get(line_num)
+        except Exception:
+            issues = None
+        if issues is None:
+            try:
+                issues = self.validation_issues.get(str(line_num))
+            except Exception:
+                issues = None
+
+        if issues and self._tooltip_line != line_num:
             self._show_tooltip(event, line_num)
-        elif line_num not in self.validation_issues:
+        elif not issues:
             self._hide_tooltip(event)
 
     def _show_tooltip(self, event, line_num):
@@ -2537,7 +2696,18 @@ class OASGenApp(ctk.CTk):
         self._hide_tooltip(event)
         self._tooltip_line = line_num
 
-        issues = self.validation_issues.get(line_num, [])
+        issues = None
+        try:
+            issues = self.validation_issues.get(line_num)
+        except Exception:
+            issues = None
+        if issues is None:
+            try:
+                issues = self.validation_issues.get(str(line_num))
+            except Exception:
+                issues = None
+        if not issues:
+            issues = []
         if not issues:
             return
 
@@ -3302,8 +3472,11 @@ class OASGenApp(ctk.CTk):
         # Block modification keys
         if event.char and len(event.char) > 0 and ord(event.char) >= 32:
              # Check for Control modifier (Bit 2 normally)
-             # If Control is pressed, allow (e.g. Ctrl+C)
-             if event.state & 0x4: 
+             # If Control is pressed, allow (e.g. Ctrl+C, Ctrl+F, Ctrl+A)
+             if event.state & 0x4:
+                 return None
+             # Also allow if keysym is a known Ctrl shortcut (belt-and-suspenders for CodeView)
+             if event.keysym.lower() in ('c', 'a', 'f'):
                  return None
              return "break"
              
@@ -4171,5 +4344,7 @@ class CTKTooltip:
 
 
 if __name__ == "__main__":
+    app = OASGenApp()
+    app.mainloop()
     app = OASGenApp()
     app.mainloop()

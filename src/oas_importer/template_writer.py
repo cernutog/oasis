@@ -19,10 +19,12 @@ Usage:
 import os
 import sys
 import copy
+import re
 from typing import Dict, List, Any, Optional
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Font, Alignment
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.cell import range_boundaries
 from openpyxl.worksheet.worksheet import Worksheet
 
 # Global alignment for all data cells
@@ -65,6 +67,7 @@ class TemplateExcelWriter:
         self.template_type = template_type
         self.workbook: Optional[Workbook] = None
         self._response_template_ws: Optional[Worksheet] = None
+        self._original_cf_formulas: Dict[tuple[str, str, int], List[str]] = {}
         
     def load_template(self) -> Workbook:
         """Load the appropriate master template."""
@@ -77,12 +80,41 @@ class TemplateExcelWriter:
             raise FileNotFoundError(f"Template not found: {template_path}")
         
         self.workbook = load_workbook(template_path)
+
+        # Snapshot conditional formatting formulas as they exist in the template file.
+        # We'll use this to avoid modifying rules that were intentionally written with
+        # absolute row references.
+        self._snapshot_original_conditional_formatting_formulas()
         
         # Store reference to Response template for cloning
         if 'Response' in self.workbook.sheetnames:
             self._response_template_ws = self.workbook['Response']
         
         return self.workbook
+
+    def _snapshot_original_conditional_formatting_formulas(self) -> None:
+        if not self.workbook:
+            return
+
+        self._original_cf_formulas = {}
+        for ws in self.workbook.worksheets:
+            cf = getattr(ws, "conditional_formatting", None)
+            if not cf:
+                continue
+            rules_map = getattr(cf, "_cf_rules", None)
+            if not rules_map:
+                continue
+
+            for _sqref, rules in list(rules_map.items()):
+                sqref_text = str(_sqref)
+                for idx, rule in enumerate(rules):
+                    formulas = getattr(rule, "formula", None)
+                    if not formulas:
+                        continue
+                    try:
+                        self._original_cf_formulas[(ws.title, sqref_text, idx)] = list(formulas)
+                    except Exception:
+                        pass
     
     def fill_parameters_sheet(self, data_rows: List[Dict[str, Any]]) -> None:
         """
@@ -210,12 +242,94 @@ class TemplateExcelWriter:
         
         # Finalize before saving
         self.finalize()
+
+        # openpyxl can rewrite conditional formatting formulas and turn relative row
+        # references into absolute ones (e.g. $A$2). That breaks per-row CF logic
+        # (all rows end up depending on row 2). Normalize formulas back to relative
+        # rows while preserving optional absolute column ($A2).
+        self._sanitize_conditional_formatting_formulas()
         
         self.workbook.save(filepath)
         
         # Close workbook to release file handles
         self.workbook.close()
         self.workbook = None
+
+    def _sanitize_conditional_formatting_formulas(self) -> None:
+        if not self.workbook:
+            return
+
+        # We only want to fix the common openpyxl round-trip issue where per-row
+        # conditional formatting gets rewritten to reference the FIRST row absolutely
+        # (e.g. $A$2) even though the CF applies to A2:A5000.
+        #
+        # To avoid breaking rules that intentionally use absolute rows, we only
+        # de-absolutize row refs that match the first row of the CF range.
+        # Examples we will fix when min_row == 2:
+        # - $A$2 -> $A2
+        # - A$2  -> A2
+        # - Sheet1!$A$2 -> Sheet1!$A2
+        def _fix_formula_for_min_row(formula: str, min_row: int) -> str:
+            # Replace occurrences of $<row> only when the row number == min_row
+            row_pat = re.compile(rf"(\$?[A-Z]{{1,3}})\$({min_row})(?!\d)")
+            return row_pat.sub(r"\1\2", formula)
+
+        def _is_row_absolute_for_min_row(formula: str, min_row: int) -> bool:
+            # True if the formula contains a $ before the min_row in a cell reference.
+            # Examples (min_row=2): $A$2, A$2, Sheet!$A$2
+            return re.search(rf"\$({min_row})(?!\d)", formula) is not None
+
+        for ws in self.workbook.worksheets:
+            cf = getattr(ws, "conditional_formatting", None)
+            if not cf:
+                continue
+
+            rules_map = getattr(cf, "_cf_rules", None)
+            if not rules_map:
+                continue
+
+            for _sqref, rules in list(rules_map.items()):
+                # _sqref can contain multiple ranges separated by spaces
+                sqref_text = str(_sqref)
+                sqrefs = [r for r in sqref_text.replace(",", " ").split() if r]
+
+                # Determine min_row across all sqrefs for conservative fixing.
+                # If we cannot parse, skip.
+                min_rows = []
+                max_rows = []
+                for r in sqrefs:
+                    try:
+                        _min_col, _min_row, _max_col, _max_row = range_boundaries(r)
+                        min_rows.append(_min_row)
+                        max_rows.append(_max_row)
+                    except Exception:
+                        continue
+
+                if not min_rows:
+                    continue
+
+                min_row = min(min_rows)
+                # If the CF only applies to a single row, there's no per-row behavior to preserve.
+                if max(max_rows) <= min_row:
+                    continue
+
+                for idx, rule in enumerate(rules):
+                    formulas = getattr(rule, "formula", None)
+                    if not formulas:
+                        continue
+
+                    # Only fix rules that were originally relative (in the template)
+                    # but are now absolute for min_row.
+                    original = self._original_cf_formulas.get((ws.title, sqref_text, idx))
+                    if original:
+                        originally_abs = any(_is_row_absolute_for_min_row(f, min_row) for f in original)
+                        currently_abs = any(_is_row_absolute_for_min_row(f, min_row) for f in formulas)
+                        if originally_abs or not currently_abs:
+                            continue
+                    try:
+                        rule.formula = [_fix_formula_for_min_row(f, min_row) for f in formulas]
+                    except Exception:
+                        pass
     
     def close(self) -> None:
         """Close the workbook and release resources."""

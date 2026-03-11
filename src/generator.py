@@ -840,10 +840,15 @@ class OASGenerator:
         Builds a dictionary of schema components from a single flat sheet containing multiple schemas.
         """
         nodes = {}
-        node_map = {}  # Map Name -> Node
+        node_map = {}  # Map (block_id, Name) -> Node (prevents cross-schema collisions)
         roots = []
-        combinator_schemas = {}  # Track processed combinators
+        combinator_schemas = {}  # Track processed combinators per block: {(block_id, name): schema_obj}
         df.columns = df.columns.str.strip()
+
+        # Schemas sheet contains multiple schema blocks separated by blank rows.
+        # Without scoping, repeated names (e.g. 'searchCriteria') can collide across blocks and
+        # incorrectly merge properties/required arrays between unrelated schemas.
+        block_id = 0
 
         # PRE-SCAN: Identify all refs used in oneOf vs allOf to ensure correct selective closure
         # This prevents race conditions where a oneOf branch is built before we know it's also in allOf
@@ -879,12 +884,20 @@ class OASGenerator:
         
         # REFINED PRE-SCAN: Build temporary name->type map for accurate tracking
         temp_type_map = {}
+        tmp_block_id = 0
         for _, row in df.iterrows():
             t_name = self._get_name(row)
-            if pd.notna(t_name):
-                temp_type_map[str(t_name).strip()] = str(self._get_type(row)).strip().lower()
+            if pd.isna(t_name) or not str(t_name).strip():
+                tmp_block_id += 1
+                continue
+            temp_type_map[(tmp_block_id, str(t_name).strip())] = str(self._get_type(row)).strip().lower()
         
+        tmp_block_id = 0
         for _, row in df.iterrows():
+            t_name = self._get_name(row)
+            if pd.isna(t_name) or not str(t_name).strip():
+                tmp_block_id += 1
+                continue
             s_ref = self._get_schema_name(row)
             if pd.notna(s_ref):
                 ref_name = str(s_ref).strip()
@@ -896,14 +909,14 @@ class OASGenerator:
                     m = re.match(r"^(.+)\[(\d+)\]$", p_name)
                     if m:
                         base_name = m.group(1)
-                        base_type = temp_type_map.get(base_name)
+                        base_type = temp_type_map.get((tmp_block_id, base_name))
                         if base_type == "oneof":
                             self.oneof_refs.add(ref_name)
                         elif base_type == "allof":
                             self.allof_refs.add(ref_name)
                     
                     # Case B: Parent is a combinator root (e.g. Filter)
-                    p_type = temp_type_map.get(p_name)
+                    p_type = temp_type_map.get((tmp_block_id, p_name))
                     if p_type == "oneof":
                         self.oneof_refs.add(ref_name)
                     elif p_type == "allof":
@@ -915,7 +928,9 @@ class OASGenerator:
         for idx, row in df.iterrows():
             name = self._get_name(row)
             raw_name = name
-            if pd.isna(name):
+            if pd.isna(name) or not str(name).strip():
+                # Blank row between schema blocks
+                block_id += 1
                 continue
             name = str(name).strip()
             # FIX: Skip rows with empty name string (e.g. ghost rows)
@@ -948,24 +963,26 @@ class OASGenerator:
                 "parent": parent,
                 "mandatory": is_mandatory,
                 "schema_obj": self._map_type_to_schema(row, is_node=True),
+                "block_id": block_id,
             }
 
             nodes[idx] = node
             
             # FIX: Node Map Prioritization
-            if name not in node_map:
-                node_map[name] = node
+            map_key = (block_id, name)
+            if map_key not in node_map:
+                node_map[map_key] = node
             else:
-                existing = node_map[name]
+                existing = node_map[map_key]
                 existing_is_root = existing["parent"] is None
                 current_is_root = parent is None
                 
                 if current_is_root:
                     # Root always wins (or overwrites/updates other root)
-                    node_map[name] = node
+                    node_map[map_key] = node
                 elif not existing_is_root:
                     # Child overwrites child (default behavior for potential duplicates)
-                    node_map[name] = node
+                    node_map[map_key] = node
                 # Else: Existing is Root, Current is Child -> Keep Root (Do nothing)
 
 
@@ -973,21 +990,23 @@ class OASGenerator:
         children_map = {}
         for idx, node in nodes.items():
             p = node["parent"]
-            if p: # Not None and not empty
-                if p not in children_map:
-                    children_map[p] = []
-                children_map[p].append(node)
+            if p:  # Not None and not empty
+                k = (node.get("block_id", 0), p)
+                if k not in children_map:
+                    children_map[k] = []
+                children_map[k].append(node)
 
         # 2. Process combinators FIRST (before regular linking)
         for idx, node in nodes.items():
             name = node["name"]
             type_val = str(node["type"]).strip().lower() if pd.notna(node["type"]) else ""
+            b_id = node.get("block_id", 0)
             
             if type_val in ["oneof", "anyof", "allof"]:
                 # Check for children matching name[n]
                 combinator_key = {"oneof": "oneOf", "anyof": "anyOf", "allof": "allOf"}[type_val]
                 
-                potential_children = children_map.get(name, [])
+                potential_children = children_map.get((b_id, name), [])
                 pattern = re.compile(rf'^{re.escape(name)}\[(\d+)\]$')
                 indexed_children = []
                 
@@ -1040,6 +1059,7 @@ class OASGenerator:
                     combinator_schemas[name] = schema_obj
                     # CRITICAL: Update the node's schema_obj so linking uses the combinator structure
                     node["schema_obj"] = schema_obj
+                    combinator_schemas[(b_id, name)] = schema_obj
 
         # 3. Regular linking for non-combinator nodes
         for idx, node in nodes.items():
@@ -1047,10 +1067,13 @@ class OASGenerator:
 
             parent_name = node["parent"]
             type_val = str(node["type"]).strip().lower() if pd.notna(node["type"]) else ""
+            b_id = node.get("block_id", 0)
             
             # Check if child of ANY combinator
             is_combinator_child = False
-            for comb_name in combinator_schemas:
+            for (comb_block, comb_name), _schema in combinator_schemas.items():
+                if comb_block != b_id:
+                    continue
                 # Optimized check: name starts with comb_name + "["
                 if name.startswith(comb_name + "["):
                      # Verify exact pattern (name matches comb_name[digits...])
@@ -1073,8 +1096,8 @@ class OASGenerator:
             # FIX: Explicit Root Check (Parent is None)
             if parent_name is None:
                 roots.append(node)
-            elif str(parent_name).strip() in node_map:
-                parent = node_map[str(parent_name).strip()]
+            elif (b_id, str(parent_name).strip()) in node_map:
+                parent = node_map[(b_id, str(parent_name).strip())]
                 parent_schema = parent["schema_obj"]
 
                 if parent_schema.get("type") == "array":

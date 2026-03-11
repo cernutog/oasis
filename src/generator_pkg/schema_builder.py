@@ -119,7 +119,7 @@ def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
     if pd.notna(fmt):
         schema["format"] = str(fmt)
 
-    pattern = get_col_value(row, ["PatternEba", "Pattern", "Regex"])
+    pattern = get_col_value(row, ["Regex", "Pattern", "PatternEba"])
     if pd.notna(pattern):
         schema["pattern"] = str(pattern)
 
@@ -274,7 +274,8 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
     # OAS 3.1 uses `examples` array, OAS 3.0 uses singular `example`
     ex = get_col_value(row, ["Example", "Examples"])
     if pd.notna(ex):
-        parsed_ex = parse_example_string(ex)
+        ex_first = str(ex).split(";")[0].strip()
+        parsed_ex = parse_example_string(ex_first)
         # Apply coercion if possible (for primitives and arrays)
         # For complex objects, full coercion happens at response/component building level
         parsed_ex = coerce_example_types(parsed_ex, schema, components_schemas)

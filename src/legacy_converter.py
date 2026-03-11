@@ -188,8 +188,8 @@ class LegacyConverter:
         items_c = gv(["items data type", "array only"])
         min_c = gv(["min"])
         max_c = gv(["max"])
-        pat_c = gv(["pattern", "eba"])
         reg_c = gv(["regex"])
+        pat_c = gv(["pattern", "eba"])
         all_c = gv(["allowed value", "allowed"])
         ex_c = gv(["example"])
         
@@ -946,7 +946,79 @@ class LegacyConverter:
             if i < len(all_blocks) - 1:
                 final_final_rows.append([None] * 14) # Blank line R10
                 
-        self._write_rows(ws, final_final_rows, start_row=2)
+        # Compute hierarchy levels for grouping.
+        # Level is written to column O (15) and used for Excel outline grouping.
+        def _ensure_len_15(r: List[Any]) -> List[Any]:
+            rr = list(r)
+            while len(rr) < 15:
+                rr.append("")
+            return rr
+
+        enriched_rows: List[List[Any]] = []
+        parent_map: Dict[str, str] = {}
+        in_block = False
+        for r in final_final_rows:
+            if r is None:
+                continue
+            if all(v is None or v == "" for v in r):
+                enriched_rows.append(_ensure_len_15(r))
+                parent_map = {}
+                in_block = False
+                continue
+
+            rr = _ensure_len_15(r)
+            name = rr[0] if len(rr) > 0 else ""
+            parent = rr[1] if len(rr) > 1 else ""
+            if parent == "" or parent is None:
+                level = 0
+                parent_map = {}
+                in_block = True
+            else:
+                if in_block and isinstance(name, str) and name:
+                    parent_map[str(name)] = str(parent) if parent is not None else ""
+
+                level = 1
+                cur = str(parent) if parent is not None else ""
+                guard = 0
+                while cur and guard < 50:
+                    p2 = parent_map.get(cur)
+                    if not p2:
+                        break
+                    level += 1
+                    cur = p2
+                    guard += 1
+
+            rr[14] = level
+            enriched_rows.append(rr)
+
+        self._write_rows(ws, enriched_rows, start_row=2)
+
+        try:
+            ws.column_dimensions["O"].hidden = True
+        except Exception:
+            pass
+
+        try:
+            ws.sheet_properties.outlinePr.summaryBelow = True
+        except Exception:
+            pass
+
+        try:
+            for i, r in enumerate(enriched_rows, start=2):
+                lvl = r[14]
+                if isinstance(lvl, int) and lvl >= 0:
+                    ws.row_dimensions[i].outlineLevel = min(lvl, 7)
+                    ws.row_dimensions[i].hidden = False
+
+                    # Visual indent in column A based on level (does not change cell content)
+                    try:
+                        cell = ws.cell(row=i, column=1)
+                        indent = min(max(lvl, 0) * 2, 15)
+                        cell.alignment = Alignment(horizontal="left", wrap_text=False, indent=indent)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
     
     def _convert_endpoint(self, legacy_path: Path):
         """Convert endpoint *.xlsm to *.xlsx."""
@@ -1123,6 +1195,23 @@ class LegacyConverter:
                 media_row = ["content", "application/json", "", "", "schema", "", wrapper_name, "", "M",
                              "", "", "", "", "", ""]
                 self._write_rows(ws, [media_row], start_row=3)
+
+                if str(code) in ("200", "201"):
+                    self._add_ok_response_example(
+                        ws=ws,
+                        xl_legacy=xl,
+                        response_code=str(code),
+                        response_children=children,
+                        ep_filename=filename,
+                    )
+
+                if str(code) == "400":
+                    self._add_400_response_example(
+                        ws=ws,
+                        xl_legacy=xl,
+                        response_children=children,
+                        ep_filename=filename,
+                    )
     
     # === Helper Methods ===
     
@@ -1197,7 +1286,7 @@ class LegacyConverter:
             out_name, dt = self._resolve_data_type(dtype, ep_filename)
             
             # If it resolves to a named schema (not literal 'object' or 'array'), mark it
-            if out_name and low_dtype not in ["object", "array"] and dt:
+            if out_name and low_dtype not in ["object", "array"] and dt and dt.type and dt.type.lower() not in ["object", "array"]:
                 schema_ref_nodes.add(name.lower())
                 referenced_data_types.add(out_name)
         
@@ -1258,8 +1347,16 @@ class LegacyConverter:
                 if not it_to_resolve and dt:
                     it_to_resolve = dt.items_type
                 items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
+            elif dt and dt.type and dt.type.lower() in ["object", "array"]:
+                # Inline resolved object/array schemas to preserve legacy structure
+                resolved_type = dt.type.lower()
+                schema_name = ""
+                if resolved_type == "array":
+                    it_to_resolve = items_type_row
+                    if not it_to_resolve:
+                        it_to_resolve = dt.items_type or ""
+                    items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
             elif dt:
-                # Regular business schema (even if it's an object or array internally)
                 resolved_type = "schema"
                 schema_name = out_name
                 referenced_data_types.add(out_name)
@@ -1328,6 +1425,7 @@ class LegacyConverter:
         omit_field: Optional[str] = None,
         override_field: Optional[str] = None,
         override_value: Any = None,
+        override_fields: Optional[Dict[str, Any]] = None,
         array_item_index: int = 0,
     ) -> dict:
         """
@@ -1374,49 +1472,52 @@ class LegacyConverter:
                     low_t = low
                 return self._generate_synthetic_value(low_t)
 
-        # Build parent → {child_name: ...} tree
-        # We work with the flat list and reconstruct hierarchy
-        # Step 1: collect all node names and their direct parent
+        # Build parent → children tree.
+        # IMPORTANT: legacy structures can contain duplicate field names under different parents.
+        # Use unique node ids internally to avoid overwriting nodes by name.
+
         node_parent: Dict[str, str] = {}
+        node_name: Dict[str, str] = {}
         node_dtype: Dict[str, str] = {}
         node_mandatory: Dict[str, str] = {}
         node_items: Dict[str, str] = {}
-        ordered_names: List[str] = []
+        ordered_uids: List[str] = []
 
-        for name, parent, desc, dtype, mandatory, v_rules, items_type in children:
-            node_parent[name] = parent or ""
-            node_dtype[name] = dtype or "string"
-            node_mandatory[name] = mandatory or ""
-            node_items[name] = items_type or ""
-            if name not in ordered_names:
-                ordered_names.append(name)
+        name_to_last_uid: Dict[str, str] = {}
+        for i, (name, parent, desc, dtype, mandatory, v_rules, items_type) in enumerate(children):
+            uid = f"{name}__{i}"
+            node_name[uid] = name
+            node_dtype[uid] = dtype or "string"
+            node_mandatory[uid] = mandatory or ""
+            node_items[uid] = items_type or ""
 
-        # Identify root nodes (no parent, or parent not in node list)
-        node_set = set(ordered_names)
+            parent_name = parent or ""
+            parent_uid = name_to_last_uid.get(parent_name, "") if parent_name else ""
+            node_parent[uid] = parent_uid
+            ordered_uids.append(uid)
 
-        def is_root(name):
-            p = node_parent.get(name, "")
-            return not p or p not in node_set
+            # Update last seen uid for this name
+            name_to_last_uid[name] = uid
 
-        # Step 2: recursively build dict for a subtree rooted at `parent_name`
-        # children_of[parent] = [child_name, ...]
+        def is_root(uid: str) -> bool:
+            return not node_parent.get(uid, "")
+
         children_of: Dict[str, List[str]] = {}
-        for name in ordered_names:
-            p = node_parent.get(name, "")
-            if p not in children_of:
-                children_of[p] = []
-            children_of[p].append(name)
+        for uid in ordered_uids:
+            p_uid = node_parent.get(uid, "")
+            if p_uid not in children_of:
+                children_of[p_uid] = []
+            children_of[p_uid].append(uid)
 
-        def build_node(name: str, item_offset: int = 0) -> Any:
-            """Return the value for a node: scalar, dict, or list."""
-            dtype = node_dtype.get(name, "string")
+        def build_node(uid: str, item_offset: int = 0) -> Any:
+            dtype = node_dtype.get(uid, "string")
             low_dtype = dtype.lower()
             dt = self._resolve_leaf_dt(dtype, ep_filename)
-            my_children = children_of.get(name, [])
+            my_children = children_of.get(uid, [])
 
             # --- ARRAY ---
             if low_dtype == "array" or (dt and dt.type.lower() == "array"):
-                items_type_name = node_items.get(name, "")
+                items_type_name = node_items.get(uid, "")
                 if not items_type_name and dt:
                     items_type_name = dt.items_type or ""
                 items_dt = self._resolve_leaf_dt(items_type_name, ep_filename) if items_type_name else None
@@ -1424,13 +1525,19 @@ class LegacyConverter:
 
                 if my_children:
                     # Array of objects defined inline
-                    item1 = {c: build_node(c, item_offset=0) for c in my_children
-                             if c != omit_field or override_field is not None}
+                    item1 = {
+                        node_name[c]: build_node(c, item_offset=0)
+                        for c in my_children
+                        if node_name.get(c) != omit_field or override_field is not None
+                    }
                     # Check if we have enough examples for a second distinct item
                     can_make_second = _can_diversify(my_children, item_offset=1)
                     if can_make_second:
-                        item2 = {c: build_node(c, item_offset=1) for c in my_children
-                                 if c != omit_field or override_field is not None}
+                        item2 = {
+                            node_name[c]: build_node(c, item_offset=1)
+                            for c in my_children
+                            if node_name.get(c) != omit_field or override_field is not None
+                        }
                         return [item1, item2]
                     return [item1]
                 elif items_low == "object" or (items_dt and items_dt.type.lower() == "object"):
@@ -1449,23 +1556,28 @@ class LegacyConverter:
             if low_dtype == "object" or (dt and dt.type.lower() == "object" and my_children):
                 result = {}
                 for c in my_children:
-                    if c == omit_field:
+                    cname = node_name.get(c)
+                    if cname == omit_field:
                         continue
                     val = build_node(c, item_offset=item_offset)
-                    if c == override_field:
+                    if cname == override_field:
                         val = override_value
-                    result[c] = val
+                    if override_fields and cname in override_fields:
+                        val = override_fields.get(cname)
+                    result[cname] = val
                 return result
 
             # --- SCALAR (possibly a named schema that resolves to a scalar type) ---
             val = get_rotated_value(dtype, dt, item_offset=item_offset)
-            if name == override_field:
+            if node_name.get(uid) == override_field:
                 val = override_value
+            if override_fields and node_name.get(uid) in override_fields:
+                val = override_fields.get(node_name.get(uid))
             return val
 
-        def _can_diversify(child_names: List[str], item_offset: int) -> bool:
+        def _can_diversify(child_uids: List[str], item_offset: int) -> bool:
             """Check whether at least one child has >1 example value (enables 2nd array item)."""
-            for c in child_names:
+            for c in child_uids:
                 dtype = node_dtype.get(c, "string")
                 dt = self._resolve_leaf_dt(dtype, ep_filename)
                 examples = self._get_example_values(dt)
@@ -1475,14 +1587,17 @@ class LegacyConverter:
 
         # Step 3: build root dict
         result = {}
-        for name in ordered_names:
-            if not is_root(name):
+        for uid in ordered_uids:
+            if not is_root(uid):
                 continue
+            name = node_name.get(uid)
             if name == omit_field:
                 continue
-            val = build_node(name, item_offset=array_item_index)
+            val = build_node(uid, item_offset=array_item_index)
             if name == override_field:
                 val = override_value
+            if override_fields and name in override_fields:
+                val = override_fields.get(name)
             result[name] = val
 
         return result
@@ -1672,6 +1787,199 @@ class LegacyConverter:
             })
         
         return params
+
+    def _pick_first_example_value(self, raw: str) -> str:
+        if raw is None:
+            return ""
+        s = str(raw).strip()
+        if not s or s.lower() == "nan":
+            return ""
+        for sep in [";", "|", ",", "\n"]:
+            if sep in s:
+                parts = [p.strip() for p in s.split(sep) if p.strip()]
+                if parts:
+                    return parts[0]
+        return s
+
+    def _read_legacy_params_with_examples(self, xl_legacy, sheet_name: str) -> List[Dict[str, str]]:
+        if sheet_name not in xl_legacy.sheet_names:
+            return []
+
+        try:
+            df = pd.read_excel(xl_legacy, sheet_name=sheet_name, dtype=str, header=None)
+        except Exception:
+            return []
+
+        header_row_idx = self._find_header_row(df, ["element", "name", "type"])
+        if header_row_idx == -1:
+            return []
+
+        headers = [str(c).strip().lower() for c in df.iloc[header_row_idx].values]
+        df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+        df.columns = headers
+
+        def _get_col(row, keys: List[str]) -> str:
+            for k in keys:
+                if k in df.columns:
+                    return self._clean_value(row.get(k))
+            # Partial match fallback
+            for c in df.columns:
+                for k in keys:
+                    if k in str(c):
+                        return self._clean_value(row.get(c))
+            return ""
+
+        out: List[Dict[str, str]] = []
+        for _, row in df.iterrows():
+            name = _get_col(row, ["element", "request header", "name"])
+            if not name or name.lower() in ["nan", "element", "name"]:
+                continue
+
+            dtype = _get_col(row, ["type", "data type"])
+            example_raw = _get_col(row, ["example"])
+            out.append(
+                {
+                    "name": name,
+                    "type": dtype or "string",
+                    "example": self._pick_first_example_value(example_raw),
+                }
+            )
+        return out
+
+    def _find_last_used_row(self, ws, max_scan_cols: int = 6) -> int:
+        try:
+            last = ws.max_row
+        except Exception:
+            last = 1
+        for r in range(last, 0, -1):
+            for c in range(1, max_scan_cols + 1):
+                try:
+                    if ws.cell(row=r, column=c).value not in (None, ""):
+                        return r
+                except Exception:
+                    continue
+        return 1
+
+    def _add_ok_response_example(
+        self,
+        ws,
+        xl_legacy,
+        response_code: str,
+        response_children: List[Tuple],
+        ep_filename: str,
+    ) -> None:
+        try:
+            for r in range(1, min(ws.max_row, 200) + 1):
+                if str(ws.cell(row=r, column=1).value).strip().lower() == "examples" and \
+                   str(ws.cell(row=r, column=2).value).strip() == "OK":
+                    return
+        except Exception:
+            pass
+
+        try:
+            ok_dict = self._build_body_example_dict(response_children, ep_filename)
+            ok_yaml = yaml.dump(
+                ok_dict,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            ).rstrip()
+        except Exception:
+            ok_yaml = ""
+
+        path_params = self._read_legacy_params_with_examples(xl_legacy, "Path")
+        headers = self._read_legacy_params_with_examples(xl_legacy, "Header")
+
+        def _param_example(name: str, raw_ex: str) -> str:
+            if name.strip().lower() == "senderbic":
+                return f"TSTBICXX{response_code}"
+            return raw_ex or ""
+
+        rows: List[List[Any]] = []
+
+        rows.append(["examples", "OK", "application/json", "", "", "", "", "", "", "", "", "", "", "", ""])
+
+        if path_params:
+            rows.append(["examples", "x-sandbox-request-path-params", "OK", "", "object", "", "", "", "", "", "", "", "", "", ""])
+            for p in path_params:
+                pname = p.get("name", "")
+                exv = _param_example(pname, p.get("example", ""))
+                rows.append(["examples", pname, "x-sandbox-request-path-params", "", "string", "", "", "", "", "", "", "", "", "", exv])
+
+        if headers:
+            rows.append(["examples", "x-sandbox-request-headers", "OK", "", "object", "", "", "", "", "", "", "", "", "", ""])
+            for h in headers:
+                hname = h.get("name", "")
+                exv = h.get("example", "")
+                rows.append(["examples", hname, "x-sandbox-request-headers", "", "string", "", "", "", "", "", "", "", "", "", exv])
+
+        rows.append(["examples", "value", "OK", "", "object", "", "", "", "", "", "", "", "", "", ok_yaml])
+
+        start_row = self._find_last_used_row(ws) + 1
+        self._write_rows(ws, rows, start_row=start_row)
+
+    def _add_400_response_example(
+        self,
+        ws,
+        xl_legacy,
+        response_children: List[Tuple],
+        ep_filename: str,
+    ) -> None:
+        try:
+            for r in range(1, min(ws.max_row, 200) + 1):
+                if str(ws.cell(row=r, column=1).value).strip().lower() == "examples" and \
+                   str(ws.cell(row=r, column=2).value).strip().lower() == "bad request":
+                    return
+        except Exception:
+            pass
+
+        try:
+            bad_dict = self._build_body_example_dict(
+                response_children,
+                ep_filename,
+                override_fields={
+                    "errorCode": "SC01",
+                    "errorCodeDescription": "Failed Parameter Validation",
+                },
+            )
+            bad_yaml = yaml.dump(
+                bad_dict,
+                default_flow_style=False,
+                allow_unicode=True,
+                sort_keys=False,
+            ).rstrip()
+        except Exception:
+            bad_yaml = ""
+
+        path_params = self._read_legacy_params_with_examples(xl_legacy, "Path")
+        headers = self._read_legacy_params_with_examples(xl_legacy, "Header")
+
+        def _param_example(name: str, raw_ex: str) -> str:
+            if name.strip().lower() == "senderbic":
+                return "TSTBICXX400"
+            return raw_ex or ""
+
+        rows: List[List[Any]] = []
+        rows.append(["examples", "Bad Request", "application/json", "", "", "", "", "", "", "", "", "", "", "", ""])
+
+        if path_params:
+            rows.append(["examples", "x-sandbox-request-path-params", "Bad Request", "", "object", "", "", "", "", "", "", "", "", "", ""])
+            for p in path_params:
+                pname = p.get("name", "")
+                exv = _param_example(pname, p.get("example", ""))
+                rows.append(["examples", pname, "x-sandbox-request-path-params", "", "string", "", "", "", "", "", "", "", "", "", exv])
+
+        if headers:
+            rows.append(["examples", "x-sandbox-request-headers", "Bad Request", "", "object", "", "", "", "", "", "", "", "", "", ""])
+            for h in headers:
+                hname = h.get("name", "")
+                exv = h.get("example", "") or ""
+                rows.append(["examples", hname, "x-sandbox-request-headers", "", "string", "", "", "", "", "", "", "", "", "", exv])
+
+        rows.append(["examples", "value", "Bad Request", "", "object", "", "", "", "", "", "", "", "", "", bad_yaml])
+
+        start_row = self._find_last_used_row(ws) + 1
+        self._write_rows(ws, rows, start_row=start_row)
     
     def _extract_operation_id(self, filename: str) -> str:
         """Extract operationId from filename: testOperation.260209.xlsm → testOperation"""
@@ -1747,7 +2055,13 @@ class LegacyConverter:
             for c_idx, value in enumerate(row, start=1):
                 cell = ws.cell(row=r_idx, column=c_idx)
                 cell.value = value if value != "" else None
-                cell.alignment = Alignment(vertical="top")
+                try:
+                    if cell.alignment:
+                        cell.alignment = cell.alignment.copy(vertical="top")
+                    else:
+                        cell.alignment = Alignment(vertical="top")
+                except Exception:
+                    cell.alignment = Alignment(vertical="top")
 
     def _autofit_columns(self, ws, max_width: int = 60):
         """Adjust column widths based on content with a maximum limit and forced wrap."""
@@ -1777,13 +2091,25 @@ class LegacyConverter:
                     for cell in col:
                         # MergedCell does not support direct style assignment in some contexts
                         if not hasattr(cell, 'alignment'): continue
-                        cell.alignment = Alignment(wrapText=True, vertical="top")
+                        try:
+                            if cell.alignment:
+                                cell.alignment = cell.alignment.copy(wrapText=True, vertical="top")
+                            else:
+                                cell.alignment = Alignment(wrapText=True, vertical="top")
+                        except Exception:
+                            cell.alignment = Alignment(wrapText=True, vertical="top")
                 else:
                     ws.column_dimensions[column_letter].width = max(target_width, 10)
                     # Keep vertical alignment
                     for cell in col:
                         if not hasattr(cell, 'alignment'): continue
                         if not cell.alignment or not cell.alignment.wrapText:
-                            cell.alignment = Alignment(vertical="top")
+                            try:
+                                if cell.alignment:
+                                    cell.alignment = cell.alignment.copy(vertical="top")
+                                else:
+                                    cell.alignment = Alignment(vertical="top")
+                            except Exception:
+                                cell.alignment = Alignment(vertical="top")
         except Exception as e:
             self.log(f"  Note: Auto-fit skipped for sheet '{ws.title}': {e}")

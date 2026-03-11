@@ -36,6 +36,14 @@ test_output*/
 Generated_From_Reimport/
 Demo Validation Errors/
 
+# Non-master template outputs (local artifacts)
+Templates Converted/
+Templates Converted Test/
+Templates Converted*/
+
+# Legacy source templates (local input, do not commit)
+Templates Legacy/
+
 # Generated HTML docs (Redoc)
 *.html
 !docs/*.html
@@ -52,12 +60,25 @@ oas_debug.json
 debug_build.bat
 clean_icon_cache.bat
 temp_templates_ignore/
+tests/_body_example_out/
 analyze_*.py
 check_*.py
 repro_*.py
 reproduce_*.py
 verify_*.py
 test_*.py
+
+# Local test/debug helpers (do not commit)
+tests/_check*.py
+tests/debug_*.py
+tests/_full_flow_debug/
+tests/_retransmit_debug/
+tests/_inspect_*.py
+tests/_scan_*.py
+tests/regenerate_*.py
+
+# Local helper tools (do not commit)
+tools/
 
 # Excel temp files
 ~$*.xlsm
