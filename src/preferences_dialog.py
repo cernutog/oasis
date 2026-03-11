@@ -125,7 +125,7 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # Window setup
         self.title("Preferences")
-        self.geometry("600x380") # Reduced height (was 420)
+        self.geometry("600x420")
         self.resizable(False, False) # Fixed size for cleaner look
 
         # Non-modal: only transient
@@ -162,7 +162,7 @@ class PreferencesDialog(ctk.CTkToplevel):
     def _add_section_separator(self, parent, text):
         """Add a captioned horizontal separator line to a tab."""
         frame = ctk.CTkFrame(parent, fg_color="transparent")
-        frame.pack(fill="x", padx=10, pady=(20, 8))
+        frame.pack(fill="x", padx=10, pady=(12, 6))
 
         # Left line
         left_line = ctk.CTkFrame(frame, height=2, fg_color="#888888")
@@ -232,10 +232,10 @@ class PreferencesDialog(ctk.CTkToplevel):
         self._add_section_separator(self.tab_templates, "Create Template from OAS")
 
         self.chk_excel_attr_diff = ctk.CTkSwitch(self.tab_templates, text="Attribute Diff", progress_color="#0A809E")
-        self.chk_excel_attr_diff.pack(anchor="w", padx=20, pady=(5, 10))
+        self.chk_excel_attr_diff.pack(anchor="w", padx=20, pady=(3, 6))
 
         self.chk_excel_line_diff = ctk.CTkSwitch(self.tab_templates, text="Line Diff", progress_color="#0A809E")
-        self.chk_excel_line_diff.pack(anchor="w", padx=20, pady=10)
+        self.chk_excel_line_diff.pack(anchor="w", padx=20, pady=(3, 6))
 
         # --- Section: Legacy Tools ---
         self._add_section_separator(self.tab_templates, "Legacy Tools")
@@ -247,7 +247,34 @@ class PreferencesDialog(ctk.CTkToplevel):
             variable=self.var_legacy_tracing,
             progress_color="#0A809E"
         )
-        self.chk_legacy_tracing.pack(anchor="w", padx=20, pady=(5, 10))
+        self.chk_legacy_tracing.pack(anchor="w", padx=20, pady=(3, 6))
+
+        self.var_legacy_collision_desc = ctk.BooleanVar(value=False)
+        self.chk_legacy_collision_desc = ctk.CTkSwitch(
+            self.tab_templates,
+            text="Include descriptions in collision detection",
+            variable=self.var_legacy_collision_desc,
+            progress_color="#0A809E",
+        )
+        self.chk_legacy_collision_desc.pack(anchor="w", padx=20, pady=(3, 6))
+
+        self.var_legacy_collision_examples = ctk.BooleanVar(value=False)
+        self.chk_legacy_collision_examples = ctk.CTkSwitch(
+            self.tab_templates,
+            text="Include examples in collision detection",
+            variable=self.var_legacy_collision_examples,
+            progress_color="#0A809E",
+        )
+        self.chk_legacy_collision_examples.pack(anchor="w", padx=20, pady=(3, 6))
+
+        self.var_legacy_capitalize_schemas = ctk.BooleanVar(value=True)
+        self.chk_legacy_capitalize_schemas = ctk.CTkSwitch(
+            self.tab_templates,
+            text="Capitalize operationId in schema names (PascalCase)",
+            variable=self.var_legacy_capitalize_schemas,
+            progress_color="#0A809E",
+        )
+        self.chk_legacy_capitalize_schemas.pack(anchor="w", padx=20, pady=(3, 6))
 
 
         # === 4. VALIDATION TAB ===
@@ -391,6 +418,9 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # Tools
         self.var_legacy_tracing.set(prefs.get("tools_legacy_tracing_enabled", True))
+        self.var_legacy_collision_desc.set(prefs.get("tools_legacy_collision_include_descriptions", False))
+        self.var_legacy_collision_examples.set(prefs.get("tools_legacy_collision_include_examples", False))
+        self.var_legacy_capitalize_schemas.set(prefs.get("tools_legacy_capitalize_schema_names", True))
 
 
     def save_preferences(self):
@@ -437,6 +467,9 @@ class PreferencesDialog(ctk.CTkToplevel):
             
             # Tools
             "tools_legacy_tracing_enabled": self.var_legacy_tracing.get(),
+            "tools_legacy_collision_include_descriptions": self.var_legacy_collision_desc.get(),
+            "tools_legacy_collision_include_examples": self.var_legacy_collision_examples.get(),
+            "tools_legacy_capitalize_schema_names": self.var_legacy_capitalize_schemas.get(),
         }
         
         self.prefs_manager.update(new_prefs)
@@ -489,3 +522,5 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.cbo_spectral_log_theme.set("Light")
 
         self.var_legacy_tracing.set(True)
+        self.var_legacy_collision_desc.set(False)
+        self.var_legacy_collision_examples.set(False)

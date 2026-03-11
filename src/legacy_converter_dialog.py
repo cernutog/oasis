@@ -338,7 +338,22 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         try:
             tracing = self.var_tracing.get()
             self._log(f"Starting conversion from {src} to {dst}...")
-            converter = LegacyConverter(src, dst, log_callback=self._log)
+            include_desc = False
+            include_ex = False
+            capitalize_schemas = True
+            if self.prefs_manager:
+                include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
+                include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
+                capitalize_schemas = bool(self.prefs_manager.get("tools_legacy_capitalize_schema_names", True))
+
+            converter = LegacyConverter(
+                src,
+                dst,
+                log_callback=self._log,
+                include_descriptions_in_collision=include_desc,
+                include_examples_in_collision=include_ex,
+                capitalize_schema_names=capitalize_schemas,
+            )
             success = converter.convert(tracing_enabled=tracing)
             
             if success:

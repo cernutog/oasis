@@ -123,7 +123,19 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
         try:
             self._log(f"Starting standalone analysis for {path}...\n")
             # We don't need real output/master dirs for standalone check
-            converter = LegacyConverter(path, path, log_callback=self._log)
+            include_desc = False
+            include_ex = False
+            if self.prefs_manager:
+                include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
+                include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
+
+            converter = LegacyConverter(
+                path,
+                path,
+                log_callback=self._log,
+                include_descriptions_in_collision=include_desc,
+                include_examples_in_collision=include_ex,
+            )
             success = converter.run_standalone_check(path)
             
             if success:

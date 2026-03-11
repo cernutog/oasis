@@ -39,12 +39,25 @@ class DataType:
 class LegacyConverter:
     """Converts legacy Excel templates to modern OAS format."""
     
-    def __init__(self, input_dir: str, output_dir: str, master_dir: str = None, log_callback=None):
+    def __init__(
+        self,
+        input_dir: str,
+        output_dir: str,
+        master_dir: str = None,
+        log_callback=None,
+        include_descriptions_in_collision: bool = False,
+        include_examples_in_collision: bool = False,
+        capitalize_schema_names: bool = True,
+    ):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
         self.master_dir = Path(master_dir) if master_dir else None
         self.log = log_callback or print
         self.tracing_enabled = True # Default
+
+        self.include_descriptions_in_collision = bool(include_descriptions_in_collision)
+        self.include_examples_in_collision = bool(include_examples_in_collision)
+        self.capitalize_schema_names = bool(capitalize_schema_names)
         
         # Internal registry
         self.global_schemas: Dict[str, DataType] = {} # out_name -> DataType
@@ -55,11 +68,17 @@ class LegacyConverter:
         # Double-pass state
         self.raw_data_types: Dict[str, Dict[str, DataType]] = {} # file_key -> {norm_name -> DataType}
         self.ordered_filenames: List[str] = [] # list of filenames in index order
-        self.schema_usage: Dict[str, List[str]] = {} # out_name -> ["op_id (sheet)", ...]
+        self.schema_usage: Dict[str, List[str]] = {} # out_name -> ["opId.Context.prop[.sub...]", ...]
         
         # Operation IDs mapping
         self.filename_to_opid = {}
         self.emitted_wrappers = set()
+        self.emitted_inline_components = set()
+        self.inline_component_fingerprints: Dict[Tuple, str] = {}
+        self.inline_component_fingerprint_by_name: Dict[str, Tuple] = {}
+        self.inline_component_root_desc: Dict[str, str] = {}
+        self.inline_component_example_sig: Dict[str, str] = {}
+        self.merge_provenance: Dict[str, Dict[str, Dict[str, set]]] = {}  # out_name -> {field -> {value_key -> set(file_keys)}}
         self.current_ep_name = None
         self.all_tags = set() # Track all tags for the index
 
@@ -221,7 +240,13 @@ class LegacyConverter:
     def _register_data_type(self, file_key: str, norm_name: str, dt: DataType):
         """Registers a data type, deduplicating by content and handling name collisions."""
         # Fingerprint for deduplication (exclude name, source_file, and pattern_eba)
-        fp_data = {k: v for k, v in dt.__dict__.items() if k not in ['name', 'source_file', 'pattern_eba']}
+        # Optionally include description/examples depending on preferences.
+        excluded = {'name', 'source_file', 'pattern_eba'}
+        if not self.include_descriptions_in_collision:
+            excluded.add('description')
+        if not self.include_examples_in_collision:
+            excluded.add('example')
+        fp_data = {k: v for k, v in dt.__dict__.items() if k not in excluded}
         
         # Normalize lists (ignore separators and extra spaces)
         def normalize_list(v):
@@ -244,6 +269,23 @@ class LegacyConverter:
         if fingerprint in self.fingerprints:
             out_name = self.fingerprints[fingerprint]
             self.output_names[mapping_key] = out_name
+
+            # Record merge provenance for neutral fields (description/examples) when they differ.
+            try:
+                canon = self.global_schemas.get(out_name)
+                if canon:
+                    if not self.include_descriptions_in_collision:
+                        desc_in = (dt.description or "").strip()
+                        desc_can = (canon.description or "").strip()
+                        if desc_in and desc_in != desc_can:
+                            self._record_merge_provenance(out_name, "description", desc_in, file_key)
+                    if not self.include_examples_in_collision:
+                        ex_in = (dt.example or "").strip()
+                        ex_can = (canon.example or "").strip()
+                        if ex_in and ex_in != ex_can:
+                            self._record_merge_provenance(out_name, "example", ex_in, file_key)
+            except Exception:
+                pass
             return out_name
             
         # 2. Name collision handling for new unique content
@@ -259,6 +301,19 @@ class LegacyConverter:
         self.fingerprints[fingerprint] = output_name
         self.output_names[mapping_key] = output_name
         return output_name
+
+    def _record_merge_provenance(self, out_name: str, field: str, value: str, file_key: str) -> None:
+        if not out_name or not field or value is None:
+            return
+        if out_name not in self.merge_provenance:
+            self.merge_provenance[out_name] = {}
+        if field not in self.merge_provenance[out_name]:
+            self.merge_provenance[out_name][field] = {}
+        key = str(value)
+        if key not in self.merge_provenance[out_name][field]:
+            self.merge_provenance[out_name][field][key] = set()
+        if file_key:
+            self.merge_provenance[out_name][field][key].add(str(file_key))
 
     def _resolve_data_type(self, name: str, ep_filename: Optional[str] = None) -> Tuple[Optional[str], Optional[DataType]]:
         """Resolves a named data type to its unique global output name and DataType object."""
@@ -312,6 +367,28 @@ class LegacyConverter:
             try:
                 xl = pd.ExcelFile(ep_file)
                 op_id = self.filename_to_opid.get(ep_filename, self._extract_operation_id(ep_filename))
+
+                def _add_usage(schema_name: str, ctx: str, prop_path: str = ""):
+                    if not schema_name:
+                        return
+                    if schema_name not in self.schema_usage:
+                        self.schema_usage[schema_name] = []
+                    base = f"{op_id}.{ctx}" if op_id else ctx
+                    usage_str = base if not prop_path else f"{base}.{prop_path}"
+                    if usage_str not in self.schema_usage[schema_name]:
+                        self.schema_usage[schema_name].append(usage_str)
+
+                def _resolve_and_add(dtype_name: str, ctx: str, prop_path: str = ""):
+                    if not dtype_name:
+                        return
+                    if str(dtype_name).strip().lower() in ["string", "number", "integer", "boolean", "array", "object"]:
+                        return
+                    out_name, dt = self._resolve_data_type(dtype_name, ep_filename)
+                    if out_name:
+                        _add_usage(out_name, ctx, prop_path)
+                        # If this is an array DataType, also track its items type as used in the same place
+                        if dt and dt.type and dt.type.lower() == "array" and dt.items_type:
+                            _resolve_and_add(dt.items_type, ctx, prop_path)
                 
                 # Check Path & Header for refs
                 for sheet in ["Path", "Header"]:
@@ -323,54 +400,56 @@ class LegacyConverter:
                             df = df.iloc[hr+1:]
                             for _, row in df.iterrows():
                                 dtype = self._clean_value(row.get("Type", ""))
-                                if dtype and dtype.lower() not in ["string", "number", "integer", "boolean", "array", "object"]:
-                                    out_name, _ = self._resolve_data_type(dtype, ep_filename)
-                                    if out_name:
-                                        if out_name not in self.schema_usage: self.schema_usage[out_name] = []
-                                        usage_str = f"{op_id} ({sheet})"
-                                        if usage_str not in self.schema_usage[out_name]:
-                                            self.schema_usage[out_name].append(usage_str)
+                                name = self._clean_value(row.get("Name", ""))
+                                ctx = "PathParam" if sheet == "Path" else "Header"
+                                _resolve_and_add(dtype, ctx, name)
                                             
                 # Check Body & Responses
                 for sheet in xl.sheet_names:
                     if sheet in ["Body", "200", "201", "400", "401", "403", "404", "500"]:
                         children = self._read_legacy_structure(xl, sheet)
-                        for child_tuple in children:
-                            # Unpack: (name, parent, desc, dtype, mandatory, v_rules)
-                            self._track_recursive_usage(child_tuple, ep_filename, op_id, sheet)
+
+                        ctx = sheet  # Use real sheet name as context (e.g. '200', 'Body')
+
+                        # Build adjacency for property path reconstruction
+                        by_parent: Dict[str, List[Tuple]] = {}
+                        roots: List[Tuple] = []
+                        for t in children:
+                            n = self._clean_value(t[0])
+                            p = self._clean_value(t[1])
+                            if not p:
+                                roots.append(t)
+                            by_parent.setdefault(p or "", []).append(t)
+
+                        def walk(node: Tuple, prefix: str = ""):
+                            name = self._clean_value(node[0])
+                            if not name:
+                                return
+                            dtype = self._clean_value(node[3])
+                            items_type_ref = self._clean_value(node[6]) if len(node) > 6 else ""
+
+                            prop_path = f"{prefix}.{name}" if prefix else name
+                            _resolve_and_add(dtype, ctx, prop_path)
+                            if items_type_ref:
+                                _resolve_and_add(items_type_ref, ctx, prop_path)
+
+                            for ch in by_parent.get(name, []):
+                                walk(ch, prop_path)
+
+                        for r in roots:
+                            walk(r, "")
             except Exception as e:
                 self.log(f"Error in naming pass for {ep_filename}: {e}")
 
     def _track_recursive_usage(self, child_tuple, ep_filename, op_id, sheet):
-        """Recursively track usage of types in objects/arrays."""
-        # Tuple: (name, parent, desc, dtype, mandatory, v_rules, items_type)
-        dtype = child_tuple[3]
-        items_type_ref = child_tuple[6] if len(child_tuple) > 6 else ""
-        
-        def track_name(name_to_track):
-            if not name_to_track: return
-            if name_to_track.lower() in ["string", "number", "integer", "boolean", "array", "object"]:
-                return
-            out_name, dt = self._resolve_data_type(name_to_track, ep_filename)
-            if out_name:
-                if out_name not in self.schema_usage: self.schema_usage[out_name] = []
-                usage_str = f"{op_id} ({sheet})"
-                if usage_str not in self.schema_usage[out_name]:
-                    self.schema_usage[out_name].append(usage_str)
-                
-                # If this is an array, track its items too
-                if dt and dt.type.lower() == "array" and dt.items_type:
-                    track_name(dt.items_type)
-
-        track_name(dtype)
-        if items_type_ref:
-            track_name(items_type_ref)
+        """Deprecated: retained for backward compatibility; usage tracking is now done with full property paths."""
+        return
 
     def _log_usage_summary(self):
         """Log the alphabetical list of schemas and where they are used with absolute property values."""
         
-        col1_w, col2_w, col3_w = 45, 55, 50
-        header = f"| {'SCHEMA NAME':<{col1_w}} | {'USED IN (OPERATIONID - SHEET)':<{col2_w}} | {'DIFFERENCES':<{col3_w}} |"
+        col1_w, col2_w, col3_w, col4_w = 45, 55, 50, 70
+        header = f"| {'SCHEMA NAME':<{col1_w}} | {'USED IN':<{col2_w}} | {'DIFFERENCES':<{col3_w}} | {'MERGE':<{col4_w}} |"
         sep = "-" * len(header)
         
         self.log("\n" + "="*len(header))
@@ -425,25 +504,211 @@ class LegacyConverter:
             final_groups[root_key] = v_list
             
         # Find which attributes actually differ in each group
-        mismatches_by_group = {}
+        # For DataType-based schemas: compare DataType constraint fields.
+        # For promoted inline component schemas: compute property-level diffs.
+        mismatches_by_group: Dict[str, List[str]] = {}
+        # attrs_display: fields shown in DIFFERENCES column (values only, no arrows)
         attrs = ['type', 'format', 'min_val', 'max_val', 'regex', 'allowed_values', 'items_type']
+        # attrs_diff: fields compared when detecting group differences (broader - includes description/example)
+        attrs_diff = attrs + ['description', 'example']
+
+        def _short_usage(u: str) -> str:
+            if not u:
+                return ""
+            parts = str(u).split(".")
+            if len(parts) < 2:
+                return str(u)
+            op_id = parts[0]
+            ctx = parts[1]
+            ctx_map = {
+                "PathParam": "Path",
+                "Header": "Header",
+            }
+            disp_ctx = ctx_map.get(ctx, ctx)  # '200', 'Body', 'Path', 'Header' etc.
+            return f"{op_id} ({disp_ctx})"
+
+        def _inline_fp(name: str):
+            return self.inline_component_fingerprint_by_name.get(name)
+
+        def _dt_constraints(dt: Optional[DataType]) -> Dict[str, str]:
+            if not dt:
+                return {}
+            out = {}
+            for a in attrs_diff:
+                v = getattr(dt, a, "")
+                s = "" if v is None else str(v).strip()
+                if s.lower() == "nan":
+                    s = ""
+                out[a] = s
+            return out
+
+        def _constraint_delta(old_dt: Optional[DataType], new_dt: Optional[DataType]) -> List[str]:
+            """Return list of attr names that differ (used for grouping); values rendered per-schema separately."""
+            o = _dt_constraints(old_dt)
+            n = _dt_constraints(new_dt)
+            differing = []
+            for k in attrs_diff:
+                if o.get(k, "") != n.get(k, ""):
+                    differing.append(k)
+            return differing
+
+        def _schema_attr_display(dt: Optional[DataType], differing_attrs: List[str]) -> str:
+            """Display only the differing attribute values for a given schema (no arrows)."""
+            if not dt:
+                return ""
+            bits = []
+            for k in differing_attrs:
+                if k in attrs_diff:
+                    val = getattr(dt, k, "")
+                    label = k.replace('_', ' ').title()
+                    disp = str(val).strip() if val and str(val).strip().lower() not in ("", "nan") else "(empty)"
+                    bits.append(f"- {label}: {disp}")
+            return "\n".join(bits)
+
+        def _fp_to_propmap(fp: Tuple) -> Dict[str, Dict[str, str]]:
+            """Convert inline component fingerprint entries to a property map keyed by fully-qualified path."""
+            if not fp:
+                return {}
+
+            # fp entry structure (see _fp_inline_subtree):
+            # (name, parent, desc_part, ex_part, dtype, items_type, mandatory, rules)
+            children_by_parent: Dict[str, List[Tuple]] = {}
+            node_by_key: Dict[Tuple[str, str], Tuple] = {}
+            for e in fp:
+                if not isinstance(e, tuple) or len(e) < 8:
+                    continue
+                nm, parent = e[0], e[1]
+                node_by_key[(nm, parent)] = e
+                children_by_parent.setdefault(parent or "", []).append(e)
+
+            # Roots are those whose parent is "" (top-level under promoted root)
+            out: Dict[str, Dict[str, str]] = {}
+
+            def walk(entry: Tuple, prefix: str = ""):
+                nm, parent, desc_part, ex_part, dtype, items_type, mandatory, rules = entry[:8]
+                if not nm:
+                    return
+                path = f"{prefix}.{nm}" if prefix else nm
+                out[path] = {
+                    "dtype": dtype or "",
+                    "items": items_type or "",
+                    "mandatory": mandatory or "",
+                    "rules": rules or "",
+                }
+                for ch in children_by_parent.get(nm, []):
+                    walk(ch, path)
+
+            for r in children_by_parent.get("", []):
+                walk(r, "")
+            return out
+
+        def _promoted_diffs(base_name: str, other_name: str) -> Dict:
+            """Return structured diff dict: {added, removed, changed, mandatory, rules}.
+            Each entry carries base_val / other_val so the renderer can display per-schema."""
+            base_fp = _inline_fp(base_name)
+            other_fp = _inline_fp(other_name)
+            if not base_fp or not other_fp:
+                return {}
+            bmap = _fp_to_propmap(base_fp)
+            omap = _fp_to_propmap(other_fp)
+
+            bkeys = set(bmap.keys())
+            okeys = set(omap.keys())
+            added   = sorted(okeys - bkeys)
+            removed = sorted(bkeys - okeys)
+            common  = sorted(bkeys & okeys)
+
+            result: Dict = {}
+            if added:
+                result["added"] = added
+            if removed:
+                result["removed"] = removed
+
+            changed: Dict[str, Dict] = {}
+            mandatory: Dict[str, Dict] = {}
+            rules: Dict[str, Dict] = {}
+            for k in common:
+                b = bmap[k]
+                o = omap[k]
+                b_type  = b.get("dtype", "")
+                o_type  = o.get("dtype", "")
+                b_items = b.get("items", "")
+                o_items = o.get("items", "")
+                if (b_type, b_items) != (o_type, o_items):
+                    b_dt = self.global_schemas.get(b_type) if b_type in self.global_schemas else None
+                    o_dt = self.global_schemas.get(o_type) if o_type in self.global_schemas else None
+                    delta_attrs = _constraint_delta(b_dt, o_dt) if (b_dt or o_dt) else []
+                    changed[k] = {
+                        "base_type":  f"{b_type or '(empty)'}{('[]' if b_items else '')}",
+                        "other_type": f"{o_type or '(empty)'}{('[]' if o_items else '')}",
+                        "constraint_delta": delta_attrs,
+                    }
+                b_mand = (b.get("mandatory", "") or "").strip()
+                o_mand = (o.get("mandatory", "") or "").strip()
+                if b_mand != o_mand:
+                    mandatory[k] = {"base_val": b_mand or "(empty)", "other_val": o_mand or "(empty)"}
+                b_rules = (b.get("rules", "") or "").strip()
+                o_rules = (o.get("rules", "") or "").strip()
+                if b_rules != o_rules:
+                    rules[k] = {"base_val": b_rules or "(empty)", "other_val": o_rules or "(empty)"}
+
+            if changed:   result["changed"]   = changed
+            if mandatory: result["mandatory"] = mandatory
+            if rules:     result["rules"]     = rules
+            return result
+
         for root_name, members in final_groups.items():
-            if len(members) <= 1: continue
-            
+            if len(members) <= 1:
+                continue
+
             diff_fields = set()
             dts = [self.global_schemas.get(m) for m in members if self.global_schemas.get(m)]
-            if not dts: continue
-            
-            # Compare all against first
-            base = dts[0]
-            for other in dts[1:]:
-                for attr in attrs:
-                    v_base = getattr(base, attr) or ""
-                    v_other = getattr(other, attr) or ""
-                    # Normalize strings for comparison (NaN already handled as empty string during load)
-                    if str(v_base).strip() != str(v_other).strip():
-                        diff_fields.add(attr)
-            
+            fps = [(_inline_fp(m), m) for m in members if _inline_fp(m) is not None]
+
+            if dts:
+                base = dts[0]
+                for other in dts[1:]:
+                    for attr in attrs_diff:
+                        v_base = getattr(base, attr, "") or ""
+                        v_other = getattr(other, attr, "") or ""
+                        if str(v_base).strip() != str(v_other).strip():
+                            diff_fields.add(attr)
+
+            # Inline fp diffs: run always (not only when dts is absent) to catch
+            # mixed groups where base is a DataType but variants are inline-only.
+            if fps:
+                # Determine the reference name: prefer base without numeric suffix if present.
+                base_nm = members[0]
+                stem = re.sub(r'(\d+)$', '', base_nm)
+                if stem and stem in base_names:
+                    base_nm = stem
+
+                # Only variants show diffs vs the base; base itself stays empty.
+                for other_nm in members:
+                    if other_nm == base_nm:
+                        continue
+                    # If other_nm has no inline fp but does have a DataType, flag it as
+                    # "structure differs" (DataType vs inline promoted).
+                    other_fp = _inline_fp(other_nm)
+                    base_fp  = _inline_fp(base_nm)
+                    if other_fp and not base_fp:
+                        if other_nm not in mismatches_by_group:
+                            mismatches_by_group[other_nm] = ("inline_fp_diff", base_nm, {"structure": "promoted inline (base is DataType)"})
+                    elif base_fp and not other_fp:
+                        if other_nm not in mismatches_by_group:
+                            mismatches_by_group[other_nm] = ("inline_fp_diff", base_nm, {"structure": "DataType (base is promoted inline)"})
+                    elif base_fp and other_fp:
+                        promoted_dict = _promoted_diffs(base_nm, other_nm)
+                        if promoted_dict:
+                            # Store as ("inline_fp_diff", base_nm, promoted_dict) so renderer can access per-schema values
+                            mismatches_by_group[other_nm] = ("inline_fp_diff", base_nm, promoted_dict)
+
+            # If group root has no explicit base schema (e.g. only Name1 exists), flag it
+            if root_name and re.search(r'(\d+)$', root_name):
+                stem = re.sub(r'(\d+)$', '', root_name)
+                if stem and stem not in base_names:
+                    diff_fields.add("missing base name")
+
             if diff_fields:
                 mismatches_by_group[root_name] = sorted(list(diff_fields))
 
@@ -477,6 +742,67 @@ class LegacyConverter:
                     lines.append(" ".join(current_line))
             return lines
 
+        def _label_values(values: List[str], label: str) -> List[Tuple[str, str]]:
+            """Return list of (display_label, original_value) with stable numbering."""
+            cleaned: List[str] = []
+            for v in values:
+                s = "" if v is None else str(v).strip()
+                if not s:
+                    continue
+                cleaned.append(s)
+            cleaned = sorted(set(cleaned))
+            out: List[Tuple[str, str]] = []
+            for i, v in enumerate(cleaned, start=1):
+                out.append((f"<{label} {i}>", v))
+            return out
+
+        def _merge_summary(schema_name: str) -> str:
+            prov = self.merge_provenance.get(schema_name)
+            if not prov:
+                return ""
+
+            # Collect all unique short usages for each file_key
+            def short_usages_for_file(file_key: str) -> List[str]:
+                op = self.filename_to_opid.get(file_key, self._extract_operation_id(file_key))
+                if not op:
+                    return []
+                prefix = f"{op}."
+                raw = [u for u in (self.schema_usage.get(schema_name) or []) if u.startswith(prefix)]
+                return sorted(set([_short_usage(u) for u in raw if _short_usage(u)]))
+
+            # Group prov keys by (field_type, path): "description:bic8" -> ("description", "bic8")
+            # Also support legacy plain "description"/"example" keys (DataType provenance)
+            blocks: List[str] = []
+            for field_key in sorted(prov.keys()):
+                value_map = prov[field_key]
+                # Parse field_key: "description:fieldpath", "example:fieldpath", or plain "description"/"example"
+                if ":" in field_key:
+                    field_type, prop_path = field_key.split(":", 1)
+                else:
+                    field_type, prop_path = field_key, ""
+                if field_type not in ("description", "example"):
+                    continue
+                base_label = "Description" if field_type == "description" else "Example"
+                pairs = _label_values(list(value_map.keys()), base_label)
+                # Only show if multiple distinct values
+                if len(pairs) < 2:
+                    continue
+                for disp_key, original in pairs:
+                    file_keys = sorted(value_map.get(original, set()))
+                    ep_lines: List[str] = []
+                    for fk in file_keys:
+                        ep_lines.extend(short_usages_for_file(fk))
+                    ep_lines = sorted(set(ep_lines))
+                    if not ep_lines:
+                        continue
+                    # Build header: "fieldpath (Description N):" or just "<Description N>:" for DataTypes
+                    header = f"{prop_path} ({disp_key}):" if prop_path else f"{disp_key}:"
+                    blocks.append(header)
+                    for ep in ep_lines:
+                        blocks.append(f"  {ep}")
+                    blocks.append("")
+            return "\n".join(blocks).rstrip()
+
         for out_name in sorted_names:
             usages = self.schema_usage[out_name]
             
@@ -489,33 +815,102 @@ class LegacyConverter:
                     root_for_mismatch = r_key
                     break
                     
-            relevant_fields = mismatches_by_group.get(root_for_mismatch, [])
+            relevant_fields = mismatches_by_group.get(out_name) or mismatches_by_group.get(root_for_mismatch, [])
+
+            # If no direct entry found, check if this schema is the BASE of an inline_fp_diff group.
+            # In that case, fabricate the tuple with is_base=True so the renderer shows this schema's values.
+            if not relevant_fields:
+                for _variant, _entry in mismatches_by_group.items():
+                    if (isinstance(_entry, tuple) and len(_entry) == 3 and
+                            _entry[0] == "inline_fp_diff" and _entry[1] == out_name):
+                        relevant_fields = _entry  # same tuple; renderer uses is_base=(out_name==base_nm_ref)
+                        break
             
             diff_str = ""
             if relevant_fields:
                 dt = self.global_schemas.get(out_name)
-                if dt:
-                    bits = []
-                    for attr in relevant_fields:
-                        val = getattr(dt, attr)
-                        label = attr.replace('_', ' ').title()
-                        disp = val if val and str(val).lower() != "nan" else "(empty)"
-                        bits.append(f"{label}: {disp}")
-                    diff_str = "; ".join(bits)
+
+                # Check if this is a structured inline fp diff tuple
+                is_inline_diff = (isinstance(relevant_fields, tuple) and
+                                  len(relevant_fields) == 3 and
+                                  relevant_fields[0] == "inline_fp_diff")
+
+                if is_inline_diff:
+                    _, base_nm_ref, diff_dict = relevant_fields
+                    # Determine if this out_name is the base or the variant
+                    is_base = (out_name == base_nm_ref)
+                    top_bits: List[str] = []
+                    per_prop: Dict[str, List[str]] = {}
+
+                    if "structure" in diff_dict:
+                        top_bits.append(diff_dict["structure"])
+
+                    if ("added" in diff_dict) and (not is_base):
+                        added_list = diff_dict["added"]
+                        top_bits.append("added:")
+                        for a in added_list[:10]:
+                            top_bits.append(f"- {a}")
+                        if len(added_list) > 10:
+                            top_bits.append(f"- (+{len(added_list) - 10} more)")
+
+                    if ("removed" in diff_dict) and (not is_base):
+                        removed_list = diff_dict["removed"]
+                        top_bits.append("removed:")
+                        for r in removed_list[:10]:
+                            top_bits.append(f"- {r}")
+                        if len(removed_list) > 10:
+                            top_bits.append(f"- (+{len(removed_list) - 10} more)")
+
+                    if "changed" in diff_dict:
+                        for prop, info in list(diff_dict["changed"].items())[:10]:
+                            val = info["base_type"] if is_base else info["other_type"]
+                            delta = info.get("constraint_delta", [])
+                            extra = f" ({', '.join(delta[:4])})" if delta else ""
+                            per_prop.setdefault(prop, []).append(f"- Type: {val}{extra}")
+
+                    if "mandatory" in diff_dict:
+                        for prop, info in list(diff_dict["mandatory"].items())[:20]:
+                            val = info["base_val"] if is_base else info["other_val"]
+                            per_prop.setdefault(prop, []).append(f"- Mandatory: {str(val).upper()}")
+
+                    if "rules" in diff_dict:
+                        for prop, info in list(diff_dict["rules"].items())[:20]:
+                            raw = info["base_val"] if is_base else info["other_val"]
+                            short = (raw[:120] + "...") if len(raw) > 120 else raw
+                            per_prop.setdefault(prop, []).append(f"- Validation rules: {short}")
+
+                    prop_blocks: List[str] = []
+                    for prop in sorted(per_prop.keys()):
+                        prop_blocks.append(f"{prop}:")
+                        prop_blocks.extend(per_prop[prop])
+                        prop_blocks.append("")
+
+                    diff_str = "\n".join([x for x in (top_bits + ([""] if top_bits and prop_blocks else []) + prop_blocks) if x is not None]).rstrip()
+
+                elif dt:
+                    # DataType group: show only the values of differing attrs for THIS schema (no arrows).
+                    differing_attrs = [f for f in relevant_fields if f in attrs_diff]
+                    diff_str = _schema_attr_display(dt, differing_attrs)
+                else:
+                    diff_str = "; ".join([str(a) for a in relevant_fields])
+
+            merge_str = _merge_summary(out_name)
             
             # WRAP ALL COLUMNS
             name_lines = wrap_text(out_name, col1_w)
             usage_lines = []
-            for u in usages:
+            for u in sorted(set([_short_usage(x) for x in usages if _short_usage(x)])):
                 usage_lines.extend(wrap_text(u, col2_w))
             diff_lines = wrap_text(diff_str, col3_w)
+            merge_lines = wrap_text(merge_str, col4_w)
             
-            max_lines = max(len(name_lines), len(usage_lines), len(diff_lines), 1)
+            max_lines = max(len(name_lines), len(usage_lines), len(diff_lines), len(merge_lines), 1)
             for i in range(max_lines):
                 n_cell = name_lines[i] if i < len(name_lines) else ""
                 u_cell = usage_lines[i] if i < len(usage_lines) else ""
                 d_cell = diff_lines[i] if i < len(diff_lines) else ""
-                self.log(f"| {n_cell:<{col1_w}} | {u_cell:<{col2_w}} | {d_cell:<{col3_w}} |")
+                m_cell = merge_lines[i] if i < len(merge_lines) else ""
+                self.log(f"| {n_cell:<{col1_w}} | {u_cell:<{col2_w}} | {d_cell:<{col3_w}} | {m_cell:<{col4_w}} |")
             
             self.log(sep)
             
@@ -714,6 +1109,47 @@ class LegacyConverter:
         except Exception as e:
             self.log(f"  WARNING: Could not apply cosmetic polish to index: {e}")
         self.log(f"  Saved: {output_path}")
+
+    def _sync_endpoint_schemas_from_index(self, wb) -> None:
+        try:
+            ws_ep = wb["Schemas"]
+        except Exception:
+            try:
+                ws_ep = wb.create_sheet("Schemas")
+            except Exception:
+                return
+
+        idx_path = self.output_dir / "$index.xlsx"
+        if not idx_path.exists():
+            return
+
+        try:
+            wb_idx = load_workbook(idx_path)
+        except Exception:
+            return
+
+        if "Schemas" not in wb_idx.sheetnames:
+            return
+        ws_idx = wb_idx["Schemas"]
+
+        rows: List[List[Any]] = []
+        for r in range(1, ws_idx.max_row + 1):
+            row_vals = []
+            for c in range(1, ws_idx.max_column + 1):
+                row_vals.append(ws_idx.cell(row=r, column=c).value)
+            if all(v is None or v == "" for v in row_vals):
+                rows.append([None] * ws_idx.max_column)
+            else:
+                rows.append(row_vals)
+
+        try:
+            for r in range(1, ws_ep.max_row + 1):
+                for c in range(1, ws_ep.max_column + 1):
+                    ws_ep.cell(row=r, column=c).value = None
+        except Exception:
+            pass
+
+        self._write_rows(ws_ep, rows, start_row=1)
     
     def _convert_general_description(self, wb, xl_legacy):
         """Convert General Description sheet."""
@@ -883,9 +1319,16 @@ class LegacyConverter:
                 if children:
                     wrapper = f"{op_id}Request"
                     self.emitted_wrappers.add(wrapper)
-                    child_rows, refs = self._build_children_rows(wrapper, children, ep_file.name)
+                    child_rows, refs, extra_blocks = self._build_children_rows(
+                        wrapper,
+                        children,
+                        ep_file.name,
+                        usage_ctx=f"{op_id} (Body)",
+                        reserved_names=set(referenced_data_types),
+                    )
                     final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
                     final_rows.extend(child_rows)
+                    final_rows.extend(extra_blocks)
                     referenced_data_types.update(refs)
             
             for code in ["200", "201", "400", "401", "403", "404", "500"]:
@@ -895,12 +1338,26 @@ class LegacyConverter:
                         wrapper = "ErrorResponse" if int(code) >= 400 else f"{op_id}Response"
                         if wrapper not in self.emitted_wrappers:
                             self.emitted_wrappers.add(wrapper)
-                            child_rows, refs = self._build_children_rows(wrapper, children, ep_file.name)
+                            child_rows, refs, extra_blocks = self._build_children_rows(
+                                wrapper,
+                                children,
+                                ep_file.name,
+                                usage_ctx=f"{op_id} ({code})",
+                                reserved_names=set(referenced_data_types),
+                            )
                             final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
                             final_rows.extend(child_rows)
+                            final_rows.extend(extra_blocks)
                             referenced_data_types.update(refs)
                         else:
-                            _, refs = self._build_children_rows(wrapper, children, ep_file.name)
+                            _, refs, extra_blocks = self._build_children_rows(
+                                wrapper,
+                                children,
+                                ep_file.name,
+                                usage_ctx=f"{op_id} ({code})",
+                                reserved_names=set(referenced_data_types),
+                            )
+                            final_rows.extend(extra_blocks)
                             referenced_data_types.update(refs)
 
         # 2. Emit actually used Global Schemas
@@ -1070,6 +1527,11 @@ class LegacyConverter:
         # 3. Response sheets
         if status_codes:
             self._convert_responses(wb, xl, op_id, status_codes, legacy_path.name)
+
+        try:
+            self._sync_endpoint_schemas_from_index(wb)
+        except Exception:
+            pass
         
         wb.save(output_path)
         
@@ -1266,61 +1728,310 @@ class LegacyConverter:
         
         return children
     
-    def _build_children_rows(self, wrapper_name: str, children: List[Tuple], ep_filename: Optional[str] = None, legato_parent: Optional[str] = None) -> Tuple[List[List], set]:
+    def _build_children_rows(self, wrapper_name: str, children: List[Tuple], ep_filename: Optional[str] = None, legato_parent: Optional[str] = None, usage_ctx: Optional[str] = None, reserved_names: Optional[set] = None) -> Tuple[List[List], set, List[List]]:
         """Build child rows with proper parent hierarchy and type resolution.
         If legato_parent is provided, use it as Parent for root items.
-        Returns (rows, referenced_data_types set).
+        Returns (rows, referenced_data_types set, extra_schema_blocks).
         
         When a node resolves to a schema $ref, its children are NOT emitted
         because they already exist in the referenced component schema.
         """
         rows = []
         referenced_data_types = set()
+        extra_schema_blocks: List[List] = []
+
+        def _norm(v: Any) -> str:
+            if v is None:
+                return ""
+            s = str(v).strip()
+            if not s or s.lower() == "nan":
+                return ""
+            s = s.lower()
+            try:
+                s = re.sub(r"\[\s*\]$", "", s)
+                s = re.sub(r"\[\d+\]$", "", s)
+            except Exception:
+                pass
+            return s
+
+        children_lower = [(_norm(n), _norm(p)) for (n, p, *_rest) in children]
+        has_children = set()
+        for n, p_low in children_lower:
+            if p_low:
+                has_children.add(p_low)
+
+        def _unique_inline_component_name(base_name: str) -> str:
+            candidate = base_name
+            i = 1
+            reserved = reserved_names or set()
+            registered_names = set(self.inline_component_fingerprints.values())
+            while (candidate in reserved
+                   or candidate in self.emitted_wrappers
+                   or candidate in self.emitted_inline_components
+                   or candidate in registered_names):
+                candidate = f"{base_name}{i}"
+                i += 1
+            return candidate
+
+        def _row_example(dtype_val: Any, items_val: Any) -> str:
+            """Return example text from referenced global DataType (or array items DataType)."""
+            def _ex_for_type(type_name: str) -> str:
+                if not type_name:
+                    return ""
+                low = str(type_name).strip().lower()
+                if low in ["string", "number", "integer", "boolean", "array", "object", "schema"]:
+                    return ""
+                out_name, dt = self._resolve_data_type(str(type_name).strip(), ep_filename)
+                if dt and getattr(dt, "example", None):
+                    return str(dt.example).strip()
+                return ""
+
+            ex = _ex_for_type(dtype_val)
+            if not ex:
+                ex = _ex_for_type(items_val)
+            return ex
+
+        def _subtree_example_signature(subtree_children: List[Tuple]) -> str:
+            parts = []
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree_children:
+                ex = _row_example(t_dtype, t_items)
+                if not ex:
+                    continue
+                parts.append(f"{str(t_name).strip()}={ex}")
+            parts = sorted(set(parts))
+            return "; ".join(parts)
+
+        def _fp_inline_subtree(subtree_children: List[Tuple], root_low: str) -> Tuple:
+            entries = []
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree_children:
+                p_low = _norm(t_parent)
+                p_low = "" if p_low == root_low else p_low
+                # Always include description for rows whose dtype resolves to a DataType ($ref-typed
+                # properties). A different description on such a row produces a structurally different
+                # OAS property (allOf/$ref + description override), so it must drive a schema split
+                # independently of the include_descriptions_in_collision preference.
+                _ref_out, _ref_dt = self._resolve_data_type(str(t_dtype).strip() if t_dtype else "", ep_filename)
+                is_ref_typed = _ref_dt is not None
+                desc_part = ""
+                if self.include_descriptions_in_collision or is_ref_typed:
+                    desc_part = str(t_desc).strip() if t_desc is not None else ""
+                ex_part = ""
+                if self.include_examples_in_collision:
+                    ex_part = _row_example(t_dtype, t_items)
+                entries.append(
+                    (
+                        _norm(t_name),
+                        p_low,
+                        desc_part,
+                        ex_part,
+                        _norm(t_dtype),
+                        _norm(t_items),
+                        _norm(t_mand),
+                        str(t_rules).strip() if t_rules is not None else "",
+                    )
+                )
+            return tuple(sorted(entries))
+
+        def _track_inline_component_usage(schema_name: str) -> None:
+            if not usage_ctx:
+                return
+            if schema_name not in self.schema_usage:
+                self.schema_usage[schema_name] = []
+            if usage_ctx not in self.schema_usage[schema_name]:
+                self.schema_usage[schema_name].append(usage_ctx)
+
+        def _bfs_descendants(root_name_norm: str, root_parent_norm: str) -> List[Tuple]:
+            """Collect descendants of a specific (name, parent) row instance using
+            document-order greedy assignment.
+
+            Key constraint: each parent expansion collects at most ONE row per
+            distinct child-name.  This prevents the first 'dailyThresholds' block
+            from absorbing both 'lacAgenda' subtrees when two parallel blocks share
+            the same element names in the same flat children list.
+            """
+            root_idx = next(
+                (i for i, (n, p, *_) in enumerate(children)
+                 if _norm(n) == root_name_norm and _norm(p) == root_parent_norm),
+                -1,
+            )
+            if root_idx == -1:
+                return []
+
+            result: List[Tuple] = []
+            claimed: set = {root_idx}
+            queue: list = [(root_idx, root_name_norm)]
+
+            while queue:
+                parent_idx, parent_name_norm = queue.pop(0)
+                # For each distinct child name, claim only the first unclaimed row
+                # with matching parent that appears after parent_idx.
+                seen_child_names: set = set()
+                for i in range(parent_idx + 1, len(children)):
+                    if i in claimed:
+                        continue
+                    t_name, t_parent = children[i][0], children[i][1]
+                    if _norm(t_parent) != parent_name_norm:
+                        continue
+                    t_name_norm = _norm(t_name)
+                    if t_name_norm in seen_child_names:
+                        # Skip duplicate child names — they belong to a sibling subtree
+                        continue
+                    seen_child_names.add(t_name_norm)
+                    claimed.add(i)
+                    result.append(children[i])
+                    queue.append((i, t_name_norm))
+
+            return result
+
+        # Maps keyed by (name_norm, parent_norm) so parallel same-named subtrees each
+        # get their own fingerprint, schema name, and emitted block.
+        object_key_map: Dict[Tuple[str, str], str] = {}
+        object_key_subtrees: Dict[Tuple[str, str], List[Tuple]] = {}
+        array_key_map: Dict[Tuple[str, str], str] = {}
+        array_key_subtrees: Dict[Tuple[str, str], List[Tuple]] = {}
+        # Legacy name-only maps kept for has-children checks in schema_ref_nodes pass.
+        object_ref_map: Dict[str, str] = {}
+        array_items_ref_map: Dict[str, str] = {}
+        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+            if _norm(dtype) != "object":
+                continue
+            name_norm = _norm(name)
+            if name_norm not in has_children:
+                continue
+            parent_norm = _norm(parent)
+            key = (name_norm, parent_norm)
+
+            descendants = _bfs_descendants(name_norm, parent_norm)
+
+            if descendants:
+                object_key_subtrees[key] = descendants
+                ex_sig = _subtree_example_signature(descendants)
+                fp = _fp_inline_subtree(descendants, name_norm)
+                if fp in self.inline_component_fingerprints:
+                    existing = self.inline_component_fingerprints[fp]
+                    object_ref_map[name_norm] = existing
+                    object_key_map[key] = existing
+                    # If descriptions are neutral, record merge provenance when root descriptions differ across endpoints
+                    if not self.include_descriptions_in_collision:
+                        root_desc = (str(desc).strip() if desc is not None else "")
+                        canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
+                        if root_desc and root_desc != canon_desc:
+                            self._record_merge_provenance(existing, f"description:{name_norm}", root_desc, ep_filename or "")
+                    if not self.include_examples_in_collision:
+                        canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
+                        if ex_sig and ex_sig != canon_ex:
+                            self._record_merge_provenance(existing, f"example:{name_norm}", ex_sig, ep_filename or "")
+                else:
+                    comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                    object_ref_map[name_norm] = comp_name
+                    object_key_map[key] = comp_name
+                    self.inline_component_fingerprints[fp] = comp_name
+                    self.inline_component_fingerprint_by_name[comp_name] = fp
+                    self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
+                    self.inline_component_example_sig[comp_name] = ex_sig
+            else:
+                comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                object_ref_map[name_norm] = comp_name
+                object_key_map[key] = comp_name
+
+            _track_inline_component_usage(object_key_map[key])
+
+        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+            low_dtype = _norm(dtype)
+            out_name, dt = self._resolve_data_type(str(dtype).strip() if dtype is not None else "", ep_filename)
+            is_array = low_dtype == "array" or (dt and dt.type and dt.type.lower() == "array")
+            if not is_array:
+                continue
+            name_norm = _norm(name)
+            if name_norm not in has_children:
+                continue
+            parent_norm = _norm(parent)
+            key = (name_norm, parent_norm)
+
+            descendants = _bfs_descendants(name_norm, parent_norm)
+
+            if descendants:
+                array_key_subtrees[key] = descendants
+                ex_sig = _subtree_example_signature(descendants)
+                fp = _fp_inline_subtree(descendants, name_norm)
+                if fp in self.inline_component_fingerprints:
+                    existing = self.inline_component_fingerprints[fp]
+                    array_items_ref_map[name_norm] = existing
+                    array_key_map[key] = existing
+                    if not self.include_descriptions_in_collision:
+                        root_desc = (str(desc).strip() if desc is not None else "")
+                        canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
+                        if root_desc and root_desc != canon_desc:
+                            self._record_merge_provenance(existing, "description", root_desc, ep_filename or "")
+                    if not self.include_examples_in_collision:
+                        canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
+                        if ex_sig and ex_sig != canon_ex:
+                            self._record_merge_provenance(existing, "example", ex_sig, ep_filename or "")
+                else:
+                    comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                    array_items_ref_map[name_norm] = comp_name
+                    array_key_map[key] = comp_name
+                    self.inline_component_fingerprints[fp] = comp_name
+                    self.inline_component_fingerprint_by_name[comp_name] = fp
+                    self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
+                    self.inline_component_example_sig[comp_name] = ex_sig
+            else:
+                comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                array_items_ref_map[name_norm] = comp_name
+                array_key_map[key] = comp_name
+
+            _track_inline_component_usage(array_key_map[key])
         
         # First pass: determine which nodes resolve to a schema reference.
         # Children of such nodes should be suppressed (they live in the component schema).
         schema_ref_nodes = set()
         
         for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
-            low_dtype = dtype.lower()
-            out_name, dt = self._resolve_data_type(dtype, ep_filename)
+            name_norm = _norm(name)
+            if name_norm in object_ref_map:
+                schema_ref_nodes.add(name_norm)
+                continue
+            if name_norm in array_items_ref_map:
+                schema_ref_nodes.add(name_norm)
+                continue
+            low_dtype = _norm(dtype)
+            out_name, dt = self._resolve_data_type(str(dtype).strip() if dtype is not None else "", ep_filename)
             
             # If it resolves to a named schema (not literal 'object' or 'array'), mark it
             if out_name and low_dtype not in ["object", "array"] and dt and dt.type and dt.type.lower() not in ["object", "array"]:
-                schema_ref_nodes.add(name.lower())
+                schema_ref_nodes.add(name_norm)
                 referenced_data_types.add(out_name)
         
         # Build parent lookup (case-insensitive)
         parent_map = {}
         for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
             if parent:
-                parent_map[name.lower()] = parent
+                parent_map[_norm(name)] = _norm(parent)
         
         # Second pass: build rows, skipping children of schema-ref nodes
         for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
             # Skip this row if its parent is a node that resolves to a schema $ref:
             # the children are already defined in the referenced component schema.
-            if parent and parent.lower() in schema_ref_nodes:
+            parent_norm = _norm(parent)
+            if parent_norm and parent_norm in schema_ref_nodes:
                 continue
             
             # Also skip if any ancestor resolves to a schema ref (deeply nested case)
             skip = False
-            ancestor = parent.lower() if parent else None
+            ancestor = parent_norm if parent_norm else None
             while ancestor:
                 if ancestor in schema_ref_nodes:
                     skip = True
                     break
                 ancestor = parent_map.get(ancestor)
-                if ancestor:
-                    ancestor = ancestor.lower()
             if skip:
                 continue
             
             # Determine actual parent
             if legato_parent:
-                actual_parent = parent if parent else legato_parent
+                actual_parent = str(parent).strip() if parent else legato_parent
             else:
-                actual_parent = parent if parent else wrapper_name
+                actual_parent = str(parent).strip() if parent else wrapper_name
             
             # Decorate description with validation rules if present (R3.3)
             final_desc = desc
@@ -1332,30 +2043,50 @@ class LegacyConverter:
             schema_name = ""
             items_type = ""
             
-            low_dtype = dtype.lower()
-            out_name, dt = self._resolve_data_type(dtype, ep_filename)
+            name_out = str(name).strip() if name is not None else ""
+            low_dtype = _norm(dtype)
+            out_name, dt = self._resolve_data_type(str(dtype).strip() if dtype is not None else "", ep_filename)
             
             # RULE: Only inline if the literal NAME is 'object' or 'array'.
-            if low_dtype == "object":
+            name_norm = _norm(name)
+            parent_norm_emit = _norm(parent)
+            key_emit = (name_norm, parent_norm_emit)
+            if low_dtype == "object" and key_emit in object_key_map:
+                resolved_type = "schema"
+                schema_name = object_key_map[key_emit]
+            elif low_dtype == "object" and name_norm in object_ref_map:
+                resolved_type = "schema"
+                schema_name = object_ref_map[name_norm]
+            elif low_dtype == "object":
                 resolved_type = "object"
                 schema_name = ""
             elif low_dtype == "array":
                 resolved_type = "array"
                 schema_name = ""
-                # Resolve items recursively using the definition of 'array'
-                it_to_resolve = items_type_row
-                if not it_to_resolve and dt:
-                    it_to_resolve = dt.items_type
-                items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
+                if key_emit in array_key_map:
+                    items_type = array_key_map[key_emit]
+                elif name_norm in array_items_ref_map:
+                    items_type = array_items_ref_map[name_norm]
+                else:
+                    # Resolve items recursively using the definition of 'array'
+                    it_to_resolve = items_type_row
+                    if not it_to_resolve and dt:
+                        it_to_resolve = dt.items_type
+                    items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
             elif dt and dt.type and dt.type.lower() in ["object", "array"]:
                 # Inline resolved object/array schemas to preserve legacy structure
                 resolved_type = dt.type.lower()
                 schema_name = ""
                 if resolved_type == "array":
-                    it_to_resolve = items_type_row
-                    if not it_to_resolve:
-                        it_to_resolve = dt.items_type or ""
-                    items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
+                    if key_emit in array_key_map:
+                        items_type = array_key_map[key_emit]
+                    elif name_norm in array_items_ref_map:
+                        items_type = array_items_ref_map[name_norm]
+                    else:
+                        it_to_resolve = items_type_row
+                        if not it_to_resolve:
+                            it_to_resolve = dt.items_type or ""
+                        items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
             elif dt:
                 resolved_type = "schema"
                 schema_name = out_name
@@ -1372,12 +2103,48 @@ class LegacyConverter:
                          "O" if mandatory in ["O", "o", "No", "no", "N", "n"] else mandatory
             
             rows.append([
-                name, actual_parent, final_desc, resolved_type,
+                name_out, actual_parent, final_desc, resolved_type,
                 items_type, schema_name, "", mand_value,
                 "", "", "", "", "", "", "" # Col J-O: Min, Max, PatternEba, Regex, Allowed, Example
             ])
+
+        for (prop_low, prop_parent_low), comp_name in object_key_map.items():
+            subtree = object_key_subtrees.get((prop_low, prop_parent_low))
+            if not subtree:
+                continue
+            if comp_name in self.emitted_inline_components:
+                continue
+            self.emitted_inline_components.add(comp_name)
+
+            transformed: List[Tuple] = []
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
+                new_parent = "" if _norm(t_parent) == prop_low else t_parent
+                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
+
+            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
+            extra_schema_blocks.extend(child_rows)
+            extra_schema_blocks.extend(nested_blocks)
+
+        for (prop_low, prop_parent_low), comp_name in array_key_map.items():
+            subtree = array_key_subtrees.get((prop_low, prop_parent_low))
+            if not subtree:
+                continue
+            if comp_name in self.emitted_inline_components:
+                continue
+            self.emitted_inline_components.add(comp_name)
+
+            transformed: List[Tuple] = []
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
+                new_parent = "" if _norm(t_parent) == prop_low else t_parent
+                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
+
+            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
+            extra_schema_blocks.extend(child_rows)
+            extra_schema_blocks.extend(nested_blocks)
         
-        return rows, referenced_data_types
+        return rows, referenced_data_types, extra_schema_blocks
 
     
     # =========================================================================
@@ -2023,6 +2790,9 @@ class LegacyConverter:
         if not name: return name
         name = str(name).strip()
         if not name or name.lower() == "nan": return name
+        
+        if not self.capitalize_schema_names:
+            return name
         
         # For simplicity and R1 compatibility, only uppercase first char 
         # unless it has underscores which we convert to CamelCase.

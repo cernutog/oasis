@@ -55,6 +55,9 @@ class PreferencesManager:
         
         # Tools Settings
         "tools_legacy_tracing_enabled": True,
+        "tools_legacy_collision_include_descriptions": False,
+        "tools_legacy_collision_include_examples": False,
+        "tools_legacy_capitalize_schema_names": True,
         
         # Restored Functional Keys (mistakenly treated as orphans)
         "import_source_file": "",       # Tab 1: OAS Source File

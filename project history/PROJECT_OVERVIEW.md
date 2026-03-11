@@ -1,5 +1,5 @@
 # OASIS - Project Overview
-**Current Version**: `v2.1.40` (Stable)
+**Current Version**: `v2.1.72`
 
 ## Project Purpose
 OASIS (**O**penAPI **S**pecification **I**ntegration **S**uite) generates OpenAPI Specification (OAS) 3.0 and 3.1 YAML files from Excel templates. It provides a robust pipeline for importing, generating, validating, and documenting professional-grade API specifications.
@@ -12,7 +12,51 @@ OASIS (**O**penAPI **S**pecification **I**ntegration **S**uite) generates OpenAP
 5. **Schema Tracer**: Standalone analysis tool tracing schema variants across legacy endpoint templates.
 6. **Style Consistency**: All dialogs share teal `#0A809E` button theme, matching LegacyConverterDialog style.
 
-```
+## Recent Updates (v2.1.71 - v2.1.72)
+
+### 1) Legacy Schema Tracing: Column Fixes
+The schema tracing summary table (SCHEMA NAME / USED IN / DIFFERENCES / MERGE) was refined:
+
+- **USED IN column**
+  - Now shows the **real Excel sheet name** as context, e.g. `operationId (200)`, `operationId (Body)`, `operationId (400)`.
+  - Previously showed generic labels `(Response)` / `(Body)` — now always uses the actual sheet.
+
+- **DIFFERENCES column**
+  - **No arrow notation**: each schema now shows only its own attribute values for the differing fields.
+    - e.g. `Min Val: 0` (for Amount) and `Min Val: (empty)` (for Amount1) — not `Min Val: 0 -> (empty)`.
+  - Extended detection: `description` and `example` fields are now included in group-level diff detection (previously ignored).
+  - **Promoted inline schemas**: diffs now also cover `rules` and `mandatory` field changes, not just `dtype`/`items`.
+  - **Mixed-type groups** (one schema is a DataType, variant is promoted inline): correctly shows `rules differ: ...`.
+
+- **MERGE column**
+  - Uses real sheet names (same as USED IN), e.g. `commandDetails (200)`.
+  - Groups by `<Description N>` / `<Example N>` placeholders, listing endpoints indented under each.
+  - Only shown when ≥2 distinct values exist (single-value merges are suppressed).
+
+### 2) DefaultDailyThresholds / DefaultDailyThresholds1 — root cause
+Both schemas are registered: base as a DataType + inline promoted, variant as inline-only. The diff was missing because:
+- `_promoted_diffs` previously compared only `dtype`/`items`, not `rules`.
+- Mixed groups (DataType base + inline variant) were skipped by the `fps and not dts` guard.
+Both issues fixed in v2.1.72.
+
+### 2) Preferences: Templates Tab (Legacy Tools)
+Preferences (Templates tab) include new Legacy Tools toggles:
+- Enable Schema Tracing by default
+- Include descriptions in collision detection (default OFF)
+- Include examples in collision detection (default OFF)
+
+The Templates tab spacing was compacted to avoid bottom buttons being clipped.
+
+### 3) Where the logic lives
+- `src/legacy_converter.py` (usage tracking, merge provenance, differences)
+- `src/preferences.py` (persistence)
+- `src/preferences_dialog.py` (Templates UI)
+- `src/legacy_converter_dialog.py` / `src/legacy_schema_tracer_dialog.py` (wiring)
+
+### 4) Quick verification / build commands
+- Verify tracing output (Templates Legacy): `.venv\Scripts\python.exe temp.py`
+- Build executable: `build_exe.bat`
+
 OASIS/
 ├── src/
 │   ├── main.py                    # Entry point - orchestrates generation

@@ -12,6 +12,25 @@ When starting a new chat to continue work on this project, share these files:
 3. **CONTEXT**: `IMPLEMENTATION_HISTORY.md` - Recent major changes and why decisions were made
 4. **DETAILS**: `WALKTHROUGH.md` - Technical implementation walkthrough
 
+## Current Status (as of 2026-02-26)
+
+- **Current Version**: `v2.1.71`
+- **Recent focus area**: Legacy Tools schema tracing readability (schema collisions / dedup)
+
+### Recent work summary (v2.1.70 - v2.1.71)
+- **Legacy Schema Tracing table** (logged by legacy converter + schema tracer):
+  - **USED IN** shows short usage format:
+    - `operationId (Body)` / `operationId (Header)` / `operationId (Path)` / `operationId (Response)`
+  - **MERGE** uses the same short usage format, grouped under `<Description N>` / `<Example N>` placeholders.
+  - **DIFFERENCES** for promoted inline schemas is property-level and **directional** (base schema without numeric suffix is the reference).
+- **Preferences → Templates tab**:
+  - Added Legacy Tools toggles for including descriptions/examples in collision detection (default OFF).
+  - Compacted spacing so bottom action buttons are not clipped.
+
+### Quick verification / build
+- Verify tracing output (Templates Legacy): `.venv\Scripts\python.exe temp.py`
+- Build executable: `build_exe.bat`
+
 ### Document Purposes
 
 #### PROJECT_OVERVIEW.md
@@ -41,7 +60,7 @@ When starting a new chat to continue work on this project, share these files:
 
 ## Project Status (as of 2025-12-16)
 
-### ✅ Completed Features
+### Completed Features
 - [x] Parse Excel templates to OAS YAML
 - [x] Generate both OAS 3.0 and 3.1
 - [x] Custom extension formatting with literal block style (`|`)

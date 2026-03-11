@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.76] - 2026-02-28
+- **Fix(LegacyConverter)**: Parallel same-named subtrees in the same sheet (e.g. two `dailyThresholds` blocks under different parents) are now correctly isolated by the BFS descent algorithm. Each `(name, parent)` pair gets its own fingerprint, so schemas like `DailyThresholds1`, `LacAgenda1`, `LacDefaultAgenda1`, and `DefaultDailyThresholds1` are correctly generated.
+- **Fix(LegacyConverter)**: `_unique_inline_component_name` now checks already-registered inline component names (not only emitted ones), preventing duplicate schema name registration within the same file.
+- **Fix(LegacyConverter)**: `_fp_inline_subtree` always includes description for `$ref`-typed child rows regardless of the `include_descriptions_in_collision` preference, matching old-tool splitting behaviour.
+- **Feature(LegacyConverter)**: New preference `tools_legacy_capitalize_schema_names` (default ON) controls whether `operationId` tokens are PascalCased in generated schema wrapper names.
+
 ## [1.6.0] - 2026-01-20
 - **v1.6.14**: Logic(Roundtrip): Smart detection of Source OAS version (generates only congruent version). Logic(Diff): New "Line Diff Summary" with Add/Remove counts. GUI: Detailed button/log alignment.
 - **v1.6.13**: GUI(Reference): Perfected GUI alignment for Import tab to match Generation tab (Single Frame Grid).
