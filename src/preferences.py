@@ -13,7 +13,7 @@ class PreferencesManager:
 
     DEFAULT_PREFERENCES = {
         # Paths
-        "remember_paths": False,  # Default: Remember last used paths
+        "remember_paths": True,  # Default: Remember last used paths
         "excel_input_folder": "",  # Specific preference (alias template_directory)
         "excel_output_folder": "", # Specific preference for Tab 1
         "oas_folder": "",  # Key for generated OAS
@@ -22,6 +22,9 @@ class PreferencesManager:
         "last_excel_input": "",
         "last_excel_output": "",
         "last_oas_folder": "",
+        "last_legacy_src": "",
+        "last_legacy_dst": "",
+        "last_legacy_master": "",
         # Generation Options
         "gen_oas_30": True,
         "gen_oas_31": True,
@@ -47,6 +50,9 @@ class PreferencesManager:
         "window_geometry": None,  # "WxH+X+Y" format
         # Documentation Viewer
         "doc_snap_default_enabled": False,  # Whether doc window snaps to main on open
+        
+        # Tools Settings
+        "tools_legacy_tracing_enabled": True,
         
         # Restored Functional Keys (mistakenly treated as orphans)
         "import_source_file": "",       # Tab 1: OAS Source File

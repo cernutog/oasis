@@ -6,6 +6,7 @@ Functions receive necessary dependencies as parameters for decoupling.
 """
 
 import re
+import copy
 import pandas as pd
 from collections import OrderedDict
 
@@ -375,7 +376,9 @@ def process_response_headers(header_nodes, headers_components: dict, version: st
                 if has_desc and is_oas30:
                     # OAS 3.0: Inline resolution for Header Component with description override
                     # (Since $ref cannot have siblings and Headers don't support allOf)
-                    header_obj = headers_components[schema_ref].copy()
+                    # CRITICAL: Use deepcopy to prevent YAML anchors (&id001) when the same
+                    # component is inlined multiple times (each needs independent nested dicts)
+                    header_obj = copy.deepcopy(headers_components[schema_ref])
                     header_obj["description"] = str(desc)
                     header_obj["x-comment"] = f"Reference from #/components/headers/{schema_ref} to allow description override in OAS 3.0"
                     

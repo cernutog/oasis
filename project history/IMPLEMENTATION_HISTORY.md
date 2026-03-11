@@ -612,3 +612,95 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 ### Release
 - **Tag**: `v2.1`
 - **GitHub Release**: Consolidated 40+ incremental builds into a single stable release with attached `OASIS.exe`.
+
+### Build v2.1.1 (2026-02-02)
+- **Feature**: Legacy Template Converter Refinements.
+    - **General Description Mapping**: Implemented robust key-value mapping to transfer legacy metadata (`info title`, `version`, `servers`, etc.) to the modern vertical layout in `$index.xlsx`.
+    - **Schema Precision**: Fixed `Schemas` sheet start row (Row 2) and improved technical identifier vs. description mapping.
+    - **UI Persistence**: Restored missing preference keys (`last_legacy_src`, `last_legacy_dst`) in `PreferencesManager` and defaulted `remember_paths` to `True`.
+    - **Window Grouping**: Implemented focus-synchronized window lifting to bring the main window along with the converter without forcing a "top-most" constraint.
+    - **Path Neutrality**: Standardized on forward slashes (`/`) for all persisted paths to ensure consistency in `preferences.json`.
+- **Key Modules**: `src/legacy_converter.py`, `src/legacy_converter_dialog.py`, `src/preferences.py`.
+
+### Build v2.1.2 (2026-02-04)
+- **Fix**: Schema Collisions & regression in `Schemas` sheet grouping/sorting.
+    - **SearchCriteria Variants**: Restored all 12 variants in the generated OAS by ensuring correct usage registration in the converter loop.
+    - **Grouping & Sorting**: Refactored the `Schemas` sheet generation to a block-per-parent architecture.
+    - **Normalization**: Enforced strict case-insensitive normalization for root names to prevent block duplication and ensure perfect alphabetical order.
+- **Key Modules**: `src/legacy_converter.py`, `run_oas_generation.py`, `check_index.py`.
+
+### Build v2.1.3 (2026-02-10)
+- **Fix**: Baselining audit parity convergence loop.
+- **Key Modules**: `src/generator.py`, `src/v3_writer.py`.
+
+### Build v2.1.4 (2026-02-11)
+- **Fix**: YAML anchor bug in OAS 3.0 headers.
+    - Implemented `deepcopy` during inline header resolution to prevent unintended YAML anchors (`&id001`) when the same component is referenced multiple times.
+- **Key Modules**: `src/generator_pkg/response_builder.py`.
+
+### Build v2.1.5 (2026-02-12)
+- **Hotfix**: Omit empty descriptions for parameters and schemas.
+    - Replaced `pd.notna()` with truthy and whitespace checks (`desc and str(desc).strip()`) to prevent generating `description: ''` in the output YAML when the source cell is empty or contains only whitespace.
+- **Key Modules**: `src/generator.py`, `src/generator_pkg/schema_builder.py`.
+### Build v2.1.6 (2026-02-16)
+- **Refinement**: Project Binary Reorganization.
+    - Moved `src/bin` (containing `spectral.exe`) to project root `bin/` to reduce indexing noise for AI and IDEs.
+    - Updated `src/gui.py` with dual-mode (dev/frozen) resolution logic for the new path.
+    - Updated `OASIS.spec` to bundle the binary from the new location.
+- **Key Modules**: `src/gui.py`, `OASIS.spec`.
+
+### Build v2.1.7 (2026-02-18)
+- **Fix**: Legacy Converter PascalCase Mismatch.
+    - Fixed bug where `_convert_endpoint` used raw `op_id` (camelCase) to build wrapper names, causing a mismatch with PascalCase wrappers in `emitted_wrappers`. Body sheets were empty in output.
+    - Added `_to_pascal_case()` normalization in `_convert_endpoint` to match `_convert_schemas` behavior.
+- **Feature**: Legacy Converter GUI Integration.
+    - Dialog window now inherits parent window dimensions and position.
+    - Added `log_callback` parameter; all `print()` replaced with `self.log()` for GUI progress feedback.
+- **Test**: New regression suite in `tests/legacy_converter/` with 34 checks covering all requirements §1-§8.
+- **Key Modules**: `src/legacy_converter.py`, `src/legacy_converter_dialog.py`.
+
+### Build v2.1.8 (2026-02-19)
+- **Fix**: Legacy Converter Column Mapping.
+    - Standardized column indices in `Schemas`, `Parameters`, `Body`, and `Responses` to match Modern Master templates.
+    - Centralized data constraints (Min, Max, PatternEba, Regex, Allowed, Example) in the global `Schemas` sheet.
+    - Updated endpoint sheets (`Parameters`, `Body`, `Responses`) to use `Type = schema` references without redundant metadata.
+- **Test**: Expanded regression suite to 38 checks, verifying correct positioning of examples and schema references.
+- **Key Modules**: `src/legacy_converter.py`, `tests/legacy_converter/validate_output.py`.
+
+
+### Build v2.1.9 (2026-02-19)
+- **Fix**: Legacy Converter GUI UX.
+    - Fixed Z-order issue where the dialog would drop behind the main window after folder selection (added `parent` to `filedialog` and explicit `lift()`/`focus_force()`).
+    - Fixed thread-safety issue where the "Open Output Folder" button would remain disabled (wrapped button state updates in `self.after(0, ...)`).
+- **Key Modules**: `src/legacy_converter_dialog.py`.
+
+### Build v2.1.10 (2026-02-19)
+- **Fix**: Legacy Converter Logic & UX refinement.
+    - Added missing `return True` in `LegacyConverter.convert()` to correctly signal success to the GUI.
+    - Added `initialdir` support to folder browse dialogs, ensuring they open in the currently selected directory.
+- **Key Modules**: `src/legacy_converter.py`, `src/legacy_converter_dialog.py`.
+
+### Build v2.1.11 (2026-02-19)
+- **Feature**: Schema Deduplication Refinement.
+    - Metadata normalization for `Allowed Values` and `Example` fields. 
+    - The tool now ignores differences in separators (commas vs semicolons) and whitespace variations when identifying duplicate global schemas, preventing unnecessary schema duplication (e.g., `ErrorCode1`).
+- **Key Modules**: `src/legacy_converter.py`.
+
+### Build v2.1.13 (2026-02-19)
+- **Security/Operational**: Inhibited `python -c` usage via `.venv` batch wrapper to enforce traceable script-based workflows (using `temp.py`).
+- **Feature**: Fixed Double-Pass Schema Registration.
+    - Corrected physical filename matching in `$index.xlsm` (Paths sheet).
+    - Fixed schema usage tracking to correctly process structural tuples.
+    - Conversion log now strictly follows the index-defined endpoint order.
+- **Key Modules**: `src/legacy_converter.py`, `.venv/Scripts/python.bat`.
+
+### Build v2.1.14 (2026-02-19)
+- **Feature**: Refined Schema Usage Log.
+    - Added "Differences" column showing attributes deviation vs Base schema (type, format, range, regex, etc.).
+    - Usage entries for the same schema now show one OperationId per line.
+    - Added horizontal separator lines between schema groups for better readability.
+- **Logica**: Excluded `PatternEba` from schema fingerprinting to prevent false conflicts.
+- **GUI**:
+    - Enabled window resizing (Maximize/Minimize) for the Legacy Converter dialog.
+    - Unified button styling: "Open Output Folder" now matches Petrol Blue theme when active.
+- **Key Modules**: `src/legacy_converter.py`, `src/legacy_converter_dialog.py`.

@@ -114,7 +114,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         ("Newest First", "newest_first"),
         ("Oldest First", "oldest_first"),
     ]
-    TAB_OPTIONS = ["OAS to Excel", "Excel to OAS", "Validation", "View"]
+    TAB_OPTIONS = ["OAS to Excel", "Excel to OAS", "Validation", "View", "Tools", "Logs"]
 
     def __init__(self, parent, prefs_manager, on_save_callback=None):
         super().__init__(parent)
@@ -135,8 +135,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.update_idletasks()
         try:
             x = parent.winfo_x() + (parent.winfo_width() - 600) // 2
-            y = parent.winfo_y() + (parent.winfo_height() - 380) // 2
-            self.geometry(f"+{int(x)}+{int(y)}")
+            y = parent.winfo_y() + (parent.winfo_height() - 420) // 2
+            self.geometry(f"600x420+{int(x)}+{int(y)}")
         except:
              pass
 
@@ -170,6 +170,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.tab_output = self.tabview.add("OAS Generation")
         self.tab_val = self.tabview.add("Validation")
         self.tab_view = self.tabview.add("View")
+        self.tab_tools = self.tabview.add("Tools")
         self.tab_logs = self.tabview.add("Logs")
 
         # === 1. GENERAL TAB ===
@@ -250,6 +251,17 @@ class PreferencesDialog(ctk.CTkToplevel):
             self.tab_view, text="Dock documentation viewer to main window", progress_color="#0A809E"
         )
         self.chk_snap_default.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=20)
+        
+        # === 6. TOOLS TAB ===
+        # Legacy Tracing by Default
+        self.var_legacy_tracing = ctk.BooleanVar(value=True)
+        self.chk_legacy_tracing = ctk.CTkSwitch(
+            self.tab_tools, 
+            text="Enable Schema Tracing by default",
+            variable=self.var_legacy_tracing,
+            progress_color="#0A809E"
+        )
+        self.chk_legacy_tracing.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=20)
 
 
         # === 6. LOGS TAB ===
@@ -291,6 +303,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         ctk.CTkButton(self.frame_buttons, text="Apply & Close", width=120, 
                       fg_color="#0A809E", hover_color="#076075",
                       command=self._on_save).pack(side="right")
+
+    # Removed _browse_master
 
     def _load_current_values(self):
         prefs = self.prefs_manager.get_all()
@@ -336,6 +350,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.cbo_app_log_theme.set(prefs.get("app_log_theme", "Dark"))
         self.cbo_spectral_log_theme.set(prefs.get("spectral_log_theme", "Light"))
 
+        # Tools
+        self.var_legacy_tracing.set(prefs.get("tools_legacy_tracing_enabled", True))
+
 
     def save_preferences(self):
         """Save values to manager and close."""
@@ -376,6 +393,9 @@ class PreferencesDialog(ctk.CTkToplevel):
             "import_log_theme": self.cbo_import_log_theme.get(), # New
             "app_log_theme": self.cbo_app_log_theme.get(),
             "spectral_log_theme": self.cbo_spectral_log_theme.get(),
+            
+            # Tools
+            "tools_legacy_tracing_enabled": self.var_legacy_tracing.get(),
         }
         
         self.prefs_manager.update(new_prefs)
@@ -425,3 +445,5 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.cbo_import_log_theme.set("Light")
         self.cbo_app_log_theme.set("Dark")
         self.cbo_spectral_log_theme.set("Light")
+
+        self.var_legacy_tracing.set(True)

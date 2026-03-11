@@ -62,3 +62,6 @@ test_*.py
 # Excel temp files
 ~$*.xlsm
 ~$*.xlsx
+temp_*
+temp_*/
+

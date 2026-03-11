@@ -24,3 +24,5 @@ Don't take long sequences of actions without interacting with him. Sometimes he 
 11. Always use Spectral linter to check if there are errors to fix and produce a report to the user with some action suggested.
 
 12. Quality Assurance: every implementation you make must be reviewed acting as an experienced software architect. Meke sure that all state of the art architecural and design patterns are followed and that the code is maintainable, scalable, and secure. Strictly avoid all ad-hoc solutions and antipatterns. Check the code quality and produce a report to the user with mandatory (if any) and recommended actions.
+
+13. Python Execution Safety: The use of "python -c" or any form of inline Python execution is strictly forbidden. All Python logic must be contained within script files (e.g., in the tests/ directory or as temporary temp_*.py files). This ensures that all executions use the project's virtual environment and are traceable within the project's structure.
