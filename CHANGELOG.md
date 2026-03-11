@@ -2,7 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
-## [2.2.0] - 2026-03-11
+## [2.2] - 2026-03-11
 ### Major Features
 - **Integrated Dual Linter**: Vacuum engine now available alongside Spectral for deep OAS validation with interactive switching.
 - **Consolidated UX**: Moved Import/Roundtrip to a standalone tool window; streamlined main interface for Generation.
