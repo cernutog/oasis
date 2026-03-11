@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0] - 2026-03-11
+### Major Features
+- **Integrated Dual Linter**: Vacuum engine now available alongside Spectral for deep OAS validation with interactive switching.
+- **Consolidated UX**: Moved Import/Roundtrip to a standalone tool window; streamlined main interface for Generation.
+- **Legacy Converter 2.0**: Full recursive resolution for complex types, robust General Description mapping, and integrated progress logging.
+- **Schema Tracer**: New utility for forensic analysis of schema variants across legacy templates.
+- **High-Fidelity OAS**: Preserved numeric precision (RawNumericValue Protocol) and improved OAS 3.0 compliance via inline component resolution.
+
+### Refinements
+- **Interactive Filters**: Color-coded severity buttons (Error/Warning/Info/Hint) with greyed-out pie slice visualization.
+- **Visual Feedback**: Semantic tab coloring for response codes (2xx/4xx/5xx) and improved YAML editor styling.
+- **Cleanup Engine**: Automatic pruning of unused global components and empty OAS blocks.
+
 ## [2.1.76] - 2026-02-28
 - **Fix(LegacyConverter)**: Parallel same-named subtrees in the same sheet (e.g. two `dailyThresholds` blocks under different parents) are now correctly isolated by the BFS descent algorithm. Each `(name, parent)` pair gets its own fingerprint, so schemas like `DailyThresholds1`, `LacAgenda1`, `LacDefaultAgenda1`, and `DefaultDailyThresholds1` are correctly generated.
 - **Fix(LegacyConverter)**: `_unique_inline_component_name` now checks already-registered inline component names (not only emitted ones), preventing duplicate schema name registration within the same file.
