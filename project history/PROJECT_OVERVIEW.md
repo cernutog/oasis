@@ -1,30 +1,39 @@
 # OASIS - Project Overview
-**Current Version**: `v2.0.36` (Stable)
+**Current Version**: `v2.1.40` (Stable)
 
 ## Project Purpose
 OASIS (**O**penAPI **S**pecification **I**ntegration **S**uite) generates OpenAPI Specification (OAS) 3.0 and 3.1 YAML files from Excel templates. It provides a robust pipeline for importing, generating, validating, and documenting professional-grade API specifications.
 
-## Recent Major Changes (v2.0.x)
-1. **Multiple Examples**: Support for multiple examples per property via CSV-style smart quoting.
-2. **Precision Roundtrip**: Fixed array item description displacement and inheritance issues.
-3. **Clean Metadata**: Removed hard-coded strings in servers and enabled dynamic description parsing.
-4. **Natural Ordering**: Restored Excel-defined property order for schema data (preserving metadata prioritization only for docs).
-5. **OAS Importer**: Full bidirectional engine to transform existing OAS back into Excel templates.
-6. **Hybrid Documentation**: Bundled local User Manual with online GitHub Pages fallback.
+## Recent Major Changes (v2.1.x)
+1. **Import Dialog**: Extracted OAS-to-Excel import into standalone `ImportDialog` window (accessible via Tools menu).
+2. **Legacy Converter**: Full legacy-to-modern Excel template converter with schema deduplication and recursive resolution.
+3. **Dual Linter Support**: Spectral + Vacuum engines with hot-swap, interactive category filters, and CTRL+click solo/exclude.
+4. **Preferences Consolidation**: Merged Excel Generation + Tools tabs into "Templates"; tab order: General, OAS Generation, Validation, View, Templates, Logs.
+5. **Schema Tracer**: Standalone analysis tool tracing schema variants across legacy endpoint templates.
+6. **Style Consistency**: All dialogs share teal `#0A809E` button theme, matching LegacyConverterDialog style.
 
 ```
 OASIS/
 ├── src/
-│   ├── main.py          # Entry point - orchestrates generation process
-│   ├── gui.py           # Main UI logic (Integrated Editor & Logs)
-│   ├── generator.py     # High-level OAS orchestrator
-│   ├── generator_pkg/   # Specialized generation modules (Schema/Response builders)
-│   └── oas_importer/    # Importer engine (YAML/JSON -> Excel)
-├── docs/                # User Manual & Documentation (online/offline)
-├── Templates Master/    # Core Excel templates
-├── project history/     # Technical documentation & release history
-└── dist/                # Compiled executable (OASIS.exe)
-
+│   ├── main.py                    # Entry point - orchestrates generation
+│   ├── gui.py                     # Main UI (Editor, Validation, Tabs) + ImportDialog class
+│   ├── generator.py               # High-level OAS orchestrator
+│   ├── generator_pkg/             # Schema/Response/YAML builders
+│   ├── oas_importer/              # Importer engine (YAML/JSON -> Excel)
+│   ├── legacy_converter.py        # Legacy-to-modern template converter
+│   ├── legacy_converter_dialog.py # Legacy Converter GUI
+│   ├── legacy_schema_tracer_dialog.py # Schema Tracer dialog
+│   ├── preferences.py             # Preferences manager
+│   ├── preferences_dialog.py      # Preferences UI (6 tabs)
+│   ├── linter.py                  # Spectral/Vacuum validation wrapper
+│   ├── doc_viewer.py              # Docked documentation viewer
+│   └── redoc_gen.py               # Redoc HTML generation
+├── bin/                           # External binaries (spectral.exe, vacuum.exe)
+├── docs/                          # User Manual & Documentation
+├── Templates Master/              # Core Excel templates
+├── project history/               # Technical docs & release history
+├── tests/                         # Regression tests
+└── dist/                          # Compiled executable (OASIS.exe)
 ```
 
 ## Key Components
@@ -118,16 +127,8 @@ Format: `$ref: '#/components/schemas/SchemaName'`
 ## Running the Tool
 
 ```bash
-cd "C:\Users\giuse\.gemini\antigravity\scratch\OAS_Generation_Tool"
-python src/main.py
+cd "C:\Users\giuse\.gemini\antigravity\scratch\OASIS"
+python run_gui.py
 ```
 
-Output files:
-- `API Templates/generated/generated_oas_3.0.yaml`
-- `API Templates/generated/generated_oas_3.1.yaml`
-
-## Recent Major Changes
-
-1. **Raw YAML Insertion for Custom Extensions** - Preserves literal block style
-2. **Extension Ordering** - Ensures extensions appear before responses
-3. **Indentation Fix** - Changed `.strip()` to `.rstrip()` to preserve leading spaces
+Or use the compiled executable: `dist/OASIS.exe`

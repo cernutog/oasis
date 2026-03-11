@@ -18,8 +18,14 @@ datas = [
     (os.path.join(TCL_ROOT, "tcl8.6"), "tcl/tcl8.6"),
     (os.path.join(TCL_ROOT, "tk8.6"), "tcl/tk8.6"),
     ('bin/spectral.exe', 'bin'),
+    ('bin/vacuum.exe', 'bin'),
     ('docs', 'docs'), # Asset migration for GitHub Pages & Local Fallback
-    ('Templates Master', 'Templates Master'), # Bundle Templates
+    # Bundle Templates (exclude Excel temp lock files ~$*)
+    *[
+        (str(f), 'Templates Master')
+        for f in __import__('pathlib').Path('Templates Master').iterdir()
+        if not f.name.startswith('~$')
+    ],
     # Explicitly include tkinter Python module
     (TKINTER_LIB, "tkinter"),
 ]

@@ -4,13 +4,21 @@ import os
 import tempfile
 
 
-class SpectralRunner:
-    def __init__(self, spectral_cmd="spectral"):
-        self.cmd = spectral_cmd
+class OASLinter:
+    """
+    Unified OpenAPI linter supporting both Spectral and Vacuum engines.
+    Both produce Spectral-compatible JSON output, so parsing is identical.
+    """
+
+    ENGINES = ("spectral", "vacuum")
+
+    def __init__(self, cmd, engine="spectral"):
+        self.cmd = cmd
+        self.engine = engine if engine in self.ENGINES else "spectral"
 
     def run_lint(self, file_path, log_callback=None):
         """
-        Runs spectral lint on the given file.
+        Runs linting on the given file using the configured engine.
         """
 
         def log(msg):
@@ -21,7 +29,7 @@ class SpectralRunner:
             log(f"Error: File not found: {file_path}")
             return {
                 "success": False,
-                "error_msg": f"File not found",
+                "error_msg": "File not found",
                 "summary": {},
                 "details": [],
             }
@@ -29,12 +37,11 @@ class SpectralRunner:
         fd, temp_out = tempfile.mkstemp(suffix=".json")
         os.close(fd)
 
-        # Determine command - rely on shell=True to pick up .cmd/.exe from PATH
+        # Determine ruleset path
         ruleset_path = os.path.abspath(".spectral.yaml")
         temp_ruleset = None
 
         if not os.path.exists(ruleset_path):
-            # If local ruleset missing (e.g. inside exe), create a temporary default one
             log("Ruleset not found. Creating temporary default ruleset...")
             fd_r, temp_ruleset = tempfile.mkstemp(suffix=".yaml")
             os.close(fd_r)
@@ -42,18 +49,21 @@ class SpectralRunner:
                 f.write("extends: spectral:oas\n")
             ruleset_path = temp_ruleset
 
-        command = f'{self.cmd} lint "{file_path}" --ruleset "{ruleset_path}" -f json --output "{temp_out}"'
+        # Build command based on engine
+        if self.engine == "vacuum":
+            command = f'"{self.cmd}" spectral-report -r "{ruleset_path}" "{file_path}" "{temp_out}"'
+        else:
+            command = f'"{self.cmd}" lint "{file_path}" --ruleset "{ruleset_path}" -f json --output "{temp_out}"'
 
-        log(f"Executing: {command}")
+        log(f"[{self.engine.upper()}] Executing: {command}")
 
         try:
-            # use stdin=DEVNULL to ensure it never waits for input
             process = subprocess.run(
                 command,
                 shell=True,
                 capture_output=True,
                 text=True,
-                timeout=20,
+                timeout=120,
                 stdin=subprocess.DEVNULL,
             )
 
@@ -63,15 +73,13 @@ class SpectralRunner:
 
             log(f"Process ended. Return Code: {process.returncode}")
             if process.stderr:
-                log(
-                    f"STDERR: {process.stderr[:200]}..."
-                )  # Log first 200 chars of error
+                log(f"STDERR: {process.stderr[:200]}...")
 
             if not os.path.exists(temp_out) or os.path.getsize(temp_out) == 0:
                 log("Error: Output file empty or missing.")
                 return {
                     "success": False,
-                    "error_msg": "Spectral output missing.",
+                    "error_msg": f"{self.engine.capitalize()} output missing.",
                     "summary": {},
                     "details": [],
                 }
@@ -82,7 +90,7 @@ class SpectralRunner:
 
             log(f"Found {len(results)} issues.")
 
-            # Analyze results
+            # Analyze results - identical format for both engines
             summary = {"error": 0, "warning": 0, "info": 0, "hint": 0}
             code_summary = {}
             simplified_details = []
@@ -99,7 +107,6 @@ class SpectralRunner:
                     code_summary[code] = {"count": 0, "severity": severity_str}
                 code_summary[code]["count"] += 1
 
-                # Format path nicely
                 raw_path = item.get("path", [])
                 path_str = (
                     " > ".join([str(p) for p in raw_path]) if raw_path else "Root"
@@ -109,7 +116,7 @@ class SpectralRunner:
                     {
                         "code": code,
                         "message": item.get("message"),
-                        "path": path_str,  # now a string
+                        "path": path_str,
                         "line": item.get("range", {}).get("start", {}).get("line", 0)
                         + 1,
                         "severity": severity_str,
@@ -122,14 +129,15 @@ class SpectralRunner:
                 "code_summary": code_summary,
                 "details": simplified_details,
                 "raw_count": len(results),
-                "raw_data": results,  # Full original JSON
+                "raw_data": results,
+                "engine": self.engine,
             }
 
         except subprocess.TimeoutExpired:
             log("Error: Timeout Expired!")
             return {
                 "success": False,
-                "error_msg": "Timeout (20s)",
+                "error_msg": "Timeout (120s)",
                 "summary": {},
                 "details": [],
             }
@@ -142,3 +150,7 @@ class SpectralRunner:
                     os.remove(temp_out)
                 except (OSError, PermissionError):
                     pass
+
+
+# Backward compatibility alias
+SpectralRunner = OASLinter

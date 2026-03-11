@@ -704,3 +704,99 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
     - Enabled window resizing (Maximize/Minimize) for the Legacy Converter dialog.
     - Unified button styling: "Open Output Folder" now matches Petrol Blue theme when active.
 - **Key Modules**: `src/legacy_converter.py`, `src/legacy_converter_dialog.py`.
+
+### Build v2.1.21 (2026-02-20)
+- **Feature**: Template Schema Tracer — standalone analysis tool for tracing schema variants across legacy endpoint templates.
+- **Refinement**: Preferences UX improvements — reorganized settings layout.
+- **Key Modules**: `src/legacy_schema_tracer_dialog.py`, `src/preferences_dialog.py`.
+
+### Build v2.1.22 (2026-02-20)
+- **Fix**: Template Schema Tracer logic/formatting — fixed grouping accuracy and implemented Python safety barriers (`.venv/Scripts/python.bat` wrapper).
+- **Key Modules**: `src/legacy_schema_tracer_dialog.py`.
+
+### Build v2.1.23 (2026-02-20)
+- **Refinement**: Schema Variant Grouping — improved contiguity detection and base existence validation in Tracer.
+- **Key Modules**: `src/legacy_schema_tracer_dialog.py`.
+
+### Build v2.1.24 (2026-02-20)
+- **Feature**: Recursive Array/Object Resolution in Legacy Converter — properly expands nested complex types.
+- **Key Modules**: `src/legacy_converter.py`.
+
+### Build v2.1.25 (2026-02-20)
+- **Feature**: Internalized master templates — embedded reference templates within the application, removing them from the UI.
+- **Key Modules**: `src/legacy_converter.py`, `src/gui.py`.
+
+### Build v2.1.26 (2026-02-20)
+- **Fix**: Restored folder persistence in Legacy Converter browse dialogs.
+- **Key Modules**: `src/legacy_converter_dialog.py`.
+
+### Build v2.1.27 (2026-02-20)
+- **Fix**: Restored "Converted Templates" naming convention and path synchronization.
+- **Key Modules**: `src/legacy_converter.py`.
+
+### Build v2.1.28 (2026-02-20)
+- **Feature**: Vacuum Linter Integration — added `vacuum` as an alternative validation engine alongside Spectral.
+- **Key Modules**: `src/linter.py`, `src/gui.py`.
+
+### Build v2.1.29 (2026-02-20)
+- **Feature**: Dynamic linter labels, engine hot-swap, and cache invalidation.
+- **Key Modules**: `src/gui.py`, `src/linter.py`.
+
+### Build v2.1.30 (2026-02-20)
+- **Fix**: Engine switching callback and Vacuum CLI syntax correction.
+- **Key Modules**: `src/gui.py`, `src/linter.py`.
+
+### Build v2.1.31 (2026-02-20)
+- **Fix**: Legacy property duplication. Added "Hide Info" validation filter, non-blocking modal, and 120s linter timeout.
+- **Key Modules**: `src/legacy_converter.py`, `src/gui.py`.
+
+### Build v2.1.32 (2026-02-20)
+- **Fix**: No-siblings constraint in component schemas for OAS 3.0 compliance.
+- **Key Modules**: `src/generator.py`.
+
+### Build v2.1.33 (2026-02-20)
+- **Fix**: Reverted generator workaround, fixed schema duplication in legacy converter.
+- **Key Modules**: `src/generator.py`, `src/legacy_converter.py`.
+
+### Build v2.1.34 (2026-02-21)
+- **Feature**: Tab coloring for status code sheets (2xx green, 4xx amber, 5xx red) and skip media row for empty legacy responses.
+- **Key Modules**: `src/legacy_converter.py`, `src/gui.py`.
+
+### Build v2.1.35 (2026-02-21)
+- **Fix**: Response descriptions for empty sheets. Applied 60% lighter tab colors for better readability.
+- **Key Modules**: `src/legacy_converter.py`, `src/gui.py`.
+
+### Build v2.1.36 (2026-02-21)
+- **Feature**: Interactive Validation Filters — color-coded category buttons for filtering linter results by severity/type.
+- **Key Modules**: `src/gui.py`.
+
+### Build v2.1.37 (2026-02-21)
+- **Feature**: Filter UX — conditional tooltips, greyed pie slices for excluded categories, CTRL+click solo/exclude modes.
+- **Key Modules**: `src/gui.py`.
+
+### Build v2.1.38 (2026-02-21)
+- **Major Refactoring**: Extracted Import Tab into Standalone Window.
+    - Created `ImportDialog` class (`ctk.CTkToplevel`) with all import/roundtrip functionality.
+    - Removed "OAS to Excel" tab from main TabView, renamed remaining tab to "OAS Generation".
+    - Added "Create Template from OAS..." entry in Tools menu.
+    - **Preferences Consolidation**: Merged "Excel Generation" and "Tools" tabs into a single "Templates" tab.
+    - Reduced `TAB_OPTIONS` from 6 to 4 (removed "Import" and "Excel Generation").
+    - Updated `_on_tab_change`, view shortcuts, and `_apply_preferences` for new tab structure.
+- **Key Modules**: `src/gui.py`, `src/preferences.py`, `src/preferences_dialog.py`.
+
+### Build v2.1.39 (2026-02-21)
+- **Fix**: ImportDialog Style Overhaul (matching LegacyConverterDialog).
+    - Removed `transient()` — window is now fully independent (minimize/maximize enabled).
+    - Window matches parent size and position on open.
+    - Teal `#0A809E` buttons with `#076075` hover throughout.
+    - Styled input frame with `corner_radius=10` and description header.
+    - Log area with `fg_color="#F0F4F5"` and `text_color="#333333"`.
+    - Browse dialogs with focus lift (`lift()`/`focus_force()`) after selection.
+- **Fix**: Preferences Templates Tab repositioned between "View" and "Logs".
+- **Fix**: Section separators improved — bold teal text (`#0A809E`), thicker lines (2px, `#888888`).
+- **Key Modules**: `src/gui.py`, `src/preferences_dialog.py`.
+
+### Build v2.1.40 (2026-02-21)
+- **Fix**: Roundtrip Check button style — changed from transparent outline (appeared disabled) to solid teal fill matching Import to Excel button.
+- **Key Modules**: `src/gui.py`.
+

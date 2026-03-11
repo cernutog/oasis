@@ -25,6 +25,9 @@ class SemanticPieChart(ctk.CTkFrame):
     def __init__(self, master, **kwargs):
         super().__init__(master, **kwargs)
 
+        self.color_map = {}  # {code: hex_color} — populated by draw()
+        self.disabled_codes = set()  # codes to render as grey
+
         self.canvas = tk.Canvas(
             self, bg=self._apply_appearance_mode(self._fg_color), highlightthickness=0
         )
@@ -50,6 +53,15 @@ class SemanticPieChart(ctk.CTkFrame):
     def set_data(self, code_summary):
         self.data = code_summary
         self.has_data = True  # Mark that data was set (validation was run)
+        self.draw()
+
+    def get_color_map(self):
+        """Returns {code: hex_color} mapping from the last draw."""
+        return self.color_map
+
+    def set_disabled_codes(self, codes):
+        """Set which codes to render as grey. Redraws automatically."""
+        self.disabled_codes = codes
         self.draw()
 
     def clear(self):
@@ -189,6 +201,9 @@ class SemanticPieChart(ctk.CTkFrame):
             final_list.append((code, info, other_colors[i]))
             i += 1
 
+        # Store color map for external consumers (filter buttons)
+        self.color_map = {code: color for code, info, color in final_list}
+
         start_angle = 90
 
         # 1. Prepare Data
@@ -206,8 +221,8 @@ class SemanticPieChart(ctk.CTkFrame):
                 {
                     "code": code,
                     "info": info,
-                    "color": color,
-                    "dark_color": self._darken_color(color, 0.7),
+                    "color": "#B0B0B0" if code in self.disabled_codes else color,
+                    "dark_color": self._darken_color("#B0B0B0" if code in self.disabled_codes else color, 0.7),
                     "start": start_angle,
                     "extent": extent,
                     "is_full": is_full,

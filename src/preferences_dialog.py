@@ -114,7 +114,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         ("Newest First", "newest_first"),
         ("Oldest First", "oldest_first"),
     ]
-    TAB_OPTIONS = ["OAS to Excel", "Excel to OAS", "Validation", "View", "Tools", "Logs"]
+    TAB_OPTIONS = ["OAS Generation", "Validation", "View"]
 
     def __init__(self, parent, prefs_manager, on_save_callback=None):
         super().__init__(parent)
@@ -159,6 +159,23 @@ class PreferencesDialog(ctk.CTkToplevel):
         except (OSError, FileNotFoundError, Exception):
             pass
 
+    def _add_section_separator(self, parent, text):
+        """Add a captioned horizontal separator line to a tab."""
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(fill="x", padx=10, pady=(20, 8))
+
+        # Left line
+        left_line = ctk.CTkFrame(frame, height=2, fg_color="#888888")
+        left_line.pack(side="left", fill="x", expand=True, pady=8)
+
+        # Caption (bold teal)
+        lbl = ctk.CTkLabel(frame, text=f"  {text}  ", font=ctk.CTkFont(size=12, weight="bold"), text_color="#0A809E")
+        lbl.pack(side="left")
+
+        # Right line
+        right_line = ctk.CTkFrame(frame, height=2, fg_color="#888888")
+        right_line.pack(side="left", fill="x", expand=True, pady=8)
+
     def _build_ui(self):
         """Build the preferences UI with Tabs."""
         self.tabview = ctk.CTkTabview(self, segmented_button_selected_color="#0A809E", segmented_button_selected_hover_color="#076075")
@@ -166,11 +183,10 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # Create Tabs
         self.tab_gen = self.tabview.add("General")
-        self.tab_excel = self.tabview.add("Excel Generation")
         self.tab_output = self.tabview.add("OAS Generation")
         self.tab_val = self.tabview.add("Validation")
         self.tab_view = self.tabview.add("View")
-        self.tab_tools = self.tabview.add("Tools")
+        self.tab_templates = self.tabview.add("Templates")
         self.tab_logs = self.tabview.add("Logs")
 
         # === 1. GENERAL TAB ===
@@ -200,15 +216,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_window_pos.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=10)
 
 
-        # === 2. EXCEL GENERATION TAB ===
-        self.chk_excel_attr_diff = ctk.CTkSwitch(self.tab_excel, text="Attribute Diff", progress_color="#0A809E")
-        self.chk_excel_attr_diff.pack(anchor="w", padx=20, pady=(20, 10))
-
-        self.chk_excel_line_diff = ctk.CTkSwitch(self.tab_excel, text="Line Diff", progress_color="#0A809E")
-        self.chk_excel_line_diff.pack(anchor="w", padx=20, pady=10)
-
-
-        # === 3. OAS GENERATION TAB ===
+        # === 2. OAS GENERATION TAB ===
         self.chk_oas31 = ctk.CTkSwitch(self.tab_output, text="OAS 3.1", progress_color="#0A809E")
         self.chk_oas31.pack(anchor="w", padx=20, pady=(20, 10))
 
@@ -219,11 +227,42 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_swift.pack(anchor="w", padx=20, pady=10)
 
 
+        # === 3. TEMPLATES TAB (merged Excel Generation + Tools) ===
+        # --- Section: Create Template from OAS ---
+        self._add_section_separator(self.tab_templates, "Create Template from OAS")
+
+        self.chk_excel_attr_diff = ctk.CTkSwitch(self.tab_templates, text="Attribute Diff", progress_color="#0A809E")
+        self.chk_excel_attr_diff.pack(anchor="w", padx=20, pady=(5, 10))
+
+        self.chk_excel_line_diff = ctk.CTkSwitch(self.tab_templates, text="Line Diff", progress_color="#0A809E")
+        self.chk_excel_line_diff.pack(anchor="w", padx=20, pady=10)
+
+        # --- Section: Legacy Tools ---
+        self._add_section_separator(self.tab_templates, "Legacy Tools")
+
+        self.var_legacy_tracing = ctk.BooleanVar(value=True)
+        self.chk_legacy_tracing = ctk.CTkSwitch(
+            self.tab_templates, 
+            text="Enable Schema Tracing by default",
+            variable=self.var_legacy_tracing,
+            progress_color="#0A809E"
+        )
+        self.chk_legacy_tracing.pack(anchor="w", padx=20, pady=(5, 10))
+
+
         # === 4. VALIDATION TAB ===
+        frame_linter = ctk.CTkFrame(self.tab_val, fg_color="transparent")
+        frame_linter.pack(anchor="w", padx=20, pady=(20, 10))
+        ctk.CTkLabel(frame_linter, text="Linter Engine:").pack(side="left", padx=(0, 10))
+        self.cbo_linter_engine = ctk.CTkComboBox(
+            frame_linter, values=["Spectral", "Vacuum"], width=150, button_color="#0A809E"
+        )
+        self.cbo_linter_engine.pack(side="left")
+
         self.chk_ignore_br = ctk.CTkSwitch(
             self.tab_val, text="Ignore 'Bad Request' Examples", progress_color="#0A809E"
         )
-        self.chk_ignore_br.pack(anchor="w", padx=20, pady=20)
+        self.chk_ignore_br.pack(anchor="w", padx=20, pady=(10, 20))
 
 
         # === 5. VIEW TAB ===
@@ -251,29 +290,18 @@ class PreferencesDialog(ctk.CTkToplevel):
             self.tab_view, text="Dock documentation viewer to main window", progress_color="#0A809E"
         )
         self.chk_snap_default.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=20)
-        
-        # === 6. TOOLS TAB ===
-        # Legacy Tracing by Default
-        self.var_legacy_tracing = ctk.BooleanVar(value=True)
-        self.chk_legacy_tracing = ctk.CTkSwitch(
-            self.tab_tools, 
-            text="Enable Schema Tracing by default",
-            variable=self.var_legacy_tracing,
-            progress_color="#0A809E"
-        )
-        self.chk_legacy_tracing.grid(row=0, column=0, columnspan=2, sticky="w", padx=10, pady=20)
 
 
         # === 6. LOGS TAB ===
         self.tab_logs.grid_columnconfigure(1, weight=1)
 
-        # OAS to Excel Theme
-        ctk.CTkLabel(self.tab_logs, text="OAS To Excel Theme:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
+        # OAS Generation Theme
+        ctk.CTkLabel(self.tab_logs, text="OAS Generation Theme:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
         self.cbo_gen_log_theme = ctk.CTkComboBox(self.tab_logs, values=["Light", "Dark"], width=150, button_color="#0A809E")
         self.cbo_gen_log_theme.grid(row=0, column=1, sticky="w", pady=10)
 
-        # Excel to OAS Theme
-        ctk.CTkLabel(self.tab_logs, text="Excel To OAS Theme:").grid(row=1, column=0, sticky="w", padx=(10, 10), pady=10)
+        # Template Import Theme
+        ctk.CTkLabel(self.tab_logs, text="Template Import Theme:").grid(row=1, column=0, sticky="w", padx=(10, 10), pady=10)
         self.cbo_import_log_theme = ctk.CTkComboBox(self.tab_logs, values=["Light", "Dark"], width=150, button_color="#0A809E")
         self.cbo_import_log_theme.grid(row=1, column=1, sticky="w", pady=10)
 
@@ -334,6 +362,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         else: self.chk_excel_line_diff.deselect()
 
         # Validation
+        engine = prefs.get("linter_engine", "spectral").capitalize()
+        if engine in ["Spectral", "Vacuum"]: self.cbo_linter_engine.set(engine)
         if prefs.get("ignore_bad_request", True): self.chk_ignore_br.select()
 
         # View
@@ -380,6 +410,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             "excel_gen_line_diff": bool(self.chk_excel_line_diff.get()),
             
             # Validation
+            "linter_engine": self.cbo_linter_engine.get().lower(),
             "ignore_bad_request": bool(self.chk_ignore_br.get()),
             
             # View
@@ -403,7 +434,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         
         if self.on_save_callback:
             try:
-                self.on_save_callback()
+                self.on_save_callback(new_prefs)
             except Exception as e:
                 print(f"Error applying preferences: {e}")
                 # We still destroy the window, or maybe show an error?
@@ -421,7 +452,7 @@ class PreferencesDialog(ctk.CTkToplevel):
 
     def _on_reset(self):
         """Reset UI to default values."""
-        self.cbo_tab.set("OAS to Excel")
+        self.cbo_tab.set("OAS Generation")
         self.cbo_sort.set("Alphabetical")
         self.var_remember.set(False)
         self.chk_window_pos.select()
@@ -434,6 +465,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_excel_line_diff.deselect()
         
         self.chk_ignore_br.select()
+        self.cbo_linter_engine.set("Spectral")
         
         self.cbo_theme.set("oas-dark")
         self.cbo_font.set("Consolas")

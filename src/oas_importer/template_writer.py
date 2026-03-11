@@ -172,9 +172,9 @@ class TemplateExcelWriter:
         # (Colors the sheet tab at the bottom, not the cells)
         status_int = int(status_code) if status_code.isdigit() else 0
         if 200 <= status_int < 300:
-            tab_color = '92D050'  # Green
+            tab_color = 'FFD3ECB9'  # Light Green
         else:
-            tab_color = 'FF6B6B'  # Red
+            tab_color = 'FFFF9999'  # Light Red
         
         new_ws.sheet_properties.tabColor = tab_color
         

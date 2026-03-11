@@ -10,12 +10,13 @@ import re
 from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple, Optional, Any
 import pandas as pd
 import openpyxl
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
+import yaml
 
 
 @dataclass
@@ -992,6 +993,7 @@ class LegacyConverter:
         # 2. Body
         if "Body" in xl.sheet_names:
             self._convert_body(wb, xl, op_id, legacy_path.name)
+            self._convert_body_example(wb, xl, op_id, legacy_path.name)
         
         # 3. Response sheets
         if status_codes:
@@ -1054,28 +1056,18 @@ class LegacyConverter:
         self._write_rows(ws, rows, start_row=3)
     
     def _convert_body(self, wb, xl_legacy, op_id: str, ep_filename: str):
-        """Convert Body sheet - explicit fields under media type."""
+        """Convert Body sheet - media type row references wrapper schema."""
         ws = wb["Body"]
         
         wrapper_name = f"{op_id}Request"
         if wrapper_name not in self.emitted_wrappers:
             return
             
-        # 1. Media Type row
-        # Col: Section, Name, Parent, Description, Type, ItemsDataType, SchemaName, Format, Mandatory, ...
+        # Media Type row with schema reference to wrapper
+        # Properties are already defined in the component schema - no need to duplicate inline
         media_row = ["content", "application/json", "", "", "schema", "", wrapper_name, "", "M",
                      "", "", "", "", "", ""]
-        rows = [media_row]
-        
-        # 2. Child rows
-        children = self._read_legacy_structure(xl_legacy, "Body")
-        if children:
-            child_rows, _ = self._build_children_rows(wrapper_name, children, ep_filename, legato_parent="application/json")
-            for r in child_rows:
-                r.insert(0, "content") # Prepend Section='content'
-            rows.extend(child_rows)
-            
-        self._write_rows(ws, rows, start_row=3)
+        self._write_rows(ws, [media_row], start_row=3)
     
     def _convert_responses(self, wb, xl, op_id: str, status_codes: List[str], filename: str):
         """Convert response sheets."""
@@ -1110,24 +1102,27 @@ class LegacyConverter:
                 desc = {"200": "OK", "201": "Created", "400": "Bad Request",
                         "401": "Unauthorized", "403": "Forbidden", "404": "Not Found"}.get(code, "")
             
+            # Tab Coloring (R1 colors)
+            status_int = int(code) if code.isdigit() else 0
+            if 200 <= status_int < 300:
+                ws.sheet_properties.tabColor = "FFD3ECB9"  # Light Green
+            else:
+                ws.sheet_properties.tabColor = "FFFF9999"  # Light Red
+            
             # Row 1: Response | code | description
             ws.cell(row=1, column=1).value = "Response"
             ws.cell(row=1, column=2).value = code
             ws.cell(row=1, column=3).value = desc
             
-            # Row 3+: media type and explicit fields
-            media_row = ["content", "application/json", "", "", "schema", "", wrapper_name, "", "M",
-                         "", "", "", "", "", ""]
-            rows = [media_row]
-            
+            # Row 3+: media type row with schema reference to wrapper
+            # PROPERTIES CHECK: If the legacy sheet is empty, do not add any content row.
             children = self._read_legacy_structure(xl, code)
             if children:
-                child_rows, _ = self._build_children_rows(wrapper_name, children, filename, legato_parent="application/json")
-                for r in child_rows:
-                    r.insert(0, "content")
-                rows.extend(child_rows)
-                
-            self._write_rows(ws, rows, start_row=3)
+                # Media type row with schema reference to wrapper
+                # Properties are already defined in the component schema - no need to duplicate inline
+                media_row = ["content", "application/json", "", "", "schema", "", wrapper_name, "", "M",
+                             "", "", "", "", "", ""]
+                self._write_rows(ws, [media_row], start_row=3)
     
     # === Helper Methods ===
     
@@ -1185,9 +1180,26 @@ class LegacyConverter:
     def _build_children_rows(self, wrapper_name: str, children: List[Tuple], ep_filename: Optional[str] = None, legato_parent: Optional[str] = None) -> Tuple[List[List], set]:
         """Build child rows with proper parent hierarchy and type resolution.
         If legato_parent is provided, use it as Parent for root items.
-        Returns (rows, referenced_data_types set)."""
+        Returns (rows, referenced_data_types set).
+        
+        When a node resolves to a schema $ref, its children are NOT emitted
+        because they already exist in the referenced component schema.
+        """
         rows = []
         referenced_data_types = set()
+        
+        # First pass: determine which nodes resolve to a schema reference.
+        # Children of such nodes should be suppressed (they live in the component schema).
+        schema_ref_nodes = set()
+        
+        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+            low_dtype = dtype.lower()
+            out_name, dt = self._resolve_data_type(dtype, ep_filename)
+            
+            # If it resolves to a named schema (not literal 'object' or 'array'), mark it
+            if out_name and low_dtype not in ["object", "array"] and dt:
+                schema_ref_nodes.add(name.lower())
+                referenced_data_types.add(out_name)
         
         # Build parent lookup (case-insensitive)
         parent_map = {}
@@ -1195,7 +1207,26 @@ class LegacyConverter:
             if parent:
                 parent_map[name.lower()] = parent
         
+        # Second pass: build rows, skipping children of schema-ref nodes
         for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+            # Skip this row if its parent is a node that resolves to a schema $ref:
+            # the children are already defined in the referenced component schema.
+            if parent and parent.lower() in schema_ref_nodes:
+                continue
+            
+            # Also skip if any ancestor resolves to a schema ref (deeply nested case)
+            skip = False
+            ancestor = parent.lower() if parent else None
+            while ancestor:
+                if ancestor in schema_ref_nodes:
+                    skip = True
+                    break
+                ancestor = parent_map.get(ancestor)
+                if ancestor:
+                    ancestor = ancestor.lower()
+            if skip:
+                continue
+            
             # Determine actual parent
             if legato_parent:
                 actual_parent = parent if parent else legato_parent
@@ -1250,7 +1281,342 @@ class LegacyConverter:
             ])
         
         return rows, referenced_data_types
+
     
+    # =========================================================================
+    # Body Example Generation
+    # =========================================================================
+
+    def _get_example_values(self, dt: Optional['DataType']) -> List[str]:
+        """Return list of example values from a DataType (split by ';'), or [] if none."""
+        if dt is None:
+            return []
+        raw = dt.example or ""
+        if not raw or raw.lower() == "nan":
+            # Fallback: first allowed value
+            av = dt.allowed_values or ""
+            if av and av.lower() != "nan":
+                first = re.split(r'[;,]', av)[0].strip()
+                if first:
+                    return [first]
+            return []
+        parts = [p.strip() for p in raw.split(";") if p.strip()]
+        return parts if parts else []
+
+    def _generate_synthetic_value(self, dtype_lower: str) -> Any:
+        """Return a type-appropriate synthetic fallback value."""
+        if dtype_lower in ("integer", "int"):
+            return 0
+        if dtype_lower in ("number", "float", "double", "decimal"):
+            return 0.0
+        if dtype_lower == "boolean":
+            return True
+        return "string"
+
+    def _resolve_leaf_dt(self, dtype: str, ep_filename: Optional[str]) -> Optional['DataType']:
+        """Resolve a field type to its DataType, or None for primitives."""
+        low = dtype.lower()
+        if low in ("string", "number", "integer", "boolean", "array", "object", ""):
+            return None
+        _, dt = self._resolve_data_type(dtype, ep_filename)
+        return dt
+
+    def _build_body_example_dict(
+        self,
+        children: List[Tuple],
+        ep_filename: Optional[str],
+        omit_field: Optional[str] = None,
+        override_field: Optional[str] = None,
+        override_value: Any = None,
+        array_item_index: int = 0,
+    ) -> dict:
+        """
+        Build a Python dict representing one body example from the legacy structure.
+
+        children  : list of (name, parent, desc, dtype, mandatory, v_rules, items_type)
+        omit_field: if set, skip this field name (for Bad Request missing-mandatory)
+        override_field / override_value: replace value for one field (other Bad Request violations)
+        array_item_index: 0 = first array item, 1 = second array item (shifts rotation)
+        """
+        # Per-type rotation counter (shared across the whole call so siblings rotate)
+        type_counters: Dict[str, int] = {}
+
+        def get_rotated_value(dtype: str, dt: Optional['DataType'], item_offset: int = 0) -> Any:
+            """Pick example value using per-type rotation + item_offset for array diversity."""
+            examples = self._get_example_values(dt)
+            low = dtype.lower() if dtype else "string"
+
+            if examples:
+                count = type_counters.get(low, 0)
+                idx = (count + item_offset) % len(examples)
+                type_counters[low] = count + 1
+                raw = examples[idx]
+                # Coerce to numeric if the DataType says so
+                if dt:
+                    if dt.type.lower() in ("integer", "int"):
+                        try:
+                            return int(raw)
+                        except (ValueError, TypeError):
+                            pass
+                    elif dt.type.lower() in ("number", "float", "double", "decimal"):
+                        try:
+                            return float(raw)
+                        except (ValueError, TypeError):
+                            pass
+                    elif dt.type.lower() == "boolean":
+                        return raw.lower() in ("true", "yes", "1")
+                return raw
+            else:
+                # Synthetic fallback
+                if dt:
+                    low_t = dt.type.lower()
+                else:
+                    low_t = low
+                return self._generate_synthetic_value(low_t)
+
+        # Build parent → {child_name: ...} tree
+        # We work with the flat list and reconstruct hierarchy
+        # Step 1: collect all node names and their direct parent
+        node_parent: Dict[str, str] = {}
+        node_dtype: Dict[str, str] = {}
+        node_mandatory: Dict[str, str] = {}
+        node_items: Dict[str, str] = {}
+        ordered_names: List[str] = []
+
+        for name, parent, desc, dtype, mandatory, v_rules, items_type in children:
+            node_parent[name] = parent or ""
+            node_dtype[name] = dtype or "string"
+            node_mandatory[name] = mandatory or ""
+            node_items[name] = items_type or ""
+            if name not in ordered_names:
+                ordered_names.append(name)
+
+        # Identify root nodes (no parent, or parent not in node list)
+        node_set = set(ordered_names)
+
+        def is_root(name):
+            p = node_parent.get(name, "")
+            return not p or p not in node_set
+
+        # Step 2: recursively build dict for a subtree rooted at `parent_name`
+        # children_of[parent] = [child_name, ...]
+        children_of: Dict[str, List[str]] = {}
+        for name in ordered_names:
+            p = node_parent.get(name, "")
+            if p not in children_of:
+                children_of[p] = []
+            children_of[p].append(name)
+
+        def build_node(name: str, item_offset: int = 0) -> Any:
+            """Return the value for a node: scalar, dict, or list."""
+            dtype = node_dtype.get(name, "string")
+            low_dtype = dtype.lower()
+            dt = self._resolve_leaf_dt(dtype, ep_filename)
+            my_children = children_of.get(name, [])
+
+            # --- ARRAY ---
+            if low_dtype == "array" or (dt and dt.type.lower() == "array"):
+                items_type_name = node_items.get(name, "")
+                if not items_type_name and dt:
+                    items_type_name = dt.items_type or ""
+                items_dt = self._resolve_leaf_dt(items_type_name, ep_filename) if items_type_name else None
+                items_low = items_type_name.lower() if items_type_name else "object"
+
+                if my_children:
+                    # Array of objects defined inline
+                    item1 = {c: build_node(c, item_offset=0) for c in my_children
+                             if c != omit_field or override_field is not None}
+                    # Check if we have enough examples for a second distinct item
+                    can_make_second = _can_diversify(my_children, item_offset=1)
+                    if can_make_second:
+                        item2 = {c: build_node(c, item_offset=1) for c in my_children
+                                 if c != omit_field or override_field is not None}
+                        return [item1, item2]
+                    return [item1]
+                elif items_low == "object" or (items_dt and items_dt.type.lower() == "object"):
+                    # Array of objects but no inline children — use empty dict
+                    return [{}]
+                else:
+                    # Array of scalars
+                    v1 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=0)
+                    examples_list = self._get_example_values(items_dt)
+                    if len(examples_list) >= 2:
+                        v2 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=1)
+                        return [v1, v2]
+                    return [v1]
+
+            # --- OBJECT ---
+            if low_dtype == "object" or (dt and dt.type.lower() == "object" and my_children):
+                result = {}
+                for c in my_children:
+                    if c == omit_field:
+                        continue
+                    val = build_node(c, item_offset=item_offset)
+                    if c == override_field:
+                        val = override_value
+                    result[c] = val
+                return result
+
+            # --- SCALAR (possibly a named schema that resolves to a scalar type) ---
+            val = get_rotated_value(dtype, dt, item_offset=item_offset)
+            if name == override_field:
+                val = override_value
+            return val
+
+        def _can_diversify(child_names: List[str], item_offset: int) -> bool:
+            """Check whether at least one child has >1 example value (enables 2nd array item)."""
+            for c in child_names:
+                dtype = node_dtype.get(c, "string")
+                dt = self._resolve_leaf_dt(dtype, ep_filename)
+                examples = self._get_example_values(dt)
+                if len(examples) >= 2:
+                    return True
+            return False
+
+        # Step 3: build root dict
+        result = {}
+        for name in ordered_names:
+            if not is_root(name):
+                continue
+            if name == omit_field:
+                continue
+            val = build_node(name, item_offset=array_item_index)
+            if name == override_field:
+                val = override_value
+            result[name] = val
+
+        return result
+
+    def _pick_bad_request_violation(
+        self,
+        children: List[Tuple],
+        ep_filename: Optional[str],
+    ) -> Tuple[str, Optional[str], Any]:
+        """
+        Scan body children and choose the best Bad Request violation.
+        Returns (violation_type, field_name, bad_value).
+        violation_type: 'omit' | 'enum' | 'range' | 'regex' | 'type'
+        """
+        mandatory_fields = []
+        enum_fields = []
+        range_fields = []
+        regex_fields = []
+        any_field = None
+
+        for name, parent, desc, dtype, mandatory, v_rules, items_type in children:
+            dt = self._resolve_leaf_dt(dtype, ep_filename)
+            any_field = (name, dtype, dt)
+
+            mand = mandatory.upper() if mandatory else ""
+            if mand == "M":
+                mandatory_fields.append(name)
+
+            if dt:
+                if dt.allowed_values and dt.allowed_values.lower() != "nan":
+                    enum_fields.append((name, dt))
+                if (dt.min_val and dt.min_val.lower() != "nan") or \
+                   (dt.max_val and dt.max_val.lower() != "nan"):
+                    range_fields.append((name, dt))
+                if dt.regex and dt.regex.lower() != "nan":
+                    regex_fields.append((name, dt))
+
+        # Priority 1: omit mandatory
+        if mandatory_fields:
+            return ("omit", mandatory_fields[0], None)
+
+        # Priority 2: invalid enum value
+        if enum_fields:
+            name, dt = enum_fields[0]
+            return ("enum", name, "INVALID_VALUE")
+
+        # Priority 3: out-of-range value
+        if range_fields:
+            name, dt = range_fields[0]
+            low_t = dt.type.lower() if dt else "string"
+            if dt.max_val and dt.max_val.lower() != "nan":
+                try:
+                    bad = int(float(dt.max_val)) + 1
+                    return ("range", name, bad)
+                except (ValueError, TypeError):
+                    pass
+            if dt.min_val and dt.min_val.lower() != "nan":
+                try:
+                    bad = int(float(dt.min_val)) - 1
+                    return ("range", name, bad)
+                except (ValueError, TypeError):
+                    pass
+
+        # Priority 4: regex violation
+        if regex_fields:
+            name, dt = regex_fields[0]
+            return ("regex", name, "INVALID")
+
+        # Priority 5: wrong type fallback
+        if any_field:
+            name, dtype, dt = any_field
+            low_t = (dt.type.lower() if dt else dtype.lower()) if dtype else "string"
+            if low_t in ("integer", "number", "float", "double", "decimal"):
+                return ("type", name, "not_a_number")
+            else:
+                return ("type", name, 12345)
+
+        return ("type", None, None)
+
+    def _convert_body_example(self, wb, xl_legacy, op_id: str, ep_filename: str):
+        """Generate and write the Body Example sheet with OK and Bad Request examples."""
+        if "Body Example" not in wb.sheetnames:
+            return
+
+        if "Body" not in xl_legacy.sheet_names:
+            return
+
+        children = self._read_legacy_structure(xl_legacy, "Body")
+        if not children:
+            return
+
+        ws = wb["Body Example"]
+
+        # --- Build OK example ---
+        ok_dict = self._build_body_example_dict(children, ep_filename)
+        ok_yaml = yaml.dump(
+            ok_dict,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ).rstrip()
+
+        # --- Build Bad Request example ---
+        violation_type, viol_field, bad_val = self._pick_bad_request_violation(children, ep_filename)
+
+        if violation_type == "omit":
+            bad_dict = self._build_body_example_dict(
+                children, ep_filename, omit_field=viol_field
+            )
+        else:
+            bad_dict = self._build_body_example_dict(
+                children, ep_filename,
+                override_field=viol_field,
+                override_value=bad_val,
+            )
+
+        bad_yaml = yaml.dump(
+            bad_dict,
+            default_flow_style=False,
+            allow_unicode=True,
+            sort_keys=False,
+        ).rstrip()
+
+        # --- Write to sheet (col A = name, col B = body YAML) ---
+        examples = [
+            ("OK", ok_yaml),
+            ("Bad Request", bad_yaml),
+        ]
+        for row_idx, (ex_name, ex_body) in enumerate(examples, start=2):
+            cell_name = ws.cell(row=row_idx, column=1, value=ex_name)
+            cell_body = ws.cell(row=row_idx, column=2, value=ex_body)
+            cell_name.alignment = Alignment(vertical="top")
+            cell_body.alignment = Alignment(vertical="top", wrap_text=True)
+
     def _recursive_resolve_items(self, items_type_name: str, source_context: Optional[str]) -> str:
         """Recursively resolve items_type. If it resolves to object or array, return primitive."""
         if not items_type_name:

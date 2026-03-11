@@ -488,7 +488,9 @@ class OASGenerator:
         Delegates to helper methods for tree building, headers, and content.
         """
         if df is None or df.empty:
-            return {"description": description_override or "Response"}
+            # Check if there's a description in df.attrs (populated by excel_parser for empty sheets)
+            desc = df.attrs.get("response_description") if df is not None else None
+            return {"description": description_override or desc or "Response"}
 
         # Build tree structure from flat rows
         root_node = self._build_response_tree(df)

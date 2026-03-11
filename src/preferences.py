@@ -44,7 +44,8 @@ class PreferencesManager:
         "analysis_log_theme": "Light",
         "spectral_log_theme": "Dark",
         # Interface
-        "default_tab": "Generation",  # Generation, Validation, View
+        "default_tab": "OAS Generation",  # OAS Generation, Validation, View
+        "linter_engine": "spectral",  # spectral or vacuum
         "ignore_bad_request": True,
         "remember_window_pos": False,
         "window_geometry": None,  # "WxH+X+Y" format
