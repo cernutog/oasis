@@ -14,8 +14,8 @@ When starting a new chat to continue work on this project, share these files:
 
 ## Current Status (as of 2026-02-26)
 
-- **Current Version**: `v2.1.71`
-- **Recent focus area**: Legacy Tools schema tracing readability (schema collisions / dedup)
+- **Current Version**: `v2.1.98`
+- **Recent focus area**: Legacy Tools schema tracing correctness + readability
 
 ### Recent work summary (v2.1.70 - v2.1.71)
 - **Legacy Schema Tracing table** (logged by legacy converter + schema tracer):
@@ -27,9 +27,22 @@ When starting a new chat to continue work on this project, share these files:
   - Added Legacy Tools toggles for including descriptions/examples in collision detection (default OFF).
   - Compacted spacing so bottom action buttons are not clipped.
 
+### Additional recent work summary (v2.1.72 - v2.1.98)
+- **Schema tracer USED IN compaction**:
+  - Entries are aggregated by endpoint to save vertical space.
+  - Example: `apDetails (400) (401) (403) (404) (429) (500)`.
+- **Wrapper usage correctness**:
+  - Headless tracing no longer produces wrapper schemas with `USED IN: (None)` due to wrapper naming mismatches.
+  - Wrapper usage is seeded from endpoint sheet presence (`Body`, `200/204/...`) and mapped to `$index` schema names including optional `.YYMMDD` suffix.
+
 ### Quick verification / build
 - Verify tracing output (Templates Legacy): `.venv\Scripts\python.exe temp.py`
-- Build executable: `build_exe.bat`
+- Build executable (increments build number + PyInstaller): `build_exe.bat`
+- Stable release build (no version bump): `build_release.bat`
+
+### Open TODOs (high-level)
+- Investigate/mitigate Redocly rounding for large `maximum` values (IEEE-754 display limits).
+- Separate tracing logging: console should show high-level errors only; detailed tracing goes to application log (infrastructure exists via `detail_log_callback` in `LegacyConverter`, not yet wired in GUI).
 
 ### Document Purposes
 

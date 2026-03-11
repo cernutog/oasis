@@ -8,6 +8,8 @@ All functions receive version as parameter for OAS 3.0/3.1 differences.
 import pandas as pd
 from collections import OrderedDict
 
+from .yaml_output import RawNumericValue
+
 from .row_helpers import (
     get_col_value,
     get_type,
@@ -144,28 +146,28 @@ def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
     )
 
     if pd.notna(min_val):
-        try:
-            val = int(min_val) if float(min_val).is_integer() else float(min_val)
+        raw = str(min_val).strip()
+        if raw:
             if type_val == "string":
-                schema["minLength"] = int(val)
+                # Must be an integer in OAS; emit as raw numeric scalar.
+                schema["minLength"] = RawNumericValue(raw.split(",")[0].split(".")[0])
             elif type_val in ["integer", "number"]:
-                schema["minimum"] = val
+                # Preserve original as-is, but emit a YAML-valid numeric scalar.
+                norm = raw.replace(",", ".")
+                schema["minimum"] = RawNumericValue(norm)
             elif type_val == "array":
-                schema["minItems"] = int(val)
-        except (ValueError, TypeError):
-            pass
+                schema["minItems"] = RawNumericValue(raw.split(",")[0].split(".")[0])
 
     if pd.notna(max_val):
-        try:
-            val = int(max_val) if float(max_val).is_integer() else float(max_val)
+        raw = str(max_val).strip()
+        if raw:
             if type_val == "string":
-                schema["maxLength"] = int(val)
+                schema["maxLength"] = RawNumericValue(raw.split(",")[0].split(".")[0])
             elif type_val in ["integer", "number"]:
-                schema["maximum"] = val
+                norm = raw.replace(",", ".")
+                schema["maximum"] = RawNumericValue(norm)
             elif type_val == "array":
-                schema["maxItems"] = int(val)
-        except (ValueError, TypeError):
-            pass
+                schema["maxItems"] = RawNumericValue(raw.split(",")[0].split(".")[0])
 
 
 def map_type_to_schema(row, version: str, is_node: bool = False, components_schemas: dict = None) -> dict:

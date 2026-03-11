@@ -1265,10 +1265,18 @@ class OASGenApp(ctk.CTk):
 
         # Apply Excel Generation preferences
         if "excel_gen_attr_diff" in new_prefs:
-            self.var_attr_diff.set(new_prefs["excel_gen_attr_diff"])
+            try:
+                if hasattr(self, "var_attr_diff"):
+                    self.var_attr_diff.set(new_prefs["excel_gen_attr_diff"])
+            except Exception:
+                pass
             
         if "excel_gen_line_diff" in new_prefs:
-            self.var_line_diff.set(new_prefs["excel_gen_line_diff"])
+            try:
+                if hasattr(self, "var_line_diff"):
+                    self.var_line_diff.set(new_prefs["excel_gen_line_diff"])
+            except Exception:
+                pass
 
         # Apply log themes immediately
         if "gen_log_theme" in new_prefs:
@@ -3411,8 +3419,7 @@ class OASGenApp(ctk.CTk):
         self.prefs_manager.set("search_history", history)
         self.prefs_manager.save()
         
-        # Update combo
-        self.search_entry.configure(values=history)
+        # History UI is served via the dropdown menu in _show_history_menu.
 
     def _safe_search_trigger(self, event=None):
         """Directly trigger search from binding, ensuring 'break'."""

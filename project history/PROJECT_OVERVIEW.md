@@ -1,5 +1,5 @@
 # OASIS - Project Overview
-**Current Version**: `v2.1.72`
+**Current Version**: `v2.1.98`
 
 ## Project Purpose
 OASIS (**O**penAPI **S**pecification **I**ntegration **S**uite) generates OpenAPI Specification (OAS) 3.0 and 3.1 YAML files from Excel templates. It provides a robust pipeline for importing, generating, validating, and documenting professional-grade API specifications.
@@ -12,7 +12,7 @@ OASIS (**O**penAPI **S**pecification **I**ntegration **S**uite) generates OpenAP
 5. **Schema Tracer**: Standalone analysis tool tracing schema variants across legacy endpoint templates.
 6. **Style Consistency**: All dialogs share teal `#0A809E` button theme, matching LegacyConverterDialog style.
 
-## Recent Updates (v2.1.71 - v2.1.72)
+## Recent Updates (v2.1.71 - v2.1.98)
 
 ### 1) Legacy Schema Tracing: Column Fixes
 The schema tracing summary table (SCHEMA NAME / USED IN / DIFFERENCES / MERGE) was refined:
@@ -20,6 +20,13 @@ The schema tracing summary table (SCHEMA NAME / USED IN / DIFFERENCES / MERGE) w
 - **USED IN column**
   - Now shows the **real Excel sheet name** as context, e.g. `operationId (200)`, `operationId (Body)`, `operationId (400)`.
   - Previously showed generic labels `(Response)` / `(Body)` — now always uses the actual sheet.
+  - **Compaction**: usages are aggregated by endpoint on a single line to reduce vertical space:
+    - Example: `apDetails (400) (401) (403) (404) (429) (500)`
+  - **Width**: the column was widened to avoid excessive line wrapping.
+
+- **Wrapper usage correctness**
+  - Wrapper schemas (e.g. `FooRequest` / `FooResponse`) must never show `USED IN: (None)` due to name mismatches.
+  - Headless tracer now seeds wrapper usage based on endpoint sheets (`Body`, `200/204/...`) and maps wrapper names to the actual `$index` schema names (handling optional `.YYMMDD` suffix).
 
 - **DIFFERENCES column**
   - **No arrow notation**: each schema now shows only its own attribute values for the differing fields.
@@ -55,7 +62,8 @@ The Templates tab spacing was compacted to avoid bottom buttons being clipped.
 
 ### 4) Quick verification / build commands
 - Verify tracing output (Templates Legacy): `.venv\Scripts\python.exe temp.py`
-- Build executable: `build_exe.bat`
+- Build executable (increments build number + PyInstaller): `build_exe.bat`
+- Stable release build (no version bump): `build_release.bat`
 
 OASIS/
 ├── src/

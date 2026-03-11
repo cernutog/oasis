@@ -1,39 +1,7 @@
 {
-  "info": {
-    "file": "$index.xlsx",
-    "sheet": "General Description"
-  },
-  "info.contact": {
-    "file": "$index.xlsx",
-    "sheet": "General Description"
-  },
-  "info.contact.name": {
-    "file": "$index.xlsx",
-    "sheet": "General Description"
-  },
-  "info.contact.url": {
-    "file": "$index.xlsx",
-    "sheet": "General Description"
-  },
-  "info.contact.email": {
-    "file": "$index.xlsx",
-    "sheet": "General Description"
-  },
-  "info.license": {
-    "file": "$index.xlsx",
-    "sheet": "General Description"
-  },
   "tags": {
     "file": "$index.xlsx",
     "sheet": "Tags"
-  },
-  "components.parameters": {
-    "file": "$index.xlsx",
-    "sheet": "Parameters"
-  },
-  "components.headers": {
-    "file": "$index.xlsx",
-    "sheet": "Headers"
   },
   "components.schemas.AgendaDetails": {
     "file": "$index.xlsx",
@@ -1199,26 +1167,6 @@
     "file": "$index.xlsx",
     "sheet": "Schemas"
   },
-  "components.responses": {
-    "file": "$index.xlsx",
-    "sheet": "Responses"
-  },
-  "paths./listSettlementBICs/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listSettlementBICs/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listSettlementBICs/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listSettlementBICs/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
   "paths./listSettlementBICs/{senderBIC}.post.parameters": {
     "file": "listSettlementBICs.211207",
     "sheet": "Parameters"
@@ -1264,24 +1212,8 @@
     "sheet": "500"
   },
   "paths./listSettlementBICs/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./settlementBICDetails/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./settlementBICDetails/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./settlementBICDetails/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./settlementBICDetails/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listSettlementBICs.211207",
+    "sheet": "Parameters"
   },
   "paths./settlementBICDetails/{senderBIC}.post.parameters": {
     "file": "settlementBICDetails.230511",
@@ -1328,24 +1260,8 @@
     "sheet": "500"
   },
   "paths./settlementBICDetails/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./updateSettlementBIC/{senderBIC}.put.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./updateSettlementBIC/{senderBIC}.put.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./updateSettlementBIC/{senderBIC}.put.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./updateSettlementBIC/{senderBIC}.put.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "settlementBICDetails.230511",
+    "sheet": "Parameters"
   },
   "paths./updateSettlementBIC/{senderBIC}.put.parameters": {
     "file": "updateSettlementBIC.230511",
@@ -1392,24 +1308,8 @@
     "sheet": "500"
   },
   "paths./updateSettlementBIC/{senderBIC}.put": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./amendChangeSettlementBIC/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./amendChangeSettlementBIC/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./amendChangeSettlementBIC/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./amendChangeSettlementBIC/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "updateSettlementBIC.230511",
+    "sheet": "Parameters"
   },
   "paths./amendChangeSettlementBIC/{senderBIC}.post.parameters": {
     "file": "amendChangeSettlementBIC.230511",
@@ -1456,24 +1356,8 @@
     "sheet": "500"
   },
   "paths./amendChangeSettlementBIC/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeChangeSettlementBIC/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeChangeSettlementBIC/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeChangeSettlementBIC/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeChangeSettlementBIC/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "amendChangeSettlementBIC.230511",
+    "sheet": "Parameters"
   },
   "paths./revokeChangeSettlementBIC/{senderBIC}.post.parameters": {
     "file": "revokeChangeSettlementBIC.230216",
@@ -1520,24 +1404,8 @@
     "sheet": "500"
   },
   "paths./revokeChangeSettlementBIC/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./currentPosition/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./currentPosition/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./currentPosition/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./currentPosition/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "revokeChangeSettlementBIC.230216",
+    "sheet": "Parameters"
   },
   "paths./currentPosition/{senderBIC}.post.parameters": {
     "file": "currentPosition.211207",
@@ -1584,24 +1452,8 @@
     "sheet": "500"
   },
   "paths./currentPosition/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./positionLac/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./positionLac/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./positionLac/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./positionLac/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "currentPosition.211207",
+    "sheet": "Parameters"
   },
   "paths./positionLac/{senderBIC}.post.parameters": {
     "file": "positionLac.211207",
@@ -1648,24 +1500,8 @@
     "sheet": "500"
   },
   "paths./positionLac/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setDefaultAgenda/{senderBIC}.put.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setDefaultAgenda/{senderBIC}.put.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setDefaultAgenda/{senderBIC}.put.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setDefaultAgenda/{senderBIC}.put.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "positionLac.211207",
+    "sheet": "Parameters"
   },
   "paths./setDefaultAgenda/{senderBIC}.put.parameters": {
     "file": "setDefaultAgenda.211207",
@@ -1712,24 +1548,8 @@
     "sheet": "500"
   },
   "paths./setDefaultAgenda/{senderBIC}.put": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./getDefaultAgenda/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./getDefaultAgenda/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./getDefaultAgenda/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./getDefaultAgenda/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "setDefaultAgenda.211207",
+    "sheet": "Parameters"
   },
   "paths./getDefaultAgenda/{senderBIC}.post.parameters": {
     "file": "getDefaultAgenda.211207",
@@ -1776,24 +1596,8 @@
     "sheet": "500"
   },
   "paths./getDefaultAgenda/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setCalendar/{senderBIC}.put.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setCalendar/{senderBIC}.put.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setCalendar/{senderBIC}.put.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./setCalendar/{senderBIC}.put.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "getDefaultAgenda.211207",
+    "sheet": "Parameters"
   },
   "paths./setCalendar/{senderBIC}.put.parameters": {
     "file": "setCalendar.211207",
@@ -1840,24 +1644,8 @@
     "sheet": "500"
   },
   "paths./setCalendar/{senderBIC}.put": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCalendar/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCalendar/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCalendar/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCalendar/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "setCalendar.211207",
+    "sheet": "Parameters"
   },
   "paths./listCalendar/{senderBIC}.post.parameters": {
     "file": "listCalendar.211207",
@@ -1904,24 +1692,8 @@
     "sheet": "500"
   },
   "paths./listCalendar/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./liquidityManagement/{senderBIC}.put.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./liquidityManagement/{senderBIC}.put.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./liquidityManagement/{senderBIC}.put.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./liquidityManagement/{senderBIC}.put.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listCalendar.211207",
+    "sheet": "Parameters"
   },
   "paths./liquidityManagement/{senderBIC}.put.parameters": {
     "file": "liquidityManagement.250808",
@@ -1968,24 +1740,8 @@
     "sheet": "500"
   },
   "paths./liquidityManagement/{senderBIC}.put": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFundingDefunding/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFundingDefunding/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFundingDefunding/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFundingDefunding/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "liquidityManagement.250808",
+    "sheet": "Parameters"
   },
   "paths./listFundingDefunding/{senderBIC}.post.parameters": {
     "file": "listFundingDefunding.240520",
@@ -2032,24 +1788,8 @@
     "sheet": "500"
   },
   "paths./listFundingDefunding/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestMonthlyReport/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestMonthlyReport/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestMonthlyReport/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestMonthlyReport/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listFundingDefunding.240520",
+    "sheet": "Parameters"
   },
   "paths./interestMonthlyReport/{senderBIC}.post.parameters": {
     "file": "interestMonthlyReport.211207",
@@ -2096,24 +1836,8 @@
     "sheet": "500"
   },
   "paths./interestMonthlyReport/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestDailyReport/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestDailyReport/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestDailyReport/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./interestDailyReport/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "interestMonthlyReport.211207",
+    "sheet": "Parameters"
   },
   "paths./interestDailyReport/{senderBIC}.post.parameters": {
     "file": "interestDailyReport.211207",
@@ -2160,24 +1884,8 @@
     "sheet": "500"
   },
   "paths./interestDailyReport/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrList/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrList/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrList/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrList/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "interestDailyReport.211207",
+    "sheet": "Parameters"
   },
   "paths./lcrList/{senderBIC}.post.parameters": {
     "file": "lcrList.220301",
@@ -2224,24 +1932,8 @@
     "sheet": "500"
   },
   "paths./lcrList/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrDetails/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrDetails/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrDetails/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./lcrDetails/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "lcrList.220301",
+    "sheet": "Parameters"
   },
   "paths./lcrDetails/{senderBIC}.post.parameters": {
     "file": "lcrDetails.220909",
@@ -2288,24 +1980,8 @@
     "sheet": "500"
   },
   "paths./lcrDetails/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeLcr/{senderBIC}.put.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeLcr/{senderBIC}.put.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeLcr/{senderBIC}.put.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./revokeLcr/{senderBIC}.put.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "lcrDetails.220909",
+    "sheet": "Parameters"
   },
   "paths./revokeLcr/{senderBIC}.put.parameters": {
     "file": "revokeLcr.230301",
@@ -2352,24 +2028,8 @@
     "sheet": "500"
   },
   "paths./revokeLcr/{senderBIC}.put": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFiles/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFiles/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFiles/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listFiles/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "revokeLcr.230301",
+    "sheet": "Parameters"
   },
   "paths./listFiles/{senderBIC}.post.parameters": {
     "file": "listFiles.250408",
@@ -2416,24 +2076,8 @@
     "sheet": "500"
   },
   "paths./listFiles/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./fileDetails/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./fileDetails/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./fileDetails/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./fileDetails/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listFiles.250408",
+    "sheet": "Parameters"
   },
   "paths./fileDetails/{senderBIC}.post.parameters": {
     "file": "fileDetails.230516",
@@ -2480,24 +2124,8 @@
     "sheet": "500"
   },
   "paths./fileDetails/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./retransmitOutFiles/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./retransmitOutFiles/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./retransmitOutFiles/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./retransmitOutFiles/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "fileDetails.230516",
+    "sheet": "Parameters"
   },
   "paths./retransmitOutFiles/{senderBIC}.post.parameters": {
     "file": "retransmitOutFiles.210702",
@@ -2544,24 +2172,8 @@
     "sheet": "500"
   },
   "paths./retransmitOutFiles/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./resendAll/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./resendAll/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./resendAll/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./resendAll/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "retransmitOutFiles.210702",
+    "sheet": "Parameters"
   },
   "paths./resendAll/{senderBIC}.post.parameters": {
     "file": "resendAll.230511",
@@ -2608,24 +2220,8 @@
     "sheet": "500"
   },
   "paths./resendAll/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listAlerts/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listAlerts/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listAlerts/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listAlerts/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "resendAll.230511",
+    "sheet": "Parameters"
   },
   "paths./listAlerts/{senderBIC}.post.parameters": {
     "file": "listAlerts.211207",
@@ -2672,24 +2268,8 @@
     "sheet": "500"
   },
   "paths./listAlerts/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCommands/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCommands/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCommands/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listCommands/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listAlerts.211207",
+    "sheet": "Parameters"
   },
   "paths./listCommands/{senderBIC}.post.parameters": {
     "file": "listCommands.220214",
@@ -2736,24 +2316,8 @@
     "sheet": "500"
   },
   "paths./listCommands/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./commandDetails/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./commandDetails/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./commandDetails/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./commandDetails/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listCommands.220214",
+    "sheet": "Parameters"
   },
   "paths./commandDetails/{senderBIC}.post.parameters": {
     "file": "commandDetails.230511",
@@ -2800,24 +2364,8 @@
     "sheet": "500"
   },
   "paths./commandDetails/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listOperation/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listOperation/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listOperation/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listOperation/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "commandDetails.230511",
+    "sheet": "Parameters"
   },
   "paths./listOperation/{senderBIC}.post.parameters": {
     "file": "listOperation.230216",
@@ -2864,24 +2412,8 @@
     "sheet": "500"
   },
   "paths./listOperation/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./operationDetails/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./operationDetails/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./operationDetails/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./operationDetails/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listOperation.230216",
+    "sheet": "Parameters"
   },
   "paths./operationDetails/{senderBIC}.post.parameters": {
     "file": "operationDetails.230216",
@@ -2928,24 +2460,8 @@
     "sheet": "500"
   },
   "paths./operationDetails/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./rejectParticipantOperation/{senderBIC}.put.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./rejectParticipantOperation/{senderBIC}.put.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./rejectParticipantOperation/{senderBIC}.put.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./rejectParticipantOperation/{senderBIC}.put.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "operationDetails.230216",
+    "sheet": "Parameters"
   },
   "paths./rejectParticipantOperation/{senderBIC}.put.parameters": {
     "file": "rejectParticipantOperation.210702",
@@ -2992,24 +2508,8 @@
     "sheet": "500"
   },
   "paths./rejectParticipantOperation/{senderBIC}.put": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listLACsConfiguration/{senderBIC}.post.summary": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listLACsConfiguration/{senderBIC}.post.description": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listLACsConfiguration/{senderBIC}.post.operationId": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
-  },
-  "paths./listLACsConfiguration/{senderBIC}.post.tags": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "rejectParticipantOperation.210702",
+    "sheet": "Parameters"
   },
   "paths./listLACsConfiguration/{senderBIC}.post.parameters": {
     "file": "listLACsConfiguration.230526",
@@ -3056,7 +2556,7 @@
     "sheet": "500"
   },
   "paths./listLACsConfiguration/{senderBIC}.post": {
-    "file": "$index.xlsx",
-    "sheet": "Paths"
+    "file": "listLACsConfiguration.230526",
+    "sheet": "Parameters"
   }
 }

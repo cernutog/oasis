@@ -843,6 +843,7 @@ class OASGenerator:
         node_map = {}  # Map (block_id, Name) -> Node (prevents cross-schema collisions)
         roots = []
         combinator_schemas = {}  # Track processed combinators per block: {(block_id, name): schema_obj}
+        combinator_names_by_block = {}
         df.columns = df.columns.str.strip()
 
         # Schemas sheet contains multiple schema blocks separated by blank rows.
@@ -1056,10 +1057,12 @@ class OASGenerator:
                     
                     schema_obj[combinator_key] = alternatives
                     
-                    combinator_schemas[name] = schema_obj
+                    combinator_schemas[(b_id, name)] = schema_obj
+                    if b_id not in combinator_names_by_block:
+                        combinator_names_by_block[b_id] = set()
+                    combinator_names_by_block[b_id].add(name)
                     # CRITICAL: Update the node's schema_obj so linking uses the combinator structure
                     node["schema_obj"] = schema_obj
-                    combinator_schemas[(b_id, name)] = schema_obj
 
         # 3. Regular linking for non-combinator nodes
         for idx, node in nodes.items():
@@ -1071,9 +1074,7 @@ class OASGenerator:
             
             # Check if child of ANY combinator
             is_combinator_child = False
-            for (comb_block, comb_name), _schema in combinator_schemas.items():
-                if comb_block != b_id:
-                    continue
+            for comb_name in combinator_names_by_block.get(b_id, set()):
                 # Optimized check: name starts with comb_name + "["
                 if name.startswith(comb_name + "["):
                      # Verify exact pattern (name matches comb_name[digits...])
@@ -1086,9 +1087,6 @@ class OASGenerator:
                      if re.match(rf'^{re.escape(comb_name)}\[\d+\]', name):
                          is_combinator_child = True
                          break
-            
-            if is_combinator_child:
-                continue
             
             if is_combinator_child:
                 continue
@@ -1145,6 +1143,7 @@ class OASGenerator:
         from collections import OrderedDict
         
         alt_name = alt_node["name"]
+        b_id = alt_node.get("block_id", 0)
         schema = alt_node["schema_obj"].copy() if alt_node["schema_obj"] else {}
         
         # Use description as 'title' ONLY for combinator alternatives (branch roots)
@@ -1183,7 +1182,7 @@ class OASGenerator:
         if not children_map:
             return schema
 
-        children = children_map.get(alt_name, [])
+        children = children_map.get((b_id, alt_name), [])
         
         # But wait! If this node IS a combinator, its children are [0], [1]...
         # Loop 2 already handled them into schema_obj['oneOf']...

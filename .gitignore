@@ -86,6 +86,7 @@ tools/
 temp_*
 temp_*/
 
-# Local verification outputs
-tmp/_verify_tracing_merge/
+# Local verification outputs and diagnostic artefacts (never commit)
+tmp/
+tmp/**
 

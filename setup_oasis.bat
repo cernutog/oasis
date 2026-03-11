@@ -98,4 +98,5 @@ echo ===========================================
 echo   SETUP COMPLETE!
 echo ===========================================
 echo You can now run build_exe.bat
+if "%OASIS_NO_PAUSE%"=="1" goto :eof
 pause

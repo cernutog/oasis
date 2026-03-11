@@ -45,6 +45,7 @@ class LegacyConverter:
         output_dir: str,
         master_dir: str = None,
         log_callback=None,
+        detail_log_callback=None,
         include_descriptions_in_collision: bool = False,
         include_examples_in_collision: bool = False,
         capitalize_schema_names: bool = True,
@@ -53,6 +54,9 @@ class LegacyConverter:
         self.output_dir = Path(output_dir)
         self.master_dir = Path(master_dir) if master_dir else None
         self.log = log_callback or print
+        # detail_log receives verbose technical output (schema table, full trace).
+        # Defaults to same as self.log so callers that don't care get current behaviour.
+        self.detail_log = detail_log_callback or self.log
         self.tracing_enabled = True # Default
 
         self.include_descriptions_in_collision = bool(include_descriptions_in_collision)
@@ -79,8 +83,10 @@ class LegacyConverter:
         self.inline_component_root_desc: Dict[str, str] = {}
         self.inline_component_example_sig: Dict[str, str] = {}
         self.merge_provenance: Dict[str, Dict[str, Dict[str, set]]] = {}  # out_name -> {field -> {value_key -> set(file_keys)}}
+        self.inline_component_children: Dict[str, set] = {}  # parent_schema -> {child_schema, ...}
         self.current_ep_name = None
         self.all_tags = set() # Track all tags for the index
+        self._current_children_map: Dict[str, frozenset] = {}  # norm_dtype -> frozenset(child_prop_names)
 
     def _resolve_internal_master_dir(self):
         """Finds 'Templates Master' folder as an internal resource."""
@@ -105,6 +111,14 @@ class LegacyConverter:
             
         return None
 
+    def _endpoint_display_name(self, filename_or_stem: str) -> str:
+        s = str(filename_or_stem or "").strip()
+        if not s:
+            return ""
+        stem = Path(s).stem
+        m = re.match(r"^(.*)\.(\d{6})$", stem)
+        return m.group(1) if m else stem
+
     def convert(self, tracing_enabled=True):
         """Main conversion entry point."""
         if self.master_dir is None:
@@ -125,7 +139,19 @@ class LegacyConverter:
             
         if index_path.exists():
             self._pre_read_index(index_path)
-            
+
+        # Validate: at least one endpoint file must exist before proceeding.
+        ep_candidates = [
+            f for f in list(self.input_dir.glob("*.xlsm")) + list(self.input_dir.glob("*.xlsx"))
+            if not f.name.startswith(("$", "~"))
+        ]
+        if not ep_candidates:
+            self.log(
+                f"ERROR: No endpoint files (*.xlsm / *.xlsx) found in '{self.input_dir}'. "
+                "Conversion aborted."
+            )
+            return False
+
         self.log("Collecting data types from all endpoints...")
         self._collect_all_data_types()
         
@@ -156,7 +182,7 @@ class LegacyConverter:
 
         # 11. Final Summary
         if self.tracing_enabled:
-            self._log_usage_summary()
+            self.run_standalone_check(str(self.output_dir))
         self.log(f"Conversion complete. Output: {self.output_dir}")
         return True
 
@@ -239,9 +265,11 @@ class LegacyConverter:
 
     def _register_data_type(self, file_key: str, norm_name: str, dt: DataType):
         """Registers a data type, deduplicating by content and handling name collisions."""
-        # Fingerprint for deduplication (exclude name, source_file, and pattern_eba)
+        # Fingerprint for deduplication (exclude source_file and pattern_eba).
+        # 'name' is INCLUDED so that differently-named DataTypes (e.g. BIC8 vs
+        # SenderBIC) are kept separate even when their structural content is identical.
         # Optionally include description/examples depending on preferences.
-        excluded = {'name', 'source_file', 'pattern_eba'}
+        excluded = {'source_file', 'pattern_eba'}
         if not self.include_descriptions_in_collision:
             excluded.add('description')
         if not self.include_examples_in_collision:
@@ -260,7 +288,15 @@ class LegacyConverter:
             fp_data['allowed_values'] = normalize_list(fp_data['allowed_values'])
         if 'example' in fp_data:
             fp_data['example'] = normalize_list(fp_data['example'])
+        # Normalize trailing periods in description (e.g. 'BIC searching.' → 'BIC searching')
+        if 'description' in fp_data and isinstance(fp_data['description'], str):
+            fp_data['description'] = fp_data['description'].rstrip('.')
             
+        # Include child property names for object types so that
+        # two DataTypes with the same base fields but different children
+        # (e.g. Criteria in different endpoints) get distinct fingerprints.
+        if dt.type and dt.type.lower() == 'object' and norm_name in self._current_children_map:
+            fp_data['_children'] = self._current_children_map[norm_name]
         fingerprint = tuple(sorted(fp_data.items()))
         
         mapping_key = (file_key, norm_name)
@@ -354,92 +390,14 @@ class LegacyConverter:
 
     def _perform_naming_and_usage_pass(self):
         """Pass 2: Determine naming priority based on index order and track usage."""
-        # 1. First, register all Global types from $index (highest priority)
+        # 1. Register all Global types from $index (highest priority)
         global_types = self.raw_data_types.get("$global", {})
         for norm_name, dt in global_types.items():
             self._register_data_type("$global", norm_name, dt)
             
-        # 2. Then follow index order
-        for ep_filename in self.ordered_filenames:
-            ep_file = self.input_dir / ep_filename
-            if not ep_file.exists(): continue
-            
-            try:
-                xl = pd.ExcelFile(ep_file)
-                op_id = self.filename_to_opid.get(ep_filename, self._extract_operation_id(ep_filename))
-
-                def _add_usage(schema_name: str, ctx: str, prop_path: str = ""):
-                    if not schema_name:
-                        return
-                    if schema_name not in self.schema_usage:
-                        self.schema_usage[schema_name] = []
-                    base = f"{op_id}.{ctx}" if op_id else ctx
-                    usage_str = base if not prop_path else f"{base}.{prop_path}"
-                    if usage_str not in self.schema_usage[schema_name]:
-                        self.schema_usage[schema_name].append(usage_str)
-
-                def _resolve_and_add(dtype_name: str, ctx: str, prop_path: str = ""):
-                    if not dtype_name:
-                        return
-                    if str(dtype_name).strip().lower() in ["string", "number", "integer", "boolean", "array", "object"]:
-                        return
-                    out_name, dt = self._resolve_data_type(dtype_name, ep_filename)
-                    if out_name:
-                        _add_usage(out_name, ctx, prop_path)
-                        # If this is an array DataType, also track its items type as used in the same place
-                        if dt and dt.type and dt.type.lower() == "array" and dt.items_type:
-                            _resolve_and_add(dt.items_type, ctx, prop_path)
-                
-                # Check Path & Header for refs
-                for sheet in ["Path", "Header"]:
-                    if sheet in xl.sheet_names:
-                        df = pd.read_excel(xl, sheet_name=sheet, dtype=str, header=None)
-                        hr = self._find_header_row(df, ["name", "type"])
-                        if hr != -1:
-                            df.columns = [str(c).strip() for c in df.iloc[hr]]
-                            df = df.iloc[hr+1:]
-                            for _, row in df.iterrows():
-                                dtype = self._clean_value(row.get("Type", ""))
-                                name = self._clean_value(row.get("Name", ""))
-                                ctx = "PathParam" if sheet == "Path" else "Header"
-                                _resolve_and_add(dtype, ctx, name)
-                                            
-                # Check Body & Responses
-                for sheet in xl.sheet_names:
-                    if sheet in ["Body", "200", "201", "400", "401", "403", "404", "500"]:
-                        children = self._read_legacy_structure(xl, sheet)
-
-                        ctx = sheet  # Use real sheet name as context (e.g. '200', 'Body')
-
-                        # Build adjacency for property path reconstruction
-                        by_parent: Dict[str, List[Tuple]] = {}
-                        roots: List[Tuple] = []
-                        for t in children:
-                            n = self._clean_value(t[0])
-                            p = self._clean_value(t[1])
-                            if not p:
-                                roots.append(t)
-                            by_parent.setdefault(p or "", []).append(t)
-
-                        def walk(node: Tuple, prefix: str = ""):
-                            name = self._clean_value(node[0])
-                            if not name:
-                                return
-                            dtype = self._clean_value(node[3])
-                            items_type_ref = self._clean_value(node[6]) if len(node) > 6 else ""
-
-                            prop_path = f"{prefix}.{name}" if prefix else name
-                            _resolve_and_add(dtype, ctx, prop_path)
-                            if items_type_ref:
-                                _resolve_and_add(items_type_ref, ctx, prop_path)
-
-                            for ch in by_parent.get(name, []):
-                                walk(ch, prop_path)
-
-                        for r in roots:
-                            walk(r, "")
-            except Exception as e:
-                self.log(f"Error in naming pass for {ep_filename}: {e}")
+        # Per-endpoint DataTypes are registered lazily on first encounter
+        # during actual endpoint conversion (_resolve_data_type), matching
+        # the old tool's processing order.
 
     def _track_recursive_usage(self, child_tuple, ep_filename, op_id, sheet):
         """Deprecated: retained for backward compatibility; usage tracking is now done with full property paths."""
@@ -448,8 +406,8 @@ class LegacyConverter:
     def _log_usage_summary(self):
         """Log the alphabetical list of schemas and where they are used with absolute property values."""
         
-        col1_w, col2_w, col3_w, col4_w = 45, 55, 50, 70
-        header = f"| {'SCHEMA NAME':<{col1_w}} | {'USED IN':<{col2_w}} | {'DIFFERENCES':<{col3_w}} | {'MERGE':<{col4_w}} |"
+        col1_w, col2_w, col3_w = 45, 95, 80
+        header = f"| {'SCHEMA NAME':<{col1_w}} | {'USED IN':<{col2_w}} | {'DIFFERENCES':<{col3_w}} |"
         sep = "-" * len(header)
         
         self.log("\n" + "="*len(header))
@@ -458,50 +416,98 @@ class LegacyConverter:
         
         sorted_names = sorted(self.schema_usage.keys(), key=lambda x: x.lower())
         
-        # Grouping by strictly contiguous suffix only if base stem exists
-        groups = {}
-        for name in sorted_names:
-            groups[name] = [name] # Default initialized to solo group
-            
-        base_names = set(sorted_names)
-        processed = set()
-        
-        # We need to iterate over all names, identify pure base names, and scoop contiguous children.
-        # A pure base name has no trailing digits (or isn't considered a variant root).
-        for name in sorted_names:
-            if name in processed: continue
-            
-            # Check if it has trailing digits
-            m = re.search(r'(\d+)$', name)
-            if not m:
-                # This is a potential base. Let's scoop its contiguous children.
-                current_group = [name]
-                processed.add(name)
-                
-                suffix = 1
-                while True:
-                    expected_child = f"{name}{suffix}"
-                    if expected_child in base_names:
-                        current_group.append(expected_child)
-                        processed.add(expected_child)
-                        suffix += 1
-                    else:
-                        break # Contiguity broken
-                
-                groups[name] = current_group
+        # Group schema names by base stem for collision/split analysis.
+        # We handle two distinct cases:
+        # 1) Split variants where the base itself ends with digits (e.g. Bic11 -> Bic111)
+        # 2) Classic collision naming where the base name is absent (e.g. Foo1/Foo2/...)
+        def _trailing_digit_run_len(s: str) -> int:
+            m = re.search(r'(\d+)$', str(s))
+            return len(m.group(1)) if m else 0
 
-        # Any name that has trailing digits but WAS NOT scooped by its exact stem (either because 
-        # the stem doesn't exist, or it was non-contiguous) is already in `groups` as a solo group.
-        # We just need to clean up `groups` to only contain the roots we actually want to display 
-        # (the keys of `groups` must be the first element of each group block).
-        
-        final_groups = {}
-        for v_list in groups.values():
-            if not v_list: continue
-            root_key = v_list[0]
-            # Since `groups` started with {each_name: [each_name]}, an unscooped variant 
-            # will still have itself as root_key. This is correct.
-            final_groups[root_key] = v_list
+        def _find_split_base(name: str, all_names: set) -> Optional[Tuple[str, int]]:
+            """If `name` is a split/collision variant of an original schema, return (base_name, suffix_int).
+
+            Handles bases that already end with digits (e.g. Bic11 -> Bic111). To avoid
+            false positives on semantic 1-digit suffix names (e.g. Bic8/Bic81), we only
+            consider digit-ending bases with >=2 trailing digits.
+            """
+            s = str(name)
+            m = re.search(r'(\d+)$', s)
+            if not m:
+                return None
+            digits = m.group(1)
+            if len(digits) < 2:
+                return None
+
+            # Try trimming 1..len(digits)-1 digits so the remaining prefix exists.
+            for k in range(1, len(digits)):
+                base = s[:-k]
+                suffix = s[-k:]
+                if base in all_names:
+                    base_digit_len = _trailing_digit_run_len(base)
+                    if base_digit_len == 1:
+                        return None
+                    try:
+                        return base, int(suffix)
+                    except Exception:
+                        return None
+            return None
+
+        all_names_set = set(sorted_names)
+        base_to_variants: Dict[str, List[Tuple[int, str]]] = {}
+        variant_to_base: Dict[str, str] = {}
+
+        # 1) Explicit split detection: base may already end with digits (Bic11 -> Bic111)
+        for name in sorted_names:
+            found = _find_split_base(name, all_names_set)
+            if not found:
+                continue
+            base, suffix_int = found
+            base_to_variants.setdefault(base, []).append((suffix_int, name))
+            variant_to_base[name] = base
+
+        # Originals are those not classified as a split variant
+        base_names: set = set([n for n in sorted_names if n not in variant_to_base])
+
+        # 2) Classic collision variants when base does NOT exist: Foo1/Foo2/... (stem lacks base)
+        stem_to_variants: Dict[str, List[Tuple[int, str]]] = {}
+        for name in sorted_names:
+            if name in variant_to_base:
+                continue
+            m = re.search(r'^(.*?)(\d+)$', str(name))
+            if not m:
+                continue
+            stem = m.group(1)
+            try:
+                num = int(m.group(2))
+            except Exception:
+                continue
+            stem_to_variants.setdefault(stem, []).append((num, name))
+
+        final_groups: Dict[str, List[str]] = {}
+
+        # 1. Base names: always show base, plus any numeric variants (even with gaps)
+        for base in sorted(base_names, key=lambda x: str(x).lower()):
+            variants = []
+            variants.extend(base_to_variants.get(base, []))
+            variants.extend(stem_to_variants.get(base, []))
+            variants = sorted(variants, key=lambda t: t[0])
+            members = [base] + [nm for _n, nm in variants if nm != base]
+            final_groups[base] = members
+
+        # 2. Stems without base: keep as their own group (variants only)
+        # Only group when the smallest numeric suffix is 1: collision naming always starts
+        # from 1 (Foo → Foo1 → Foo2 …).  Schemas like Bic8/Bic11/Bic81 have semantic names
+        # (not collision-generated) and must NOT be grouped as spurious collision variants.
+        for stem, variants in sorted(stem_to_variants.items(), key=lambda kv: str(kv[0]).lower()):
+            if stem in base_names:
+                continue
+            variants = sorted(variants, key=lambda t: t[0])
+            if not variants or variants[0][0] != 1:
+                continue
+            members = [nm for _n, nm in variants]
+            if members:
+                final_groups[members[0]] = members
             
         # Find which attributes actually differ in each group
         # For DataType-based schemas: compare DataType constraint fields.
@@ -515,20 +521,70 @@ class LegacyConverter:
         def _short_usage(u: str) -> str:
             if not u:
                 return ""
-            parts = str(u).split(".")
+            raw = str(u).strip()
+
+            # Preferred format (stored already clean): 'endpoint (ctx)'
+            # Endpoint filenames may contain dots (e.g. Foo.250410), but the formatted
+            # string is still authoritative if it contains parentheses.
+            if raw.endswith(")") and "(" in raw:
+                # Safety-net: if ctx contains extra info like '250410 (Body)' or '260220 (200)',
+                # collapse to the inner token.
+                m_outer = re.match(r"^(.*?)\((.*)\)\s*$", raw)
+                if not m_outer:
+                    return raw
+                left = m_outer.group(1).strip()
+                ctx = m_outer.group(2).strip()
+                m_ctx = re.match(r"^\s*\d+\s*\(([^()]*)\)\s*$", ctx)
+                if m_ctx:
+                    ctx = m_ctx.group(1).strip()
+                return f"{left} ({ctx})" if left else f"({ctx})"
+
+            # Legacy dotted format: opId.Context.prop[.sub...]
+            parts = raw.split(".")
             if len(parts) < 2:
-                return str(u)
+                return raw
             op_id = parts[0]
             ctx = parts[1]
             ctx_map = {
                 "PathParam": "Path",
                 "Header": "Header",
             }
-            disp_ctx = ctx_map.get(ctx, ctx)  # '200', 'Body', 'Path', 'Header' etc.
+            disp_ctx = ctx_map.get(ctx, ctx)
             return f"{op_id} ({disp_ctx})"
 
         def _inline_fp(name: str):
             return self.inline_component_fingerprint_by_name.get(name)
+
+        def _normalize_constraint_value(attr: str, val: str) -> str:
+            s = "" if val is None else str(val)
+            s = s.strip()
+            if s.lower() == "nan":
+                s = ""
+
+            # Normalize numbers (Excel/pandas may coerce ints/floats/strings inconsistently)
+            if attr in ("min_val", "max_val"):
+                if not s:
+                    return ""
+                s2 = s.replace(",", ".")
+                try:
+                    f = float(s2)
+                    if f.is_integer():
+                        return str(int(f))
+                    return str(f)
+                except Exception:
+                    return s
+
+            # Normalize regex/pattern: ignore whitespace/newlines and undo common Excel escaping
+            if attr == "regex":
+                if not s:
+                    return ""
+                # Collapse all whitespace
+                s = "".join(s.split())
+                # Common double escaping from Excel exports
+                s = s.replace("\\\\", "\\")
+                return s
+
+            return s
 
         def _dt_constraints(dt: Optional[DataType]) -> Dict[str, str]:
             if not dt:
@@ -536,10 +592,7 @@ class LegacyConverter:
             out = {}
             for a in attrs_diff:
                 v = getattr(dt, a, "")
-                s = "" if v is None else str(v).strip()
-                if s.lower() == "nan":
-                    s = ""
-                out[a] = s
+                out[a] = _normalize_constraint_value(a, v)
             return out
 
         def _constraint_delta(old_dt: Optional[DataType], new_dt: Optional[DataType]) -> List[str]:
@@ -557,11 +610,12 @@ class LegacyConverter:
             if not dt:
                 return ""
             bits = []
+            norm = _dt_constraints(dt)
             for k in differing_attrs:
                 if k in attrs_diff:
-                    val = getattr(dt, k, "")
                     label = k.replace('_', ' ').title()
-                    disp = str(val).strip() if val and str(val).strip().lower() not in ("", "nan") else "(empty)"
+                    disp_raw = norm.get(k, "")
+                    disp = disp_raw if disp_raw else "(empty)"
                     bits.append(f"- {label}: {disp}")
             return "\n".join(bits)
 
@@ -590,6 +644,7 @@ class LegacyConverter:
                     return
                 path = f"{prefix}.{nm}" if prefix else nm
                 out[path] = {
+                    "desc": desc_part or "",
                     "dtype": dtype or "",
                     "items": items_type or "",
                     "mandatory": mandatory or "",
@@ -627,6 +682,7 @@ class LegacyConverter:
             changed: Dict[str, Dict] = {}
             mandatory: Dict[str, Dict] = {}
             rules: Dict[str, Dict] = {}
+            descriptions: Dict[str, Dict] = {}
             for k in common:
                 b = bmap[k]
                 o = omap[k]
@@ -651,10 +707,15 @@ class LegacyConverter:
                 o_rules = (o.get("rules", "") or "").strip()
                 if b_rules != o_rules:
                     rules[k] = {"base_val": b_rules or "(empty)", "other_val": o_rules or "(empty)"}
+                b_desc = (b.get("desc", "") or "").strip()
+                o_desc = (o.get("desc", "") or "").strip()
+                if b_desc != o_desc:
+                    descriptions[k] = {"base_val": b_desc or "(empty)", "other_val": o_desc or "(empty)"}
 
-            if changed:   result["changed"]   = changed
-            if mandatory: result["mandatory"] = mandatory
-            if rules:     result["rules"]     = rules
+            if changed:      result["changed"]      = changed
+            if mandatory:    result["mandatory"]    = mandatory
+            if rules:        result["rules"]        = rules
+            if descriptions: result["descriptions"] = descriptions
             return result
 
         for root_name, members in final_groups.items():
@@ -667,11 +728,11 @@ class LegacyConverter:
 
             if dts:
                 base = dts[0]
+                base_norm = _dt_constraints(base)
                 for other in dts[1:]:
+                    other_norm = _dt_constraints(other)
                     for attr in attrs_diff:
-                        v_base = getattr(base, attr, "") or ""
-                        v_other = getattr(other, attr, "") or ""
-                        if str(v_base).strip() != str(v_other).strip():
+                        if base_norm.get(attr, "") != other_norm.get(attr, ""):
                             diff_fields.add(attr)
 
             # Inline fp diffs: run always (not only when dts is absent) to catch
@@ -703,11 +764,26 @@ class LegacyConverter:
                             # Store as ("inline_fp_diff", base_nm, promoted_dict) so renderer can access per-schema values
                             mismatches_by_group[other_nm] = ("inline_fp_diff", base_nm, promoted_dict)
 
-            # If group root has no explicit base schema (e.g. only Name1 exists), flag it
+            # Flag missing base schema when root is a numbered variant and stem base is absent.
             if root_name and re.search(r'(\d+)$', root_name):
                 stem = re.sub(r'(\d+)$', '', root_name)
                 if stem and stem not in base_names:
                     diff_fields.add("missing base name")
+
+            # Flag numbering gaps inside a group (e.g. Base + Base2 without Base1)
+            if root_name in final_groups and len(final_groups[root_name]) > 1:
+                members = final_groups[root_name]
+                stem = root_name if not re.search(r'(\d+)$', root_name) else re.sub(r'(\d+)$', '', root_name)
+                nums = []
+                for nm in members:
+                    m = re.search(r'^' + re.escape(str(stem)) + r'(\d+)$', str(nm))
+                    if m:
+                        nums.append(int(m.group(1)))
+                if nums:
+                    nums = sorted(set(nums))
+                    expected = list(range(1, max(nums) + 1))
+                    if nums != expected:
+                        diff_fields.add("non-contiguous numbering")
 
             if diff_fields:
                 mismatches_by_group[root_name] = sorted(list(diff_fields))
@@ -742,66 +818,12 @@ class LegacyConverter:
                     lines.append(" ".join(current_line))
             return lines
 
-        def _label_values(values: List[str], label: str) -> List[Tuple[str, str]]:
-            """Return list of (display_label, original_value) with stable numbering."""
-            cleaned: List[str] = []
-            for v in values:
-                s = "" if v is None else str(v).strip()
-                if not s:
-                    continue
-                cleaned.append(s)
-            cleaned = sorted(set(cleaned))
-            out: List[Tuple[str, str]] = []
-            for i, v in enumerate(cleaned, start=1):
-                out.append((f"<{label} {i}>", v))
-            return out
-
-        def _merge_summary(schema_name: str) -> str:
-            prov = self.merge_provenance.get(schema_name)
-            if not prov:
-                return ""
-
-            # Collect all unique short usages for each file_key
-            def short_usages_for_file(file_key: str) -> List[str]:
-                op = self.filename_to_opid.get(file_key, self._extract_operation_id(file_key))
-                if not op:
-                    return []
-                prefix = f"{op}."
-                raw = [u for u in (self.schema_usage.get(schema_name) or []) if u.startswith(prefix)]
-                return sorted(set([_short_usage(u) for u in raw if _short_usage(u)]))
-
-            # Group prov keys by (field_type, path): "description:bic8" -> ("description", "bic8")
-            # Also support legacy plain "description"/"example" keys (DataType provenance)
-            blocks: List[str] = []
-            for field_key in sorted(prov.keys()):
-                value_map = prov[field_key]
-                # Parse field_key: "description:fieldpath", "example:fieldpath", or plain "description"/"example"
-                if ":" in field_key:
-                    field_type, prop_path = field_key.split(":", 1)
-                else:
-                    field_type, prop_path = field_key, ""
-                if field_type not in ("description", "example"):
-                    continue
-                base_label = "Description" if field_type == "description" else "Example"
-                pairs = _label_values(list(value_map.keys()), base_label)
-                # Only show if multiple distinct values
-                if len(pairs) < 2:
-                    continue
-                for disp_key, original in pairs:
-                    file_keys = sorted(value_map.get(original, set()))
-                    ep_lines: List[str] = []
-                    for fk in file_keys:
-                        ep_lines.extend(short_usages_for_file(fk))
-                    ep_lines = sorted(set(ep_lines))
-                    if not ep_lines:
-                        continue
-                    # Build header: "fieldpath (Description N):" or just "<Description N>:" for DataTypes
-                    header = f"{prop_path} ({disp_key}):" if prop_path else f"{disp_key}:"
-                    blocks.append(header)
-                    for ep in ep_lines:
-                        blocks.append(f"  {ep}")
-                    blocks.append("")
-            return "\n".join(blocks).rstrip()
+        def _display_schema_name(nm: str) -> str:
+            s = "" if nm is None else str(nm)
+            m = re.match(r"^(.*)\.(\d{6})(Request|Response)$", s)
+            if m:
+                return f"{m.group(1)}{m.group(3)}"
+            return s
 
         for out_name in sorted_names:
             usages = self.schema_usage[out_name]
@@ -879,6 +901,12 @@ class LegacyConverter:
                             short = (raw[:120] + "...") if len(raw) > 120 else raw
                             per_prop.setdefault(prop, []).append(f"- Validation rules: {short}")
 
+                    if "descriptions" in diff_dict:
+                        for prop, info in list(diff_dict["descriptions"].items())[:20]:
+                            raw = info["base_val"] if is_base else info["other_val"]
+                            short = (raw[:120] + "...") if len(raw) > 120 else raw
+                            per_prop.setdefault(prop, []).append(f"- Description: {short}")
+
                     prop_blocks: List[str] = []
                     for prop in sorted(per_prop.keys()):
                         prop_blocks.append(f"{prop}:")
@@ -894,23 +922,49 @@ class LegacyConverter:
                 else:
                     diff_str = "; ".join([str(a) for a in relevant_fields])
 
-            merge_str = _merge_summary(out_name)
-            
             # WRAP ALL COLUMNS
-            name_lines = wrap_text(out_name, col1_w)
+            name_lines = wrap_text(_display_schema_name(out_name), col1_w)
             usage_lines = []
-            for u in sorted(set([_short_usage(x) for x in usages if _short_usage(x)])):
+
+            short_usages = sorted(set([_short_usage(x) for x in usages if _short_usage(x)]))
+            by_endpoint: Dict[str, List[str]] = {}
+            passthrough: List[str] = []
+
+            for u in short_usages:
+                m_u = re.match(r"^(.*?)\s*\((.*)\)\s*$", str(u))
+                if not m_u:
+                    passthrough.append(u)
+                    continue
+                ep = m_u.group(1).strip()
+                ctx = m_u.group(2).strip()
+                if not ep or not ctx:
+                    passthrough.append(u)
+                    continue
+                by_endpoint.setdefault(ep, []).append(ctx)
+
+            def _ctx_sort_key(s: str):
+                s2 = str(s).strip()
+                if re.fullmatch(r"\d+", s2):
+                    return (0, int(s2))
+                return (1, s2.lower(), s2)
+
+            agg_usages: List[str] = []
+            for ep in sorted(by_endpoint.keys(), key=lambda x: (str(x).lower(), str(x))):
+                ctxs = sorted(set(by_endpoint.get(ep, [])), key=_ctx_sort_key)
+                agg_usages.append(f"{ep} " + " ".join([f"({c})" for c in ctxs]))
+
+            for u in (agg_usages + sorted(set(passthrough))):
                 usage_lines.extend(wrap_text(u, col2_w))
+            if not usage_lines:
+                usage_lines = ["(None)"]
             diff_lines = wrap_text(diff_str, col3_w)
-            merge_lines = wrap_text(merge_str, col4_w)
             
-            max_lines = max(len(name_lines), len(usage_lines), len(diff_lines), len(merge_lines), 1)
+            max_lines = max(len(name_lines), len(usage_lines), len(diff_lines), 1)
             for i in range(max_lines):
                 n_cell = name_lines[i] if i < len(name_lines) else ""
                 u_cell = usage_lines[i] if i < len(usage_lines) else ""
                 d_cell = diff_lines[i] if i < len(diff_lines) else ""
-                m_cell = merge_lines[i] if i < len(merge_lines) else ""
-                self.log(f"| {n_cell:<{col1_w}} | {u_cell:<{col2_w}} | {d_cell:<{col3_w}} | {m_cell:<{col4_w}} |")
+                self.log(f"| {n_cell:<{col1_w}} | {u_cell:<{col2_w}} | {d_cell:<{col3_w}} |")
             
             self.log(sep)
             
@@ -935,7 +989,9 @@ class LegacyConverter:
         try:
             xl_idx = pd.ExcelFile(index_file)
             
-            # 1. Load Schemas for definition details
+            # 1. Load Schemas for definition details AND build reference graph
+            # schema_refs: name -> set of schema names directly referenced (via Schema Name or Items Data Type cols)
+            schema_refs: Dict[str, set] = {}
             if "Schemas" in xl_idx.sheet_names:
                 df_s = pd.read_excel(xl_idx, sheet_name="Schemas", dtype=str, header=None)
                 header_idx = self._find_header_row(df_s, ["name", "type"])
@@ -943,7 +999,7 @@ class LegacyConverter:
                     header_vals = [str(c).strip().lower() for c in df_s.iloc[header_idx]]
                     df_s.columns = header_vals
                     df_s = df_s.iloc[header_idx + 1:].reset_index(drop=True)
-                    
+
                     def get_col_val(r, exact_kws, partial_kws=None):
                         for c in df_s.columns:
                             if str(c) in exact_kws: return self._clean_value(r.get(c))
@@ -952,25 +1008,67 @@ class LegacyConverter:
                                 if any(kw in str(c) for kw in partial_kws): return self._clean_value(r.get(c))
                         return ""
 
+                    _primitive = {"string", "number", "integer", "boolean", "array", "object"}
+                    _ref_cols = [c for c in header_vals
+                                 if "schema name" in c or "items data type" in c]
+
+                    # Track schemas by parent status:
+                    # - has_parent_schema: at least one row with a parent (sub-fields)
+                    # - has_no_parent_schema: at least one row WITHOUT a parent (root-level)
+                    # - root_object_schema: root-level schemas whose type is object/schema
+                    #   (these need to be inline components to be shown in tracing)
+                    has_parent_schema: set = set()
+                    has_no_parent_schema: set = set()
+                    root_object_type_schema: set = set()
+
+                    _object_types = {"object", "schema"}
+
                     for _, row in df_s.iterrows():
                         name = self._clean_value(row.get('name'))
                         if not name: continue
                         
+                        raw_type = (get_col_val(row, ['type']) or 'string').lower()
                         dt = DataType(
                             name=name,
-                            type=get_col_val(row, ['type']) or 'string',
+                            type=raw_type,
                             format=get_col_val(row, ['format']),
                             min_val=get_col_val(row, ['minimum'], ['min ']),
                             max_val=get_col_val(row, ['maximum'], ['max ']),
+                            description=get_col_val(row, ['description'], ['desc']),
                             regex=get_col_val(row, ['regex', 'pattern']),
                             allowed_values=get_col_val(row, ['enum', 'allowed value']),
+                            example=get_col_val(row, ['example'], ['examp']),
                             items_type=get_col_val(row, ['items type'], ['items data type'])
                         )
                         self.global_schemas[name] = dt
 
+                        # Build reference graph:
+                        # In $index Schemas sheet, rows with a non-empty 'parent' represent
+                        # properties/children of that parent schema. The 'name' in those rows
+                        # is a property name (NOT a schema), so we must attach any referenced
+                        # schema to the owning schema (the parent).
+                        parent = self._clean_value(row.get('parent'))
+                        owner_schema = parent if (parent and parent not in _primitive) else name
+
+                        if parent and parent not in _primitive:
+                            # Mark that this parent schema has children/properties.
+                            has_parent_schema.add(parent)
+                        else:
+                            # Root-level schema definition.
+                            has_no_parent_schema.add(name)
+                            if raw_type in _object_types:
+                                root_object_type_schema.add(name)
+
+                        for rc in _ref_cols:
+                            ref_val = self._clean_value(row.get(rc))
+                            if ref_val and ref_val not in _primitive:
+                                schema_refs.setdefault(owner_schema, set()).add(ref_val)
+
 
             # 2. Get list of endpoint files from Paths sheet
+            # Also collect wrapper name stems (operationId) for later filtering.
             ep_files = []
+            op_id_norms: set = set()  # lowercased operationId stems
             if "Paths" in xl_idx.sheet_names:
                 df_p = pd.read_excel(xl_idx, sheet_name="Paths", dtype=str, header=None)
                 h_idx = self._find_header_row(df_p, ["excel file", "operationid"])
@@ -983,8 +1081,14 @@ class LegacyConverter:
                         opid = self._clean_value(row.get('operationid'))
                         if fname:
                             ep_files.append((fname, opid))
+                        if opid:
+                            op_id_norms.add(opid.lower())
 
             # 3. Map usages across all endpoint files
+            # bfs_seed_wrappers: root wrapper schemas found in Schema Name col of body/response
+            # sheets (e.g. CommandDetailsResponse). They are used as BFS propagation seeds
+            # but must NOT appear in the final schema_usage output.
+            bfs_seed_wrappers: set = set()
             for fname, op_id in ep_files:
                 fpath = p / fname
                 if not fpath.exists():
@@ -993,34 +1097,184 @@ class LegacyConverter:
                 
                 try:
                     xl_ep = pd.ExcelFile(fpath)
+
+                    # --- Wrapper usage seeding fallback ---
+                    # Some endpoint artifacts do not reliably carry the wrapper name in each sheet.
+                    # We seed wrapper usage based on the presence of Body/response sheets and map
+                    # to the wrapper schema names actually present in $index (may include .YYMMDD).
+                    stem = Path(str(fname)).stem
+                    m_date = re.match(r"^(.*)\.(\d{6})$", stem)
+                    ep_base = m_date.group(1) if m_date else stem
+                    ep_date = m_date.group(2) if m_date else ""
+
+                    def _map_wrapper(base: str, suffix: str) -> str:
+                        if ep_date:
+                            cand = f"{base}.{ep_date}{suffix}"
+                            if cand in self.global_schemas:
+                                return cand
+                        cand2 = f"{base}{suffix}"
+                        if cand2 in self.global_schemas:
+                            return cand2
+                        return cand2
+
+                    # Seed Request wrapper if Body sheet exists
+                    if "Body" in xl_ep.sheet_names:
+                        w_req = _map_wrapper(ep_base, "Request")
+                        self.schema_usage.setdefault(w_req, [])
+                        if f"{self._endpoint_display_name(str(fname))} (Body)" not in self.schema_usage[w_req]:
+                            self.schema_usage[w_req].append(f"{self._endpoint_display_name(str(fname))} (Body)")
+                        bfs_seed_wrappers.add(w_req)
+
+                    # Seed Response / ErrorResponse wrappers based on available response code sheets
+                    for sh in xl_ep.sheet_names:
+                        if not re.fullmatch(r"\d{3}", str(sh).strip()):
+                            continue
+                        code = str(sh).strip()
+                        if int(code) >= 400:
+                            self.schema_usage.setdefault("ErrorResponse", [])
+                            u = f"{self._endpoint_display_name(str(fname))} ({code})"
+                            if u not in self.schema_usage["ErrorResponse"]:
+                                self.schema_usage["ErrorResponse"].append(u)
+                            bfs_seed_wrappers.add("ErrorResponse")
+                        else:
+                            w_resp = _map_wrapper(ep_base, "Response")
+                            self.schema_usage.setdefault(w_resp, [])
+                            u = f"{self._endpoint_display_name(str(fname))} ({code})"
+                            if u not in self.schema_usage[w_resp]:
+                                self.schema_usage[w_resp].append(u)
+                            bfs_seed_wrappers.add(w_resp)
+
+                    # Load inline component schemas from this endpoint's Schemas sheet
+                    # (register definitions only; usages are resolved transitively below)
+                    if "Schemas" in xl_ep.sheet_names:
+                        df_ep_s = pd.read_excel(xl_ep, sheet_name="Schemas", dtype=str, header=None)
+                        h_ep = self._find_header_row(df_ep_s, ["name", "type"])
+                        if h_ep != -1:
+                            h_ep_vals = [str(c).strip().lower() for c in df_ep_s.iloc[h_ep]]
+                            df_ep_s.columns = h_ep_vals
+                            df_ep_s = df_ep_s.iloc[h_ep + 1:].reset_index(drop=True)
+                            for _, ep_row in df_ep_s.iterrows():
+                                ep_name = self._clean_value(ep_row.get('name'))
+                                ep_type = self._clean_value(ep_row.get('type')) or 'object'
+                                if ep_name and ep_name not in self.global_schemas:
+                                    self.global_schemas[ep_name] = DataType(name=ep_name, type=ep_type)
+
+                    # Read direct schema references from response/body sheets.
+                    # In the converted format, each sheet (Body, 200, 400, …) contains
+                    # exactly one root-level 'Schema Name' value per data row — that is
+                    # the wrapper schema (e.g. CommandDetailsResponse).  We do NOT add
+                    # wrappers to schema_usage directly; instead we collect them as BFS
+                    # seeds so their children (inline components) inherit the usage.
                     for sheet_name in xl_ep.sheet_names:
                         if sheet_name in ["General Description", "Paths", "Tags", "Schemas"]: continue
-                        
+
                         df = pd.read_excel(xl_ep, sheet_name=sheet_name, dtype=str, header=None)
-                        
-                        # Search for 'data type' columns
-                        potential_cols = []
+
+                        # Find a 'schema name' or 'data type' column.
+                        schema_col = -1
+                        data_type_col = -1
                         header_row = -1
                         for r_idx in range(min(10, len(df))):
                             try:
                                 row_vals = [str(v).lower() for v in df.iloc[r_idx]]
-                                if any("data type" in v for v in row_vals):
-                                    potential_cols = [i for i, v in enumerate(row_vals) if "data type" in v]
-                                    header_row = r_idx
+                                for i, v in enumerate(row_vals):
+                                    if "schema name" in v and schema_col == -1:
+                                        schema_col = i
+                                        header_row = r_idx
+                                    elif "data type" in v and data_type_col == -1:
+                                        data_type_col = i
+                                        header_row = r_idx
+                                if header_row != -1:
                                     break
                             except: continue
-                        
-                        if potential_cols and header_row != -1:
+
+                        ep_display = self._endpoint_display_name(str(fname))
+                        disp_ctx = str(sheet_name).strip()
+                        # Normalize sheet names like '250410 (Body)' -> 'Body' and '260220 (200)' -> '200'
+                        m_sheet = re.match(r"^\s*\d+\s*\(([^()]*)\)\s*$", disp_ctx)
+                        if m_sheet:
+                            disp_ctx = m_sheet.group(1).strip()
+                        usage_str = f"{ep_display} ({disp_ctx})"
+
+                        if schema_col != -1 and header_row != -1:
+                            # Converted format: 'Schema Name' col holds the wrapper name.
+                            # Use it as a BFS seed only (add to schema_refs propagation).
                             for _, row in df.iloc[header_row+1:].iterrows():
-                                for col_idx in potential_cols:
-                                    dtype = self._clean_value(row.iloc[col_idx])
-                                    if dtype and dtype not in ["string", "number", "integer", "boolean", "array", "object"]:
-                                        if dtype not in self.schema_usage: self.schema_usage[dtype] = []
-                                        usage_str = f"{op_id} ({sheet_name})"
-                                        if usage_str not in self.schema_usage[dtype]:
-                                            self.schema_usage[dtype].append(usage_str)
+                                wrapper = self._clean_value(row.iloc[schema_col])
+                                if wrapper and wrapper not in ["string", "number", "integer",
+                                                               "boolean", "array", "object"]:
+                                    # Wrapper naming can differ between artifacts:
+                                    # - endpoint sheets may use 'FooRequest/FooResponse'
+                                    # - $index Schemas may contain 'Foo.YYMMDDRequest/Foo.YYMMDDResponse'
+                                    # Map to an existing schema name using the endpoint filename's date suffix.
+                                    wrapper_mapped = wrapper
+                                    stem = Path(str(fname)).stem
+                                    m_date = re.match(r"^(.*)\.(\d{6})$", stem)
+                                    if m_date:
+                                        ep_base = m_date.group(1)
+                                        ep_date = m_date.group(2)
+                                        m_wr = re.match(r"^(.*?)(Request|Response)$", str(wrapper))
+                                        if m_wr:
+                                            wr_base = m_wr.group(1)
+                                            wr_suffix = m_wr.group(2)
+                                            if wr_base == ep_base:
+                                                cand = f"{wr_base}.{ep_date}{wr_suffix}"
+                                                if cand in self.global_schemas:
+                                                    wrapper_mapped = cand
+                                    wrapper = wrapper_mapped
+                                    # Seed: give the wrapper a usage entry so BFS can propagate
+                                    # to its children.  We'll strip wrappers out later.
+                                    if wrapper not in self.schema_usage:
+                                        self.schema_usage[wrapper] = []
+                                    if usage_str not in self.schema_usage[wrapper]:
+                                        self.schema_usage[wrapper].append(usage_str)
+                                    bfs_seed_wrappers.add(wrapper)
+
+                        elif data_type_col != -1 and header_row != -1:
+                            # Legacy format: 'Data Type' col may hold any schema name directly
+                            # (these are the leaf types, equivalent to what _perform_naming_and_usage_pass
+                            # collects from legacy templates).
+                            for _, row in df.iloc[header_row+1:].iterrows():
+                                dtype = self._clean_value(row.iloc[data_type_col])
+                                if dtype and dtype not in ["string", "number", "integer",
+                                                           "boolean", "array", "object"]:
+                                    if dtype not in self.schema_usage:
+                                        self.schema_usage[dtype] = []
+                                    if usage_str not in self.schema_usage[dtype]:
+                                        self.schema_usage[dtype].append(usage_str)
                 except Exception as ex:
                     self.log(f"Error reading endpoint {fname}: {ex}")
+
+            # 4. Propagate usages transitively through the schema reference graph.
+            # For each schema that has direct usages, BFS through schema_refs to
+            # propagate those same usages to all transitively referenced children.
+            changed = True
+            while changed:
+                changed = False
+                for parent_schema, children in list(schema_refs.items()):
+                    parent_usages = self.schema_usage.get(parent_schema, [])
+                    if not parent_usages:
+                        continue
+                    for child in children:
+                        if child not in self.schema_usage:
+                            self.schema_usage[child] = []
+                        for u in parent_usages:
+                            if u not in self.schema_usage[child]:
+                                self.schema_usage[child].append(u)
+                                changed = True
+
+            # 5. Filter schema_usage to match converter tracer output:
+            #    - Show ALL root-level schemas present in the converted $index Schemas sheet
+            #      (i.e. rows without a parent), including wrapper/root schemas like ErrorResponse.
+            #    - Exclude sub-field rows (schemas that ONLY appear with a parent in $index)
+            _hnp = locals().get("has_no_parent_schema", set())
+
+            # Ensure every root schema is present even if unused
+            for k in _hnp:
+                self.schema_usage.setdefault(k, [])
+
+            # Keep only root-level schema names
+            self.schema_usage = {k: self.schema_usage.get(k, []) for k in _hnp}
 
             self._log_usage_summary()
             return True
@@ -1233,6 +1487,12 @@ class LegacyConverter:
         filename_col = self._find_column(df, ["excel file", "file"])
         if filename_col:
             df[filename_col] = df[filename_col].apply(self._ensure_xlsx_extension)
+
+        # Normalize HTTP method values (trim spaces, remove Excel leading quote,
+        # and enforce lowercase) to avoid invalid keys like "'post " in output OAS.
+        method_col = self._find_column(df, ["method"])
+        if method_col:
+            df[method_col] = df[method_col].apply(self._normalize_http_method)
         
         # Format Custom Extensions to YAML (no curly braces)
         ext_col = self._find_column(df, ["custom extensions", "extension"])
@@ -1242,6 +1502,21 @@ class LegacyConverter:
         # Write rows
         rows = df.values.tolist()
         self._write_rows(ws, rows, start_row=3)
+
+    def _normalize_http_method(self, val) -> str:
+        """Normalize HTTP method coming from legacy Paths sheet.
+
+        Handles common Excel artifacts like a leading apostrophe used to force text
+        (e.g. "'post "), trims whitespace, and lowercases the method.
+        """
+        s = self._clean_value(val)
+        if not s:
+            return ""
+        # Excel text artifact: leading apostrophe
+        if s.startswith("'"):
+            s = s[1:]
+        s = s.strip().strip('"').strip()
+        return s.lower()
     
     def _format_extensions(self, val) -> str:
         """Convert JSON-formatted extensions to clean YAML key: value format.
@@ -1281,6 +1556,23 @@ class LegacyConverter:
     def _convert_schemas(self, wb):
         """Convert Schemas sheet - builds hierarchy from Body/Response structures and Global Data Types."""
         ws = wb["Schemas"]
+
+        def _collect_refs_from_rows(rows: List[List[Any]]) -> set:
+            """Collect schema refs that are actually present in emitted schema rows."""
+            refs = set()
+            primitives = {"string", "number", "integer", "boolean", "array", "object"}
+            for r in rows or []:
+                if not r:
+                    continue
+                # row layout: [Name, Parent, Description, Type, ItemsType, SchemaName, ...]
+                t = self._clean_value(r[3] if len(r) > 3 else "").lower()
+                items_t = self._clean_value(r[4] if len(r) > 4 else "")
+                schema_n = self._clean_value(r[5] if len(r) > 5 else "")
+                if t == "schema" and schema_n:
+                    refs.add(schema_n)
+                elif t == "array" and items_t and items_t.lower() not in primitives:
+                    refs.add(items_t)
+            return refs
         
         # Clear existing
         for row in range(2, ws.max_row + 1):
@@ -1289,30 +1581,52 @@ class LegacyConverter:
         
         final_rows = []
         referenced_data_types = set()
+        param_data_types = set()
         
-        # 1. Collect all referenced schemas from endpoints
-        ep_files = [f for f in self.input_dir.glob("*.xlsm") if not f.name.startswith(("$", "~"))] + \
-                   [f for f in self.input_dir.glob("*.xlsx") if not f.name.startswith(("$", "~"))]
-        for ep_file in ep_files:
+        # 1. Collect all referenced schemas from endpoints (in Paths sheet order)
+        ep_files = []
+        seen = set()
+        for fname in self.ordered_filenames:
+            p = self.input_dir / fname
+            if p.exists() and fname not in seen:
+                ep_files.append((p, fname))
+                seen.add(fname)
+        # Fallback: catch any files not in the index
+        for p in list(self.input_dir.glob("*.xlsm")) + list(self.input_dir.glob("*.xlsx")):
+            if not p.name.startswith(("$", "~")) and p.name not in seen:
+                ep_files.append((p, p.name))
+                seen.add(p.name)
+        for ep_file, ep_fname in ep_files:
             xl = pd.ExcelFile(ep_file)
             
             # 1.1 Params
             for sheet_name in ["Path", "Header"]:
                 if sheet_name in xl.sheet_names:
                     df = pd.read_excel(xl, sheet_name=sheet_name, dtype=str, header=None)
-                    header_row_idx = self._find_header_row(df, ["name", "type"])
+                    # Legacy templates use "Type"/"Element" headers; converted use "Name"/"Type"
+                    header_row_idx = self._find_header_row(df, ["name", "type", "element", "constraint"])
                     if header_row_idx != -1:
                         df.columns = [str(c).strip() for c in df.iloc[header_row_idx]]
                         df = df.iloc[header_row_idx + 1:]
                         for _, row in df.iterrows():
                             dtype = self._clean_value(row.get("Type", ""))
-                            if dtype and dtype.lower() not in ["string", "number", "integer", "boolean", "array", "object"]:
-                                out_name, _ = self._resolve_data_type(dtype, ep_file.name)
-                                if out_name: referenced_data_types.add(out_name)
+                            # Case-sensitive: lowercase names are OAS built-in primitives;
+                            # PascalCase names like 'Boolean' or 'Number' are named DataTypes.
+                            if dtype and dtype not in ["string", "number", "integer", "boolean", "array", "object"]:
+                                # Resolve WITH file context: each file's DataType is the source of
+                                # truth — a collision variant (e.g. SenderBIC2) is a distinct schema
+                                # and must be emitted as such, not remapped to another variant.
+                                out_name, _ = self._resolve_data_type(dtype, ep_fname)
+                                if out_name:
+                                    referenced_data_types.add(out_name)
+                                    param_data_types.add(out_name)
             
             # 1.2 Body & Responses (Wrappers)
-            op_id_raw = self.filename_to_opid.get(ep_file.name, self._extract_operation_id(ep_file.name))
-            op_id = self._to_pascal_case(op_id_raw)
+            # Use FILENAME as wrapper base (matching old tool behaviour),
+            # NOT the operationId from the index which may differ.
+            wrapper_base = self._to_wrapper_case(self._extract_operation_id(ep_fname))
+            op_id = wrapper_base
+            usage_ep = self._endpoint_display_name(str(ep_fname))
             
             if "Body" in xl.sheet_names:
                 children = self._read_legacy_structure(xl, "Body")
@@ -1322,8 +1636,8 @@ class LegacyConverter:
                     child_rows, refs, extra_blocks = self._build_children_rows(
                         wrapper,
                         children,
-                        ep_file.name,
-                        usage_ctx=f"{op_id} (Body)",
+                        ep_fname,
+                        usage_ctx=f"{usage_ep} (Body)",
                         reserved_names=set(referenced_data_types),
                     )
                     final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
@@ -1341,8 +1655,8 @@ class LegacyConverter:
                             child_rows, refs, extra_blocks = self._build_children_rows(
                                 wrapper,
                                 children,
-                                ep_file.name,
-                                usage_ctx=f"{op_id} ({code})",
+                                ep_fname,
+                                usage_ctx=f"{usage_ep} ({code})",
                                 reserved_names=set(referenced_data_types),
                             )
                             final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
@@ -1350,15 +1664,17 @@ class LegacyConverter:
                             final_rows.extend(extra_blocks)
                             referenced_data_types.update(refs)
                         else:
-                            _, refs, extra_blocks = self._build_children_rows(
+                            _, _refs, extra_blocks = self._build_children_rows(
                                 wrapper,
                                 children,
-                                ep_file.name,
-                                usage_ctx=f"{op_id} ({code})",
+                                ep_fname,
+                                usage_ctx=f"{usage_ep} ({code})",
                                 reserved_names=set(referenced_data_types),
                             )
                             final_rows.extend(extra_blocks)
-                            referenced_data_types.update(refs)
+                            # Wrapper already emitted: keep only refs that are actually
+                            # introduced by newly emitted extra blocks.
+                            referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
 
         # 2. Emit actually used Global Schemas
         global_blocks = []
@@ -1378,9 +1694,12 @@ class LegacyConverter:
                 # Use recursive resolution helper
                 items_out = self._recursive_resolve_items(dt.items_type, dt.source_file)
             
+            # Only emit pattern_eba when there IS a regex; old tool never emitted
+            # EBA-only patterns (e.g. '4!c2!a2!c') as OAS pattern values.
+            emit_pat_eba = dt.pattern_eba if dt.regex else ""
             row = [out_name, "", dt.description, dt.type if dt.type else "string",
                    items_out, "", dt.format, "", dt.min_val, dt.max_val,
-                   dt.pattern_eba, dt.regex, dt.allowed_values, dt.example, ""]
+                   emit_pat_eba, dt.regex, dt.allowed_values, dt.example, ""]
             global_blocks.append((out_name, [row]))
 
         # 3. Final Write-back with Cosmetics
@@ -1395,6 +1714,128 @@ class LegacyConverter:
         if curr_b: all_blocks.append((curr_b[0][0], curr_b))
         
         all_blocks.extend(global_blocks)
+
+        # --- REACHABILITY FILTER: prune schemas not reachable from endpoints ---
+        # Entry points: wrappers referenced by endpoint Body/Response sheets,
+        # plus DataTypes referenced by endpoint Path/Header parameters.
+        entry_points = set(self.emitted_wrappers) | param_data_types
+        # Build reference graph: block_name -> set of schema names it references
+        _prim = {"string", "number", "integer", "boolean", "array", "object"}
+        _ref_graph = {}
+        for _bn, _br in all_blocks:
+            _refs_set = set()
+            for _row in _br:
+                _sn = self._clean_value(_row[5] if len(_row) > 5 else "")
+                _it = self._clean_value(_row[4] if len(_row) > 4 else "")
+                _dt = self._clean_value(_row[3] if len(_row) > 3 else "").lower()
+                if _dt == "schema" and _sn:
+                    _refs_set.add(_sn)
+                elif _dt == "array" and _it and _it.lower() not in _prim:
+                    _refs_set.add(_it)
+            _ref_graph[_bn] = _refs_set
+        # BFS from entry points
+        _reachable = set()
+        _queue = list(entry_points)
+        while _queue:
+            _cur = _queue.pop(0)
+            if _cur in _reachable:
+                continue
+            _reachable.add(_cur)
+            for _nxt in _ref_graph.get(_cur, set()):
+                if _nxt not in _reachable:
+                    _queue.append(_nxt)
+        all_blocks = [(n, r) for n, r in all_blocks if n in _reachable]
+
+        # --- COLLISION RENUMBERING: enforce contiguous suffixes after pruning ---
+        # Reachability pruning can remove intermediate variants (e.g. Foo1) and leave
+        # Foo + Foo2. Business requirement: output names must be contiguous.
+        def _collect_refs_from_blocks(_blocks: List[Tuple[str, List[List[Any]]]]) -> set:
+            _refs: set = set()
+            _prim2 = {"string", "number", "integer", "boolean", "array", "object"}
+            for _bn2, _br2 in _blocks:
+                for _row2 in _br2:
+                    _sn2 = self._clean_value(_row2[5] if len(_row2) > 5 else "")
+                    _it2 = self._clean_value(_row2[4] if len(_row2) > 4 else "")
+                    _dt2 = self._clean_value(_row2[3] if len(_row2) > 3 else "").lower()
+                    if _dt2 == "schema" and _sn2:
+                        _refs.add(_sn2)
+                    elif _dt2 == "array" and _it2 and _it2.lower() not in _prim2:
+                        _refs.add(_it2)
+            return _refs
+
+        def _apply_rename_to_blocks(_blocks: List[Tuple[str, List[List[Any]]]], mapping: Dict[str, str]) -> List[Tuple[str, List[List[Any]]]]:
+            out_blocks: List[Tuple[str, List[List[Any]]]] = []
+            for _bn2, _br2 in _blocks:
+                new_bn = mapping.get(_bn2, _bn2)
+                new_rows: List[List[Any]] = []
+                for _row2 in _br2:
+                    rr = list(_row2)
+                    # Update Schema Name (col F, index 5)
+                    if len(rr) > 5 and isinstance(rr[5], str) and rr[5]:
+                        rr[5] = mapping.get(rr[5], rr[5])
+                    # Update Items Type (col E, index 4)
+                    if len(rr) > 4 and isinstance(rr[4], str) and rr[4]:
+                        rr[4] = mapping.get(rr[4], rr[4])
+                    # Update root schema name in column A when parent is empty
+                    if len(rr) > 1 and (rr[1] == "" or rr[1] is None):
+                        if len(rr) > 0 and isinstance(rr[0], str) and rr[0]:
+                            rr[0] = new_bn
+                    new_rows.append(rr)
+                out_blocks.append((new_bn, new_rows))
+            return out_blocks
+
+        # Build variant sets by stem
+        names_in_blocks = [n for n, _r in all_blocks]
+        stem_map: Dict[str, Dict[str, Any]] = {}
+        for nm in names_in_blocks:
+            m = re.search(r"^(.*?)(\d+)$", str(nm))
+            if not m:
+                stem_map.setdefault(str(nm), {"base": True, "nums": []})
+                continue
+            stem = m.group(1)
+            num = int(m.group(2))
+            entry = stem_map.setdefault(stem, {"base": False, "nums": []})
+            entry["nums"].append(num)
+
+        # Decide rename mapping
+        rename_map: Dict[str, str] = {}
+        used_after: set = set(names_in_blocks)
+        for stem, info in stem_map.items():
+            if not info.get("nums"):
+                continue
+            has_base = bool(info.get("base")) and stem in used_after
+            nums = sorted(set(info.get("nums") or []))
+            # Only renumber when there is a base and numbering is not already contiguous
+            if not has_base:
+                continue
+            expected = list(range(1, max(nums) + 1))
+            if nums == expected:
+                continue
+            # Existing variant names in this stem
+            existing_variant_names = [f"{stem}{n}" for n in nums if f"{stem}{n}" in used_after]
+            # Target names
+            target_variant_names = [f"{stem}{i}" for i in range(1, len(existing_variant_names) + 1)]
+            for old_nm, new_nm in zip(existing_variant_names, target_variant_names):
+                if old_nm == new_nm:
+                    continue
+                # Guard against accidental clash outside this stem
+                if (new_nm in used_after) and (new_nm not in existing_variant_names):
+                    continue
+                rename_map[old_nm] = new_nm
+                used_after.discard(old_nm)
+                used_after.add(new_nm)
+
+        if rename_map:
+            all_blocks = _apply_rename_to_blocks(all_blocks, rename_map)
+
+            # Keep registries aligned for tracing / later lookups
+            try:
+                for old_nm, new_nm in rename_map.items():
+                    if old_nm in self.global_schemas and new_nm not in self.global_schemas:
+                        self.global_schemas[new_nm] = self.global_schemas.pop(old_nm)
+            except Exception:
+                pass
+
         all_blocks.sort(key=lambda x: str(x[0]).lower())
         
         final_final_rows = []
@@ -1494,11 +1935,9 @@ class LegacyConverter:
         wb = load_workbook(output_path)
         xl = pd.ExcelFile(legacy_path)
         
-        # Get op_id from mapping or fallback to filename
-        op_id_raw = self.filename_to_opid.get(legacy_path.name, 
-                 self.filename_to_opid.get(legacy_path.name.replace(".xlsm", "").replace(".xlsx", ""),
-                 self._extract_operation_id(legacy_path.name)))
-        op_id = self._to_pascal_case(op_id_raw)
+        # Use FILENAME as wrapper base (matching old tool behaviour),
+        # NOT the operationId from the index which may differ.
+        op_id = self._to_wrapper_case(self._extract_operation_id(legacy_path.name))
         
         status_codes = [s for s in xl.sheet_names if s.isdigit()]
         
@@ -1573,7 +2012,11 @@ class LegacyConverter:
             schema_name = ""
             param_format = ""
             
-            # Resolve data type to schema reference (R2.6: parameters refer to dynamic schemas)
+            # Resolve data type to schema reference (R2.6: parameters refer to dynamic schemas).
+            # Use file context to find the DataType, then remap to the lowest-numbered registered
+            # variant so that file-specific collision variants (e.g. SenderBIC2 from
+            # listFundingDefunding) are replaced with the canonical name (SenderBIC1).
+            # Force PascalCase since DataType names are always PascalCase.
             out_name, dt = self._resolve_data_type(param_type, ep_filename)
             if out_name:
                 param_type = "schema"
@@ -1583,7 +2026,7 @@ class LegacyConverter:
             
             rows.append([
                 p["name"], p["description"], p["in"], param_type,
-                schema_name, "", param_format, p["mandatory"],
+                "", schema_name, param_format, p["mandatory"],
                 "", "", "", "", "", ""  # Min, Max, PatternEba, Regex, Allowed, Example (empty in endpoint)
             ])
         
@@ -1695,11 +2138,11 @@ class LegacyConverter:
         def find_idx(candidates):
             # Perfect match first
             for i, h in enumerate(headers):
-                if any(c.lower() == h for c in candidates):
+                if any(str(c).strip().lower() == h for c in candidates):
                     return i
             # Substring match fallback
             for i, h in enumerate(headers):
-                if any(c.lower() in h for c in candidates):
+                if any(str(c).strip().lower() in h for c in candidates):
                     return i
             return -1
 
@@ -1759,6 +2202,23 @@ class LegacyConverter:
         for n, p_low in children_lower:
             if p_low:
                 has_children.add(p_low)
+
+        # Build children map for collision fingerprinting: object DataTypes
+        # whose structure (child property names) differs across endpoints
+        # (e.g. Criteria) need distinct fingerprints.
+        parent_children: Dict[str, set] = {}
+        for name_t, parent_t, *_ in children:
+            cn = self._clean_value(name_t)
+            cp = self._clean_value(parent_t)
+            if cp and cn:
+                parent_children.setdefault(cp.lower(), set()).add(cn)
+        for name_t, parent_t, desc_t, dtype_t, *_ in children:
+            cn = self._clean_value(name_t)
+            cdtype = self._clean_value(dtype_t)
+            if cn and cdtype and cn.lower() in parent_children:
+                norm_dt = self._to_pascal_case(cdtype)
+                if norm_dt and norm_dt not in self._current_children_map:
+                    self._current_children_map[norm_dt] = frozenset(parent_children[cn.lower()])
 
         def _unique_inline_component_name(base_name: str) -> str:
             candidate = base_name
@@ -2036,7 +2496,7 @@ class LegacyConverter:
             # Decorate description with validation rules if present (R3.3)
             final_desc = desc
             if v_rules:
-                final_desc = f"{desc}\n\n**ValidationRule(s)** {v_rules}" if desc else f"**ValidationRule(s)** {v_rules}"
+                final_desc = f"{desc}\n\n **Validation Rule(s)** {v_rules}" if desc else f" **Validation Rule(s)** {v_rules}"
             
             # Resolve type with recursive inlining rules
             resolved_type = "string"
@@ -2116,6 +2576,10 @@ class LegacyConverter:
                 continue
             self.emitted_inline_components.add(comp_name)
 
+            # Track parent -> child edge so usage can be propagated transitively
+            if wrapper_name:
+                self.inline_component_children.setdefault(wrapper_name, set()).add(comp_name)
+
             transformed: List[Tuple] = []
             for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
@@ -2134,6 +2598,10 @@ class LegacyConverter:
                 continue
             self.emitted_inline_components.add(comp_name)
 
+            # Track parent -> child edge so usage can be propagated transitively
+            if wrapper_name:
+                self.inline_component_children.setdefault(wrapper_name, set()).add(comp_name)
+
             transformed: List[Tuple] = []
             for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
@@ -2143,7 +2611,7 @@ class LegacyConverter:
             extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
             extra_schema_blocks.extend(nested_blocks)
-        
+
         return rows, referenced_data_types, extra_schema_blocks
 
     
@@ -2543,7 +3011,7 @@ class LegacyConverter:
             
             final_desc = desc
             if v_rules:
-                final_desc = f"{desc}\n\n**ValidationRule(s)** {v_rules}" if desc else f"**ValidationRule(s)** {v_rules}"
+                final_desc = f"{desc}\n\n **Validation Rule(s)** {v_rules}" if desc else f" **Validation Rule(s)** {v_rules}"
             
             params.append({
                 "name": name,
@@ -2786,22 +3254,37 @@ class LegacyConverter:
         return None
     
     def _to_pascal_case(self, name: str) -> str:
-        """Simple PascalCase conversion to match R1 expectations."""
+        """PascalCase conversion — ALWAYS applied to ALL schema names.
+        This is the single source of truth for schema name capitalization.
+        Wrapper names (Request/Response) use _to_wrapper_case instead."""
         if not name: return name
         name = str(name).strip()
         if not name or name.lower() == "nan": return name
-        
-        if not self.capitalize_schema_names:
-            return name
-        
-        # For simplicity and R1 compatibility, only uppercase first char 
-        # unless it has underscores which we convert to CamelCase.
         if "_" in name or "-" in name:
             import re
             parts = re.split(r'[^a-zA-Z0-9]+', name)
             return "".join(p.capitalize() for p in parts if p)
-        
         return name[0].upper() + name[1:]
+
+    def _to_wrapper_case(self, name: str) -> str:
+        """PascalCase for wrapper names (Request/Response), controlled by
+        the capitalize_schema_names preference. When the flag is off,
+        camelCase is enforced (leading uppercase run is lowered)."""
+        if not name: return name
+        name = str(name).strip()
+        if not self.capitalize_schema_names:
+            # camelCase: lowercase leading uppercase run, preserving word boundary
+            i = 0
+            while i < len(name) and name[i].isupper():
+                i += 1
+            if i == 0:
+                return name
+            if i == 1:
+                return name[0].lower() + name[1:]
+            if i >= len(name):
+                return name.lower()
+            return name[:i-1].lower() + name[i-1:]
+        return self._to_pascal_case(name)
     
     def _clean_value(self, val) -> str:
         """Clean cell value."""
