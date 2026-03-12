@@ -22,6 +22,7 @@ from src.generator_pkg.row_helpers import (
 from src.generator_pkg.schema_builder import (
     handle_combinator_refs as _handle_combinator_refs_fn,
     handle_schema_reference as _handle_schema_reference_fn,
+    collapse_allof_ref_if_redundant as _collapse_allof_ref_if_redundant_fn,
     apply_schema_constraints as _apply_schema_constraints_fn,
     map_type_to_schema as _map_type_to_schema_fn,
 )
@@ -370,6 +371,7 @@ class OASGenerator:
             # Extract example from schema if present (put at param level instead)
             example = schema.pop("example", None)
             examples = schema.pop("examples", None)
+            schema = _collapse_allof_ref_if_redundant_fn(schema)
             param["schema"] = schema
             
             # Add example at param level (singular form)

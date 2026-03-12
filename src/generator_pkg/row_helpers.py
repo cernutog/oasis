@@ -10,7 +10,7 @@ import yaml
 import textwrap
 import re
 import pandas as pd
-from src.generator_pkg.yaml_output import RawNumericValue, SafeLoaderRawNumbers, SafeLoaderNoTimestamp
+from src.generator_pkg.yaml_output import RawNumericValue, QuotedString, SafeLoaderRawNumbers, SafeLoaderNoTimestamp
 from datetime import datetime, date
 
 
@@ -220,8 +220,13 @@ def coerce_example_types(value, schema, components_schemas=None):
 
     # Handle scalar:
     # 1. Coerce numeric to string if schema expects string
-    if schema_type == "string" and isinstance(value, (int, float)):
-        return str(value)
+    if schema_type == "string":
+        if isinstance(value, (int, float)):
+            return QuotedString(str(value))
+        if isinstance(value, str):
+            s = value.strip()
+            if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", s):
+                return QuotedString(s)
 
     # 2. Coerce numeric string back to number if schema expects number/integer
     if schema_type in ["number", "integer"] and isinstance(value, (str, int, float)):

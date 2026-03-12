@@ -5,10 +5,12 @@ Contains functions for building OAS schema objects from Excel row data.
 All functions receive version as parameter for OAS 3.0/3.1 differences.
 """
 
+import re
+
 import pandas as pd
 from collections import OrderedDict
 
-from .yaml_output import RawNumericValue
+from .yaml_output import RawNumericValue, QuotedString
 
 from .row_helpers import (
     get_col_value,
@@ -65,7 +67,8 @@ def handle_schema_reference(type_val: str, schema_ref: str, desc, version: str) 
 
     # OAS 3.0 Workaround: $ref + description requires allOf wrapper
     # OAS 3.1: $ref + description can coexist as siblings
-    has_desc = bool(desc and str(desc).strip())
+    # NOTE: Pandas may pass NaN (float) for empty cells; str(NaN) == 'nan' must be treated as empty.
+    has_desc = pd.notna(desc) and bool(str(desc).strip()) and str(desc).strip().lower() != "nan"
     is_oas30 = version.startswith("3.0")
 
     if has_desc:
@@ -77,6 +80,28 @@ def handle_schema_reference(type_val: str, schema_ref: str, desc, version: str) 
             return {"$ref": ref_path, "description": str(desc)}
     else:
         return {"$ref": ref_path}
+
+
+def collapse_allof_ref_if_redundant(schema: dict) -> dict:
+    """Collapse {'allOf': [{'$ref': ...}]} into {'$ref': ...} when no other siblings exist.
+
+    This is used when upstream logic applied the OAS 3.0 '$ref + description' workaround
+    (allOf wrapper) but the description is later moved to a parent object (e.g. Parameter
+    or Header). In that case, keeping the allOf wrapper is unnecessary noise.
+    """
+    if not isinstance(schema, dict):
+        return schema
+    if "allOf" not in schema:
+        return schema
+    if any(k for k in schema.keys() if k not in ("allOf",)):
+        return schema
+    all_of = schema.get("allOf")
+    if not isinstance(all_of, list) or len(all_of) != 1:
+        return schema
+    first = all_of[0]
+    if not isinstance(first, dict) or set(first.keys()) != {"$ref"}:
+        return schema
+    return {"$ref": first["$ref"]}
 
 
 def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
@@ -113,6 +138,19 @@ def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
                 enum_list = new_list
             except ValueError:
                 pass
+
+        elif type_val == "string":
+            # If the schema expects a string but the enum token looks numeric,
+            # force quoting to avoid YAML type inference / octal-like artifacts.
+            out = []
+            for x in enum_list:
+                if not x:
+                    continue
+                if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", x.strip()):
+                    out.append(QuotedString(x.strip()))
+                else:
+                    out.append(x)
+            enum_list = out
 
         schema["enum"] = enum_list
 

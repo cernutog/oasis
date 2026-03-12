@@ -50,6 +50,10 @@ class RawNumericValue(str):
     pass
 
 
+class QuotedString(str):
+    pass
+
+
 class OASDumper(yaml.SafeDumper):
     """Custom YAML Dumper for OpenAPI specifications."""
     
@@ -95,9 +99,14 @@ def raw_numeric_presenter(dumper, data):
         return dumper.represent_scalar("tag:yaml.org,2002:int", data)
 
 
+def quoted_string_presenter(dumper, data):
+    return dumper.represent_scalar("tag:yaml.org,2002:str", str(data), style="'")
+
+
 # Register custom representers
 OASDumper.add_representer(RawYAML, raw_yaml_presenter)
 OASDumper.add_representer(RawNumericValue, raw_numeric_presenter)
+OASDumper.add_representer(QuotedString, quoted_string_presenter)
 
 # Preserve OrderedDict order in output
 OASDumper.add_representer(
