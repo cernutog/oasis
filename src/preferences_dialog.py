@@ -187,6 +187,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.tab_val = self.tabview.add("Validation")
         self.tab_view = self.tabview.add("View")
         self.tab_templates = self.tabview.add("Templates")
+        self.tab_diff = self.tabview.add("OAS Diff")
         self.tab_logs = self.tabview.add("Logs")
 
         # === 1. GENERAL TAB ===
@@ -324,7 +325,55 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_snap_default.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=(0, 20))
 
 
-        # === 6. LOGS TAB ===
+        # === 6. OAS DIFF TAB ===
+        self.tab_diff.grid_columnconfigure(0, weight=1)
+        
+        # --- Section: Static Variables ---
+        self._add_section_separator(self.tab_diff, "Static Variables (User Defined)")
+        
+        self.frame_vars = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
+        self.frame_vars.pack(fill="both", expand=True, padx=10, pady=(0, 5))
+        
+        # Simple scrollable list for variables
+        self.scroll_vars = ctk.CTkScrollableFrame(self.frame_vars, height=100)
+        self.scroll_vars.pack(fill="x", expand=True, pady=(0, 5))
+        
+        self.vars_controls = ctk.CTkFrame(self.frame_vars, fg_color="transparent")
+        self.vars_controls.pack(fill="x")
+        
+        ctk.CTkButton(self.vars_controls, text="Add Variable", width=100, command=self._on_add_var).pack(side="left", padx=(0, 5))
+        ctk.CTkButton(self.vars_controls, text="Clear All", width=100, fg_color="#D04040", hover_color="#B03030", command=self._on_clear_vars).pack(side="left")
+
+        # --- Section: Custom Templates ---
+        self._add_section_separator(self.tab_diff, "Reports Custom Templates")
+        
+        self.frame_tmpl = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
+        self.frame_tmpl.pack(fill="x", padx=10, pady=(0, 5))
+        
+        # Synthesis Template
+        ctk.CTkLabel(self.frame_tmpl, text="Synthesis:").grid(row=0, column=0, sticky="w", padx=(5, 5))
+        self.entry_tmpl_syn = ctk.CTkEntry(self.frame_tmpl, width=350)
+        self.entry_tmpl_syn.grid(row=0, column=1, padx=5, pady=2)
+        ctk.CTkButton(self.frame_tmpl, text="...", width=30, command=lambda: self._browse_template("syn")).grid(row=0, column=2)
+
+        # Analytical Template
+        ctk.CTkLabel(self.frame_tmpl, text="Analytical:").grid(row=1, column=0, sticky="w", padx=(5, 5))
+        self.entry_tmpl_ana = ctk.CTkEntry(self.frame_tmpl, width=350)
+        self.entry_tmpl_ana.grid(row=1, column=1, padx=5, pady=2)
+        ctk.CTkButton(self.frame_tmpl, text="...", width=30, command=lambda: self._browse_template("ana")).grid(row=1, column=2)
+
+        # Impact Template
+        ctk.CTkLabel(self.frame_tmpl, text="Impact:").grid(row=2, column=0, sticky="w", padx=(5, 5))
+        self.entry_tmpl_imp = ctk.CTkEntry(self.frame_tmpl, width=350)
+        self.entry_tmpl_imp.grid(row=2, column=1, padx=5, pady=2)
+        ctk.CTkButton(self.frame_tmpl, text="...", width=30, command=lambda: self._browse_template("imp")).grid(row=2, column=2)
+
+        # Debug Switch
+        self.chk_diff_debug = ctk.CTkSwitch(self.tab_diff, text="Enable Debug Mode (Verbose Logging)", progress_color="#0A809E")
+        self.chk_diff_debug.pack(anchor="w", padx=20, pady=(10, 5))
+
+
+        # === 7. LOGS TAB ===
         self.tab_logs.grid_columnconfigure(1, weight=1)
 
         # OAS Generation Theme
@@ -423,6 +472,87 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_capitalize_schemas.set(prefs.get("tools_legacy_capitalize_schema_names", True))
 
 
+        # OAS Diff
+        self.entry_tmpl_syn.delete(0, "end")
+        self.entry_tmpl_syn.insert(0, prefs.get("diff_template_synthesis", ""))
+        self.entry_tmpl_ana.delete(0, "end")
+        self.entry_tmpl_ana.insert(0, prefs.get("diff_template_analytical", ""))
+        self.entry_tmpl_imp.delete(0, "end")
+        self.entry_tmpl_imp.insert(0, prefs.get("diff_template_impact", ""))
+        
+        if prefs.get("diff_debug_mode", False):
+            self.chk_diff_debug.select()
+        else:
+            self.chk_diff_debug.deselect()
+            
+        self.current_diff_vars = prefs.get("diff_static_variables", {}).copy()
+        self._refresh_vars_list()
+
+
+    def _refresh_vars_list(self):
+        """Rebuilds the static variables list UI."""
+        for child in self.scroll_vars.winfo_children():
+            child.destroy()
+            
+        for i, (key, value) in enumerate(self.current_diff_vars.items()):
+            row = ctk.CTkFrame(self.scroll_vars, fg_color="transparent")
+            row.pack(fill="x", pady=1)
+            
+            ctk.CTkLabel(row, text=key, width=120, anchor="w", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=5)
+            # Display value truncated if too long
+            disp_val = (value[:30] + '...') if len(value) > 30 else value
+            ctk.CTkLabel(row, text=disp_val, anchor="w").pack(side="left", padx=5, fill="x", expand=True)
+            
+            ctk.CTkButton(row, text="X", width=25, height=20, fg_color="#D04040", hover_color="#B03030",
+                          command=lambda k=key: self._on_delete_var(k)).pack(side="right", padx=2)
+            ctk.CTkButton(row, text="Edit", width=40, height=20, 
+                          command=lambda k=key, v=value: self._on_edit_var(k, v)).pack(side="right", padx=2)
+
+    def _on_add_var(self):
+        dialog = ctk.CTkInputDialog(text="Enter variable name:", title="Add Variable")
+        name = dialog.get_input()
+        if name:
+            name = name.strip()
+            if name in self.current_diff_vars:
+                return # Already exists
+            dialog_val = ctk.CTkInputDialog(text=f"Enter value for '{name}':", title="Variable Value")
+            val = dialog_val.get_input()
+            if val is not None:
+                self.current_diff_vars[name] = val
+                self._refresh_vars_list()
+
+    def _on_edit_var(self, key, old_val):
+        dialog = ctk.CTkInputDialog(text=f"Change value for '{key}':", title="Edit Variable")
+        # Pre-filling would be nice but CTkInputDialog doesn't support it easily in this version?
+        # Actually, let's just use it and user can re-type or we implement a custom one later.
+        val = dialog.get_input()
+        if val is not None:
+            self.current_diff_vars[key] = val
+            self._refresh_vars_list()
+
+    def _on_delete_var(self, key):
+        if key in self.current_diff_vars:
+            del self.current_diff_vars[key]
+            self._refresh_vars_list()
+
+    def _on_clear_vars(self):
+        self.current_diff_vars = {}
+        self._refresh_vars_list()
+
+    def _browse_template(self, type_key):
+        path = filedialog.askopenfilename(filetypes=[("Word Documents", "*.docx")])
+        if path:
+            if type_key == "syn":
+                self.entry_tmpl_syn.delete(0, "end")
+                self.entry_tmpl_syn.insert(0, path)
+            elif type_key == "ana":
+                self.entry_tmpl_ana.delete(0, "end")
+                self.entry_tmpl_ana.insert(0, path)
+            elif type_key == "imp":
+                self.entry_tmpl_imp.delete(0, "end")
+                self.entry_tmpl_imp.insert(0, path)
+
+
     def save_preferences(self):
         """Save values to manager and close."""
         sort_display = self.cbo_sort.get()
@@ -466,10 +596,14 @@ class PreferencesDialog(ctk.CTkToplevel):
             "spectral_log_theme": self.cbo_spectral_log_theme.get(),
             
             # Tools
-            "tools_legacy_tracing_enabled": self.var_legacy_tracing.get(),
-            "tools_legacy_collision_include_descriptions": self.var_legacy_collision_desc.get(),
-            "tools_legacy_collision_include_examples": self.var_legacy_collision_examples.get(),
             "tools_legacy_capitalize_schema_names": self.var_legacy_capitalize_schemas.get(),
+            
+            # OAS Diff
+            "diff_template_synthesis": self.entry_tmpl_syn.get(),
+            "diff_template_analytical": self.entry_tmpl_ana.get(),
+            "diff_template_impact": self.entry_tmpl_imp.get(),
+            "diff_debug_mode": bool(self.chk_diff_debug.get()),
+            "diff_static_variables": self.current_diff_vars,
         }
         
         self.prefs_manager.update(new_prefs)

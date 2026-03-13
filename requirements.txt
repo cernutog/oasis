@@ -43,3 +43,4 @@ tkwebview2==3.5.0
 toml==0.10.2
 typing_extensions==4.15.0
 tzdata==2025.3
+python-docx==1.2.0

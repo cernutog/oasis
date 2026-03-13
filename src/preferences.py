@@ -54,10 +54,21 @@ class PreferencesManager:
         "doc_snap_default_enabled": False,  # Whether doc window snaps to main on open
         
         # Tools Settings
-        "tools_legacy_tracing_enabled": True,
-        "tools_legacy_collision_include_descriptions": False,
-        "tools_legacy_collision_include_examples": False,
         "tools_legacy_capitalize_schema_names": True,
+        
+        # OAS Diff Settings
+        "diff_old_spec": "",
+        "diff_new_spec": "",
+        "diff_output_dir": "",
+        "diff_static_variables": {
+            "author": "",
+            "company": "",
+            "project_name": ""
+        },
+        "diff_template_synthesis": "",
+        "diff_template_analytical": "",
+        "diff_template_impact": "",
+        "diff_debug_mode": False,
         
         # Restored Functional Keys (mistakenly treated as orphans)
         "import_source_file": "",       # Tab 1: OAS Source File

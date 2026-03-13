@@ -799,4 +799,11 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 ### Build v2.1.40 (2026-02-21)
 - **Fix**: Roundtrip Check button style — changed from transparent outline (appeared disabled) to solid teal fill matching Import to Excel button.
 - **Key Modules**: `src/gui.py`.
-
+### Build v2.2.2 (2026-03-13)
+- **Feature**: OAS Diff Premium Dashboard (Baseline).
+    - Re-architected the UI into a modern, card-based dashboard layout.
+    - Implemented a configuration card for file inputs with refined alignment.
+    - Added a centered "START COMPARISON" primary action button.
+    - Fixed a critical bug where the technical console was not being displayed.
+    - Removed redundant section titles for a cleaner, professional look.
+- **Key Modules**: `src/oas_diff_dialog.py`.

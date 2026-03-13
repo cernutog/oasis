@@ -34,6 +34,7 @@ try:
     from .legacy_converter import LegacyConverter
     from .legacy_converter_dialog import LegacyConverterDialog
     from .legacy_schema_tracer_dialog import LegacySchemaTracerDialog
+    from .oas_diff_dialog import OASDiffDialog
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
     import main as main_script
@@ -50,6 +51,7 @@ except ImportError:
     from legacy_converter import LegacyConverter
     from legacy_converter_dialog import LegacyConverterDialog
     from legacy_schema_tracer_dialog import LegacySchemaTracerDialog
+    from oas_diff_dialog import OASDiffDialog
 
 from chlorophyll import CodeView
 import pygments.lexers
@@ -961,6 +963,7 @@ class OASGenApp(ctk.CTk):
         # Tools Menu
         tools_menu = tk.Menu(menubar, tearoff=0)
         tools_menu.add_command(label="Create Template from OAS", command=self.open_import_dialog)
+        tools_menu.add_command(label="OAS Diff", command=self.open_oas_diff)
         tools_menu.add_separator()
         tools_menu.add_command(label="Legacy Template Converter", command=self.open_legacy_converter)
         tools_menu.add_command(label="Template Schema Tracer", command=self.open_legacy_schema_tracer)
@@ -1121,6 +1124,10 @@ class OASGenApp(ctk.CTk):
                 frame.grid_rowconfigure(1, minsize=h)
         except Exception:
             pass
+
+    def open_oas_diff(self):
+        """Opens the OAS Diff (Contract Comparison) dialog."""
+        OASDiffDialog(self, self.prefs_manager)
 
     def open_preferences(self):
         """Open the preferences dialog."""
