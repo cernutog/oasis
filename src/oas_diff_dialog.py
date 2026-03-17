@@ -8,7 +8,7 @@ class OASDiffDialog(ctk.CTkToplevel):
     def __init__(self, parent, prefs_manager=None):
         super().__init__(parent)
         self.prefs_manager = prefs_manager
-        self.title("OAS Diff - Contract Comparison")
+        self.title("OAS Comparison - Contract Comparison")
         
         # Report paths state
         self.report_paths = {"synthesis": None, "analytical": None, "impact": None}
@@ -20,7 +20,12 @@ class OASDiffDialog(ctk.CTkToplevel):
             ph = parent.winfo_height()
             px = parent.winfo_x()
             py = parent.winfo_y()
-            self.geometry(f"{pw}x{ph}+{px}+{py}")
+            # Create a displacement offset so that it doesn't fully overlap
+            dw = max(800, pw - 60)
+            dh = max(600, ph - 60)
+            dx = px + 40
+            dy = py + 40
+            self.geometry(f"{dw}x{dh}+{dx}+{dy}")
         except:
             self.geometry("1000x800")
         
@@ -60,7 +65,7 @@ class OASDiffDialog(ctk.CTkToplevel):
         header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         header_frame.pack(fill="x", pady=(0, 15))
         
-        ctk.CTkLabel(header_frame, text="OAS Diff", 
+        ctk.CTkLabel(header_frame, text="OAS Comparison", 
                      text_color="#0A809E",
                      font=ctk.CTkFont(size=26, weight="bold")).pack(side="left")
         ctk.CTkLabel(header_frame, 
@@ -100,10 +105,10 @@ class OASDiffDialog(ctk.CTkToplevel):
         ctk.CTkButton(input_grid, text="Browse", width=80, fg_color="#0A809E", hover_color="#076075",
                       command=self._browse_dir).grid(row=2, column=2, padx=10, pady=5)
 
-        # --- Report Selection Dashboard (3 Columns) ---
+        # --- Report Selection Dashboard (4 Columns) ---
         dash_grid = ctk.CTkFrame(self.container, fg_color="transparent")
         dash_grid.pack(fill="x", pady=(0, 20))
-        for i in range(3): dash_grid.grid_columnconfigure(i, weight=1)
+        for i in range(4): dash_grid.grid_columnconfigure(i, weight=1)
 
         # Synthesis Card
         self.var_syn = ctk.BooleanVar(value=True)
@@ -112,7 +117,7 @@ class OASDiffDialog(ctk.CTkToplevel):
         ctk.CTkCheckBox(self.card_syn, text="Synthesis Report", variable=self.var_syn, 
                         font=ctk.CTkFont(size=13, weight="bold"),
                         fg_color="#0A809E", hover_color="#076075").pack(pady=15)
-        self.btn_open_syn = ctk.CTkButton(self.card_syn, text="Open Result", width=120, height=28,
+        self.btn_open_syn = ctk.CTkButton(self.card_syn, text="Open", width=120, height=28,
                                           fg_color="#0A809E", hover_color="#076075", text_color="white",
                                           font=ctk.CTkFont(weight="bold"),
                                           command=lambda: self._open_file("synthesis"))
@@ -125,7 +130,7 @@ class OASDiffDialog(ctk.CTkToplevel):
         ctk.CTkCheckBox(self.card_ana, text="Analytical Report", variable=self.var_ana,
                         font=ctk.CTkFont(size=13, weight="bold"),
                         fg_color="#0A809E", hover_color="#076075").pack(pady=15)
-        self.btn_open_ana = ctk.CTkButton(self.card_ana, text="Open Result", width=120, height=28,
+        self.btn_open_ana = ctk.CTkButton(self.card_ana, text="Open", width=120, height=28,
                                           fg_color="#0A809E", hover_color="#076075", text_color="white",
                                           font=ctk.CTkFont(weight="bold"),
                                           command=lambda: self._open_file("analytical"))
@@ -138,11 +143,24 @@ class OASDiffDialog(ctk.CTkToplevel):
         ctk.CTkCheckBox(self.card_imp, text="Impact Report", variable=self.var_imp,
                         font=ctk.CTkFont(size=13, weight="bold"),
                         fg_color="#0A809E", hover_color="#076075").pack(pady=15)
-        self.btn_open_imp = ctk.CTkButton(self.card_imp, text="Open Result", width=120, height=28,
+        self.btn_open_imp = ctk.CTkButton(self.card_imp, text="Open", width=120, height=28,
                                           fg_color="#0A809E", hover_color="#076075", text_color="white",
                                           font=ctk.CTkFont(weight="bold"),
                                           command=lambda: self._open_file("impact"))
         self.btn_open_imp.pack_forget()
+
+        # Compatibility Card
+        self.var_com = ctk.BooleanVar(value=True)
+        self.card_com = ctk.CTkFrame(dash_grid, corner_radius=10, border_width=1, border_color="#D0DCE0")
+        self.card_com.grid(row=0, column=3, padx=5, sticky="nsew")
+        ctk.CTkCheckBox(self.card_com, text="Compatibility Report", variable=self.var_com,
+                        font=ctk.CTkFont(size=13, weight="bold"),
+                        fg_color="#0A809E", hover_color="#076075").pack(pady=15)
+        self.btn_open_com = ctk.CTkButton(self.card_com, text="Open", width=120, height=28,
+                                          fg_color="#0A809E", hover_color="#076075", text_color="white",
+                                          font=ctk.CTkFont(weight="bold"),
+                                          command=lambda: self._open_file("compatibility"))
+        self.btn_open_com.pack_forget()
 
         # --- Primary Action Center ---
         action_center = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -210,7 +228,7 @@ class OASDiffDialog(ctk.CTkToplevel):
         # 2. Application Log (Maintains timestamp via log_app)
         try:
             if hasattr(self.master, 'log_app'):
-                self.master.log_app(f"[OAS Diff] {msg}")
+                self.master.log_app(f"[OAS Comparison] {msg}")
         except:
             pass
 
@@ -256,13 +274,14 @@ class OASDiffDialog(ctk.CTkToplevel):
         self.log_area.configure(state="disabled")
         
         # Reset cards and buttons
-        for card in [self.card_syn, self.card_ana, self.card_imp]:
+        for card in [self.card_syn, self.card_ana, self.card_imp, self.card_com]:
             card.configure(border_color="#D0DCE0", border_width=1)
         
         self.btn_open_syn.pack_forget()
         self.btn_open_ana.pack_forget()
         self.btn_open_imp.pack_forget()
-        self.report_paths = {"synthesis": None, "analytical": None, "impact": None}
+        self.btn_open_com.pack_forget()
+        self.report_paths = {"synthesis": None, "analytical": None, "impact": None, "compatibility": None}
 
         threading.Thread(target=self._run_diff, args=(old_p, new_p, out_d), daemon=True).start()
 
@@ -278,6 +297,7 @@ class OASDiffDialog(ctk.CTkToplevel):
             if self.var_syn.get(): report_types.append('synthesis')
             if self.var_ana.get(): report_types.append('analytical')
             if self.var_imp.get(): report_types.append('impact')
+            if self.var_com.get(): report_types.append('compatibility')
             
             if not report_types:
                 self._log("No report types selected. Comparison finished.")
@@ -302,6 +322,10 @@ class OASDiffDialog(ctk.CTkToplevel):
                     self.report_paths["impact"] = p
                     self.after(0, lambda: self.card_imp.configure(border_color="#0A809E", border_width=2))
                     self.after(0, lambda: self.btn_open_imp.pack(pady=(0, 15)))
+                elif "Compatibility" in p:
+                    self.report_paths["compatibility"] = p
+                    self.after(0, lambda: self.card_com.configure(border_color="#0A809E", border_width=2))
+                    self.after(0, lambda: self.btn_open_com.pack(pady=(0, 15)))
             
             self._log("SUCCESS: All operations completed.")
             

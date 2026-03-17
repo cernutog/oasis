@@ -5,6 +5,9 @@ from .heuristic_engine import HeuristicEngine
 from .generators.synthetic_generator import SyntheticDocxGenerator
 from .generators.analytic_generator import AnalyticDocxGenerator
 from .generators.impact_generator import ImpactDocxGenerator
+from .resolver import resolve_spec
+from .compatibility_analyzer import CompatibilityAnalyzer
+from .generators.compatibility_generator import CompatibilityDocxGenerator
 
 class OASDiffReportManager:
     """
@@ -57,7 +60,7 @@ class OASDiffReportManager:
 
         # Report Dispatcher
         if 'synthesis' in report_types:
-            path = os.path.join(self.output_dir, f"OAS_Diff_Synthesis_{self._get_timestamp()}.docx")
+            path = os.path.join(self.output_dir, f"OAS_Comparison_Synthesis_{self._get_timestamp()}.docx")
             gen = SyntheticDocxGenerator(
                 self.spec1, self.spec2, self.diff, 
                 old_path=self.old_path, new_path=self.new_path,
@@ -68,7 +71,7 @@ class OASDiffReportManager:
             results.append(path)
 
         if 'analytical' in report_types:
-            path = os.path.join(self.output_dir, f"OAS_Diff_Analytical_{self._get_timestamp()}.docx")
+            path = os.path.join(self.output_dir, f"OAS_Comparison_Analytical_{self._get_timestamp()}.docx")
             gen = AnalyticDocxGenerator(
                 self.spec1, self.spec2, self.diff, 
                 old_path=self.old_path, new_path=self.new_path,
@@ -79,13 +82,26 @@ class OASDiffReportManager:
             results.append(path)
 
         if 'impact' in report_types:
-            path = os.path.join(self.output_dir, f"OAS_Diff_Impact_{self._get_timestamp()}.docx")
+            path = os.path.join(self.output_dir, f"OAS_Comparison_Impact_{self._get_timestamp()}.docx")
             gen = ImpactDocxGenerator(
                 self.spec1, self.spec2, self.diff, 
                 old_path=self.old_path, new_path=self.new_path,
                 variables=static_vars,
                 template_path=self.preferences.get('diff_template_impact')
             )
+            gen.generate(path)
+            results.append(path)
+
+        if 'compatibility' in report_types:
+            path = os.path.join(self.output_dir, f"OAS_Comparison_Interface_Compatibility_{self._get_timestamp()}.docx")
+            # Resolve Specs First
+            r1 = resolve_spec(self.spec1)
+            r2 = resolve_spec(self.spec2)
+            # Run Analyzer
+            analyzer = CompatibilityAnalyzer(r1, r2)
+            issues = analyzer.analyze()
+            # Generate Report
+            gen = CompatibilityDocxGenerator(issues, self.old_path, self.new_path, spec1=self.spec1, spec2=self.spec2)
             gen.generate(path)
             results.append(path)
 

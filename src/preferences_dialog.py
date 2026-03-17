@@ -187,7 +187,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.tab_val = self.tabview.add("Validation")
         self.tab_view = self.tabview.add("View")
         self.tab_templates = self.tabview.add("Templates")
-        self.tab_diff = self.tabview.add("OAS Diff")
+        self.tab_diff = self.tabview.add("OAS Comparison")
         self.tab_logs = self.tabview.add("Logs")
 
         # === 1. GENERAL TAB ===
@@ -472,7 +472,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_capitalize_schemas.set(prefs.get("tools_legacy_capitalize_schema_names", True))
 
 
-        # OAS Diff
+        # OAS Comparison
         self.entry_tmpl_syn.delete(0, "end")
         self.entry_tmpl_syn.insert(0, prefs.get("diff_template_synthesis", ""))
         self.entry_tmpl_ana.delete(0, "end")
@@ -598,7 +598,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             # Tools
             "tools_legacy_capitalize_schema_names": self.var_legacy_capitalize_schemas.get(),
             
-            # OAS Diff
+            # OAS Comparison
             "diff_template_synthesis": self.entry_tmpl_syn.get(),
             "diff_template_analytical": self.entry_tmpl_ana.get(),
             "diff_template_impact": self.entry_tmpl_imp.get(),

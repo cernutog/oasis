@@ -455,7 +455,8 @@ def _detect_renamed_type_logic(result: DiffResult, old_spec: Dict, new_spec: Dic
                     old_name = old_ref.split('/')[-1]
                     new_name = new_ref.split('/')[-1]
                     if old_name in removed and new_name in new:
-                        candidates.setdefault(old_name, {})[new_name] = candidates[old_name].get(new_name, 0) + 1
+                        sub = candidates.setdefault(old_name, {})
+                        sub[new_name] = sub.get(new_name, 0) + 1
 
         # Seed from endpoints/other modified components
         def _scan_refs(data, visited=None):

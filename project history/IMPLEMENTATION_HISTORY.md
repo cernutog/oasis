@@ -807,3 +807,12 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
     - Fixed a critical bug where the technical console was not being displayed.
     - Removed redundant section titles for a cleaner, professional look.
 - **Key Modules**: `src/oas_diff_dialog.py`.
+
+### Build v2.2.3 (2026-03-17)
+- **Feature**: Interface Compatibility Report Formatting & Alphabetical Sorting.
+    - Updated filename prefix outputs from `OAS_Diff_` to `OAS_Comparison_`.
+    - Corrected main report titles dimension standardizations to 22pt benchmarks.
+    - Added cross-referencing ID brackets `[#]` inside Endpoint detail listings layout.
+    - Created multiple paragraph iterations handling hanging indention dimensions adjustments.
+    - Set up alphabetical path iterate sorting on endpoint triggers flawlessly.
+- **Key Modules**: `src/oas_diff/generators/compatibility_generator.py`, `src/oas_diff/report_manager.py`.

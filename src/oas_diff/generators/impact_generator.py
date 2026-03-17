@@ -54,8 +54,13 @@ class ImpactDocxGenerator:
         
         if template_path and os.path.exists(template_path):
             self.template_path = template_path
-        elif os.path.exists("template.docx"):
-            self.template_path = "template.docx"
+        else:
+            res_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "resources", "diff_templates"))
+            comp_temp = os.path.join(res_dir, "template_impact.docx")
+            if os.path.exists(comp_temp):
+                self.template_path = comp_temp
+            elif os.path.exists("template.docx"):
+                self.template_path = "template.docx"
             
         if self.template_path:
             self.doc = Document(self.template_path)
@@ -191,7 +196,7 @@ class ImpactDocxGenerator:
         if 'Title' in self.doc.styles:
             style = self.doc.styles['Title']
             style.font.name = 'Georgia'
-            style.font.size = Pt(26)
+            style.font.size = Pt(22)
             style.font.bold = True
             style.font.color.rgb = RGBColor(31, 78, 121) # Dark Blue
 
