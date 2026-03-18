@@ -266,9 +266,14 @@ class OASToExcelConverter:
                     ext_text = '\n'.join(indented_lines)
                 ws.cell(row=row_idx, column=9, value=ext_text)
             
+            from openpyxl.styles import Alignment
+            no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
             # Apply alignment to all columns
             for col in range(1, 10):
                 ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
+            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
+            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
+
     
     def _fill_tags_sheet(self, writer: TemplateExcelWriter) -> None:
         """Fill Tags sheet."""
@@ -279,9 +284,11 @@ class OASToExcelConverter:
             ws.cell(row=row_idx, column=1, value=tag.get('name', ''))
             ws.cell(row=row_idx, column=2, value=tag.get('description', ''))
             
-            from .template_writer import DEFAULT_ALIGNMENT
-            ws.cell(row=row_idx, column=1).alignment = DEFAULT_ALIGNMENT
-            ws.cell(row=row_idx, column=2).alignment = DEFAULT_ALIGNMENT
+            from openpyxl.styles import Alignment
+            no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
+            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
+            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
+
     
     def _fill_component_parameters(self, writer: TemplateExcelWriter) -> None:
         """Fill Parameters sheet with component parameters."""
@@ -338,9 +345,14 @@ class OASToExcelConverter:
                         example = examples_list[0]
             ws.cell(row=row_idx, column=14, value=str(example) if example is not None else '')
             
+            from openpyxl.styles import Alignment
+            no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
             # Apply alignment
             for col in range(1, 15):
                 ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
+            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
+            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
+
             
             row_idx += 1
     
@@ -393,8 +405,13 @@ class OASToExcelConverter:
                         example = examples_list[0]
             ws.cell(row=row_idx, column=13, value=_to_string(example) if example is not None else '')  # Example
             
+            from openpyxl.styles import Alignment
+            no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
             for col in range(1, 14):
                 ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
+            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
+            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
+
             
             row_idx += 1
     
@@ -473,12 +490,16 @@ class OASToExcelConverter:
                     cell = ws.cell(row=row_idx, column=col)
                     cell.alignment = DEFAULT_ALIGNMENT
                 
-                # Override column A with visual indent
+                from openpyxl.styles import Alignment
+                # Override column A and B with visual indent & no-wrap
                 try:
                     cell_a = ws.cell(row=row_idx, column=1)
-                    cell_a.alignment = Alignment(horizontal="left", wrap_text=False, indent=indent)
+                    cell_a.alignment = Alignment(horizontal="left", vertical="top", wrap_text=False, indent=indent)
+                    cell_b = ws.cell(row=row_idx, column=2)
+                    cell_b.alignment = Alignment(horizontal="left", vertical="top", wrap_text=False)
                 except Exception:
                     pass
+
                 
                 row_idx += 1
             
@@ -524,8 +545,13 @@ class OASToExcelConverter:
                 ws.cell(row=row_idx, column=14, value=flat_row.allowed_values or '')
                 ws.cell(row=row_idx, column=15, value=flat_row.example or '')
                 
+                from openpyxl.styles import Alignment
+                no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
                 for col in range(1, 16):
                     ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
+                ws.cell(row=row_idx, column=1).alignment = no_wrap_top
+                ws.cell(row=row_idx, column=2).alignment = no_wrap_top
+
                 
                 row_idx += 1
     
