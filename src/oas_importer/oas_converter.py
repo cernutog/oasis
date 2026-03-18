@@ -410,9 +410,18 @@ class OASToExcelConverter:
         
         from .template_writer import DEFAULT_ALIGNMENT
         
-        for schema_name, schema_def in schemas.items():
+        from openpyxl.styles import Alignment
+        try:
+            ws.sheet_properties.outlinePr.summaryBelow = True
+        except Exception:
+            pass
+            
+        # Sort schemas alphabetically
+        for schema_name in sorted(schemas.keys(), key=lambda x: x.lower()):
             # Flatten each schema
             rows = self.flattener.flatten_schema(schema_name)
+            
+            parent_map = {}  # Maps name -> parent for depth calculation
             
             for flat_row in rows:
                 ws.cell(row=row_idx, column=1, value=flat_row.name)
@@ -434,11 +443,48 @@ class OASToExcelConverter:
                 ws.cell(row=row_idx, column=13, value=flat_row.allowed_values or '')
                 ws.cell(row=row_idx, column=14, value=flat_row.example or '')
                 
-                # Apply alignment
+                # Outline level grouping
+                level = 0
+                if flat_row.parent:
+                    if flat_row.name:
+                        parent_map[flat_row.name] = flat_row.parent
+                    level = 1
+                    cur = flat_row.parent
+                    guard = 0
+                    while cur and guard < 50:
+                        p2 = parent_map.get(cur)
+                        if not p2:
+                            break
+                        level += 1
+                        cur = p2
+                        guard += 1
+                else:
+                    level = 0
+                    parent_map = {} # Reset within block
+                
+                try:
+                    ws.row_dimensions[row_idx].outlineLevel = min(level, 7)
+                except Exception:
+                    pass
+                
+                # Apply alignment & visual indent
+                indent = min(max(level, 0) * 2, 15)
                 for col in range(1, 15):
-                    ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
+                    cell = ws.cell(row=row_idx, column=col)
+                    cell.alignment = DEFAULT_ALIGNMENT
+                
+                # Override column A with visual indent
+                try:
+                    cell_a = ws.cell(row=row_idx, column=1)
+                    cell_a.alignment = Alignment(horizontal="left", wrap_text=False, indent=indent)
+                except Exception:
+                    pass
                 
                 row_idx += 1
+            
+            # Add blank row separator between schema blocks
+            row_idx += 1
+
     
     def _fill_component_responses(self, writer: TemplateExcelWriter) -> None:
         """Fill Responses sheet with component responses."""
