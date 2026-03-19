@@ -101,7 +101,12 @@ class OASDiffReportManager:
             analyzer = CompatibilityAnalyzer(r1, r2)
             issues = analyzer.analyze()
             # Generate Report
-            gen = CompatibilityDocxGenerator(issues, self.old_path, self.new_path, spec1=self.spec1, spec2=self.spec2)
+            gen = CompatibilityDocxGenerator(
+                issues, self.old_path, self.new_path, 
+                template_path=self.preferences.get('diff_template_compatibility'),
+                spec1=self.spec1, spec2=self.spec2
+            )
+
             gen.generate(path)
             results.append(path)
 

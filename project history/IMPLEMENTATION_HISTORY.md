@@ -816,3 +816,10 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
     - Created multiple paragraph iterations handling hanging indention dimensions adjustments.
     - Set up alphabetical path iterate sorting on endpoint triggers flawlessly.
 - **Key Modules**: `src/oas_diff/generators/compatibility_generator.py`, `src/oas_diff/report_manager.py`.
+
+### Build v2.2.4 (2026-03-19)
+- **Fix**: Custom Template Loading. Added failsafe `.strip('"\' ')` to strip wrapping quotes or training spaces from template paths for bulletproof resolution.
+- **Fix**: Preferences Bottom Bar Visibility. Reordered `.pack()` layout sequence to ensure container constraints frame bottom aligned bars seamlessly absolute.
+- **Feature**: Interface Report Naming. Standardized labels representing "Interface Report" on corresponding trigger operations flawlessly.
+- **Key Modules**: `src/preferences_dialog.py`, `src/oas_diff/generators/compatibility_generator.py`, `src/oas_diff_dialog.py`.
+

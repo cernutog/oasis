@@ -96,8 +96,9 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             ph = parent.winfo_height()
             px = parent.winfo_x()
             py = parent.winfo_y()
-            self.geometry(f"{pw}x{ph}+{px}+{py}")
+            self.geometry(f"{pw}x{ph}+{px+50}+{py+50}")
         except:
+
             self.geometry("1000x800")
         
         self.resizable(True, True)
@@ -140,13 +141,21 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Title/Description
-        ctk.CTkLabel(self.container, text="Legacy Template Converter", 
+        # --- Header ---
+        header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(header_frame, text="Legacy Template Converter", 
                      text_color="#0A809E",
-                     font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(0, 5))
-        ctk.CTkLabel(self.container, 
-                     text="Convert legacy .xlsm templates to the modern OASIS .xlsx format.\nPowered by Master Templates for maximum compatibility.",
-                     font=ctk.CTkFont(size=13)).pack(pady=(0, 20))
+                     font=ctk.CTkFont(size=26, weight="bold")).pack(side="left")
+        ctk.CTkLabel(header_frame, 
+                     text="Convert legacy .xlsm templates to modern Excel format",
+                     font=ctk.CTkFont(size=14, slant="italic")).pack(side="left", padx=15, pady=(8, 0))
+        
+        # Header Separator
+        line = ctk.CTkFrame(self.container, height=2, fg_color="#E0E0E0")
+        line.pack(fill="x", pady=(0, 20))
+
 
         # Input Frame
         input_frame = ctk.CTkFrame(self.container, corner_radius=10)

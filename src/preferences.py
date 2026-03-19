@@ -68,7 +68,9 @@ class PreferencesManager:
         "diff_template_synthesis": "",
         "diff_template_analytical": "",
         "diff_template_impact": "",
+        "diff_template_compatibility": "",
         "diff_debug_mode": False,
+
         
         # Restored Functional Keys (mistakenly treated as orphans)
         "import_source_file": "",       # Tab 1: OAS Source File

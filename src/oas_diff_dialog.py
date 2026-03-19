@@ -20,13 +20,9 @@ class OASDiffDialog(ctk.CTkToplevel):
             ph = parent.winfo_height()
             px = parent.winfo_x()
             py = parent.winfo_y()
-            # Create a displacement offset so that it doesn't fully overlap
-            dw = max(800, pw - 60)
-            dh = max(600, ph - 60)
-            dx = px + 40
-            dy = py + 40
-            self.geometry(f"{dw}x{dh}+{dx}+{dy}")
+            self.geometry(f"{pw}x{ph}+{px+50}+{py+50}")
         except:
+
             self.geometry("1000x800")
         
         self.resizable(True, True)
@@ -153,9 +149,10 @@ class OASDiffDialog(ctk.CTkToplevel):
         self.var_com = ctk.BooleanVar(value=True)
         self.card_com = ctk.CTkFrame(dash_grid, corner_radius=10, border_width=1, border_color="#D0DCE0")
         self.card_com.grid(row=0, column=3, padx=5, sticky="nsew")
-        ctk.CTkCheckBox(self.card_com, text="Compatibility Report", variable=self.var_com,
+        ctk.CTkCheckBox(self.card_com, text="Interface Report", variable=self.var_com,
                         font=ctk.CTkFont(size=13, weight="bold"),
                         fg_color="#0A809E", hover_color="#076075").pack(pady=15)
+
         self.btn_open_com = ctk.CTkButton(self.card_com, text="Open", width=120, height=28,
                                           fg_color="#0A809E", hover_color="#076075", text_color="white",
                                           font=ctk.CTkFont(weight="bold"),

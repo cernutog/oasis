@@ -125,8 +125,8 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # Window setup
         self.title("Preferences")
-        self.geometry("600x420")
-        self.resizable(False, False) # Fixed size for cleaner look
+        self.geometry("720x560")
+        self.resizable(True, True) 
 
         # Non-modal: only transient
         self.transient(parent)
@@ -134,9 +134,10 @@ class PreferencesDialog(ctk.CTkToplevel):
         # Center on parent
         self.update_idletasks()
         try:
-            x = parent.winfo_x() + (parent.winfo_width() - 600) // 2
-            y = parent.winfo_y() + (parent.winfo_height() - 420) // 2
-            self.geometry(f"600x420+{int(x)}+{int(y)}")
+            x = parent.winfo_x() + (parent.winfo_width() - 720) // 2
+            y = parent.winfo_y() + (parent.winfo_height() - 560) // 2
+            self.geometry(f"720x560+{int(x)}+{int(y)}")
+
         except:
              pass
 
@@ -179,7 +180,8 @@ class PreferencesDialog(ctk.CTkToplevel):
     def _build_ui(self):
         """Build the preferences UI with Tabs."""
         self.tabview = ctk.CTkTabview(self, segmented_button_selected_color="#0A809E", segmented_button_selected_hover_color="#076075")
-        self.tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
+        # .pack() moved to bottom of _build_ui for correct rendering order
+
 
         # Create Tabs
         self.tab_gen = self.tabview.add("General")
@@ -327,50 +329,76 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # === 6. OAS DIFF TAB ===
         self.tab_diff.grid_columnconfigure(0, weight=1)
+        self.tab_diff.grid_rowconfigure(5, weight=1) # Spacer row to absorb vertical height
+
+        # Row 0: Separator 1
+        sep1 = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
+        sep1.grid(row=0, column=0, sticky="ew")
+        self._add_section_separator(sep1, "Static Variables (User Defined)")
         
-        # --- Section: Static Variables ---
-        self._add_section_separator(self.tab_diff, "Static Variables (User Defined)")
+        # Row 1: Label
+        help_lbl = ctk.CTkLabel(self.tab_diff, 
+                                text="Use placeholders like {{variable_name}} in custom Word templates to inject these values.",
+                                font=ctk.CTkFont(size=12, slant="italic"),
+                                text_color="#333333")
+        help_lbl.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 3))
+
+        self.frame_vars = ctk.CTkFrame(self.tab_diff, fg_color="transparent", height=170)
+        self.frame_vars.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
         
-        self.frame_vars = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
-        self.frame_vars.pack(fill="both", expand=True, padx=10, pady=(0, 5))
-        
-        # Simple scrollable list for variables
-        self.scroll_vars = ctk.CTkScrollableFrame(self.frame_vars, height=100)
-        self.scroll_vars.pack(fill="x", expand=True, pady=(0, 5))
-        
+        # Standard Frame for variables (replaces scrollable to prevent height expanding bugs)
+        self.scroll_vars = ctk.CTkFrame(self.frame_vars, fg_color="transparent")
+        self.scroll_vars.pack(fill="x", expand=False, pady=(0, 5))
+
         self.vars_controls = ctk.CTkFrame(self.frame_vars, fg_color="transparent")
-        self.vars_controls.pack(fill="x")
+        self.vars_controls.pack(fill="x", expand=False)
+
         
-        ctk.CTkButton(self.vars_controls, text="Add Variable", width=100, command=self._on_add_var).pack(side="left", padx=(0, 5))
+        ctk.CTkButton(self.vars_controls, text="Add Variable", width=100, fg_color="#0A809E", hover_color="#076075", command=self._on_add_var).pack(side="left", padx=(0, 5))
         ctk.CTkButton(self.vars_controls, text="Clear All", width=100, fg_color="#D04040", hover_color="#B03030", command=self._on_clear_vars).pack(side="left")
 
-        # --- Section: Custom Templates ---
-        self._add_section_separator(self.tab_diff, "Reports Custom Templates")
+        # Row 3: Separator 2
+        sep2 = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
+        sep2.grid(row=3, column=0, sticky="ew")
+        self._add_section_separator(sep2, "Reports Custom Templates")
         
+        # Row 4: Templates Frame
         self.frame_tmpl = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
-        self.frame_tmpl.pack(fill="x", padx=10, pady=(0, 5))
+        self.frame_tmpl.grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 5))
+
+        self.frame_tmpl.grid_columnconfigure(1, weight=1) # Make entry column expand
         
         # Synthesis Template
         ctk.CTkLabel(self.frame_tmpl, text="Synthesis:").grid(row=0, column=0, sticky="w", padx=(5, 5))
-        self.entry_tmpl_syn = ctk.CTkEntry(self.frame_tmpl, width=350)
-        self.entry_tmpl_syn.grid(row=0, column=1, padx=5, pady=2)
-        ctk.CTkButton(self.frame_tmpl, text="...", width=30, command=lambda: self._browse_template("syn")).grid(row=0, column=2)
+        self.entry_tmpl_syn = ctk.CTkEntry(self.frame_tmpl)
+        self.entry_tmpl_syn.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("syn")).grid(row=0, column=2)
 
         # Analytical Template
         ctk.CTkLabel(self.frame_tmpl, text="Analytical:").grid(row=1, column=0, sticky="w", padx=(5, 5))
-        self.entry_tmpl_ana = ctk.CTkEntry(self.frame_tmpl, width=350)
-        self.entry_tmpl_ana.grid(row=1, column=1, padx=5, pady=2)
-        ctk.CTkButton(self.frame_tmpl, text="...", width=30, command=lambda: self._browse_template("ana")).grid(row=1, column=2)
+        self.entry_tmpl_ana = ctk.CTkEntry(self.frame_tmpl)
+        self.entry_tmpl_ana.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
+        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("ana")).grid(row=1, column=2)
 
         # Impact Template
         ctk.CTkLabel(self.frame_tmpl, text="Impact:").grid(row=2, column=0, sticky="w", padx=(5, 5))
-        self.entry_tmpl_imp = ctk.CTkEntry(self.frame_tmpl, width=350)
-        self.entry_tmpl_imp.grid(row=2, column=1, padx=5, pady=2)
-        ctk.CTkButton(self.frame_tmpl, text="...", width=30, command=lambda: self._browse_template("imp")).grid(row=2, column=2)
+        self.entry_tmpl_imp = ctk.CTkEntry(self.frame_tmpl)
+        self.entry_tmpl_imp.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
+        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("imp")).grid(row=2, column=2)
 
-        # Debug Switch
-        self.chk_diff_debug = ctk.CTkSwitch(self.tab_diff, text="Enable Debug Mode (Verbose Logging)", progress_color="#0A809E")
-        self.chk_diff_debug.pack(anchor="w", padx=20, pady=(10, 5))
+        # Compatibility Template
+        ctk.CTkLabel(self.frame_tmpl, text="Interface:").grid(row=3, column=0, sticky="w", padx=(5, 5))
+        self.entry_tmpl_comp = ctk.CTkEntry(self.frame_tmpl)
+        self.entry_tmpl_comp.grid(row=3, column=1, sticky="ew", padx=5, pady=2)
+        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("comp")).grid(row=3, column=2)
+
+        # Flexible spacer to absorb remaining space and pack items tightly at the top
+        spacer = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
+        spacer.grid(row=5, column=0, sticky="nsew")
+
+
+
+
 
 
         # === 7. LOGS TAB ===
@@ -412,6 +440,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         ctk.CTkButton(self.frame_buttons, text="Apply & Close", width=120, 
                       fg_color="#0A809E", hover_color="#076075",
                       command=self._on_save).pack(side="right")
+
+        # Failsafe: Pack tabview AFTER buttons to prevent container-stretch overlapping
+        self.tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
 
     # Removed _browse_master
 
@@ -477,13 +508,15 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.entry_tmpl_syn.insert(0, prefs.get("diff_template_synthesis", ""))
         self.entry_tmpl_ana.delete(0, "end")
         self.entry_tmpl_ana.insert(0, prefs.get("diff_template_analytical", ""))
+        
+        # We need loaded entries for Impact/Compatibility too:
+        if not hasattr(self, 'entry_tmpl_imp'): return # Safety catch if UI building skipped
         self.entry_tmpl_imp.delete(0, "end")
         self.entry_tmpl_imp.insert(0, prefs.get("diff_template_impact", ""))
-        
-        if prefs.get("diff_debug_mode", False):
-            self.chk_diff_debug.select()
-        else:
-            self.chk_diff_debug.deselect()
+        self.entry_tmpl_comp.delete(0, "end")
+        self.entry_tmpl_comp.insert(0, prefs.get("diff_template_compatibility", ""))
+
+
             
         self.current_diff_vars = prefs.get("diff_static_variables", {}).copy()
         self._refresh_vars_list()
@@ -505,10 +538,11 @@ class PreferencesDialog(ctk.CTkToplevel):
             
             ctk.CTkButton(row, text="X", width=25, height=20, fg_color="#D04040", hover_color="#B03030",
                           command=lambda k=key: self._on_delete_var(k)).pack(side="right", padx=2)
-            ctk.CTkButton(row, text="Edit", width=40, height=20, 
+            ctk.CTkButton(row, text="Edit", width=40, height=20, fg_color="#0A809E", hover_color="#076075",
                           command=lambda k=key, v=value: self._on_edit_var(k, v)).pack(side="right", padx=2)
 
     def _on_add_var(self):
+
         dialog = ctk.CTkInputDialog(text="Enter variable name:", title="Add Variable")
         name = dialog.get_input()
         if name:
@@ -551,6 +585,11 @@ class PreferencesDialog(ctk.CTkToplevel):
             elif type_key == "imp":
                 self.entry_tmpl_imp.delete(0, "end")
                 self.entry_tmpl_imp.insert(0, path)
+            elif type_key == "comp":
+                self.entry_tmpl_comp.delete(0, "end")
+                self.entry_tmpl_comp.insert(0, path)
+
+
 
 
     def save_preferences(self):
@@ -602,7 +641,9 @@ class PreferencesDialog(ctk.CTkToplevel):
             "diff_template_synthesis": self.entry_tmpl_syn.get(),
             "diff_template_analytical": self.entry_tmpl_ana.get(),
             "diff_template_impact": self.entry_tmpl_imp.get(),
-            "diff_debug_mode": bool(self.chk_diff_debug.get()),
+            "diff_template_compatibility": self.entry_tmpl_comp.get(),
+
+            "diff_debug_mode": False,
             "diff_static_variables": self.current_diff_vars,
         }
         

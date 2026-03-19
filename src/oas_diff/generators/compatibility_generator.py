@@ -53,11 +53,15 @@ class CompatibilityDocxGenerator:
         self.spec1 = spec1 or {}
         self.spec2 = spec2 or {}
         
+        if template_path:
+            template_path = template_path.strip('"\' ')
+            
         if template_path and os.path.exists(template_path):
             self.doc = Document(template_path)
         else:
             # Fallback to resources directory
             res_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "resources", "diff_templates"))
+
             comp_temp = os.path.join(res_dir, "template_compatibility.docx")
             if os.path.exists(comp_temp):
                 self.doc = Document(comp_temp)
@@ -84,7 +88,8 @@ class CompatibilityDocxGenerator:
 
     def generate(self, output_path: str):
         """Builds the document structure and saves it."""
-        self.doc.add_heading('OpenAPI Comparison - Interface Compatibility Report', 0)
+        self.doc.add_heading('OpenAPI Comparison - Interface Report', 0)
+
         
         # 1. Metadata Table
         self._add_metadata_table()

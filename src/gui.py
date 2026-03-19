@@ -3742,7 +3742,8 @@ class ImportDialog(ctk.CTkToplevel):
             ph = parent.winfo_height()
             px = parent.winfo_x()
             py = parent.winfo_y()
-            self.geometry(f"{pw}x{ph}+{px}+{py}")
+            self.geometry(f"{pw}x{ph}+{px+50}+{py+50}")
+
         except:
             self.geometry("1000x800")
 
@@ -3785,13 +3786,21 @@ class ImportDialog(ctk.CTkToplevel):
         self.container = ctk.CTkFrame(self, fg_color="transparent")
         self.container.pack(fill="both", expand=True, padx=20, pady=20)
 
-        # Title/Description
-        ctk.CTkLabel(self.container, text="Create Template from OAS",
+        # --- Header ---
+        header_frame = ctk.CTkFrame(self.container, fg_color="transparent")
+        header_frame.pack(fill="x", pady=(0, 15))
+        
+        ctk.CTkLabel(header_frame, text="Create Template from OAS", 
                      text_color="#0A809E",
-                     font=ctk.CTkFont(size=22, weight="bold")).pack(pady=(0, 5))
-        ctk.CTkLabel(self.container,
-                     text="Import an OpenAPI specification and generate Excel templates.\nSupports OAS 3.0 and 3.1 with roundtrip verification.",
-                     font=ctk.CTkFont(size=13)).pack(pady=(0, 20))
+                     font=ctk.CTkFont(size=26, weight="bold")).pack(side="left")
+        ctk.CTkLabel(header_frame, 
+                     text="Generate Excel templates with roundtrip verification",
+                     font=ctk.CTkFont(size=14, slant="italic")).pack(side="left", padx=15, pady=(8, 0))
+        
+        # Header Separator
+        line = ctk.CTkFrame(self.container, height=2, fg_color="#E0E0E0")
+        line.pack(fill="x", pady=(0, 20))
+
 
         # Input Frame (styled container)
         input_frame = ctk.CTkFrame(self.container, corner_radius=10)

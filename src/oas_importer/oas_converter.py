@@ -59,6 +59,21 @@ class OASToExcelConverter:
     def log(self, message: str):
         if self.log_callback:
             self.log_callback(message)
+            
+    def _autofit_columns(self, ws, max_cols: int = 2) -> None:
+        """Autofit first max_cols column widths based on cell content lengths to fit data."""
+        from openpyxl.utils import get_column_letter
+        for col in range(1, max_cols + 1):
+            max_length = 0
+            col_letter = get_column_letter(col)
+            for row in ws.iter_rows(min_col=col, max_col=col):
+                for cell in row:
+                    if cell.value:
+                        max_length = max(max_length, len(str(cell.value)))
+            if max_length > 0:
+                adjusted_width = min(max_length + 3, 55) # Cap at 55
+                ws.column_dimensions[col_letter].width = adjusted_width
+
         
     def generate_endpoint_file(self, operation: OperationInfo, 
                                 output_path: str) -> str:
@@ -268,11 +283,11 @@ class OASToExcelConverter:
             
             from openpyxl.styles import Alignment
             no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
-            # Apply alignment to all columns
             for col in range(1, 10):
                 ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
-            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
-            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
+                
+        self._autofit_columns(ws, max_cols=2)
+
 
     
     def _fill_tags_sheet(self, writer: TemplateExcelWriter) -> None:
@@ -284,10 +299,12 @@ class OASToExcelConverter:
             ws.cell(row=row_idx, column=1, value=tag.get('name', ''))
             ws.cell(row=row_idx, column=2, value=tag.get('description', ''))
             
-            from openpyxl.styles import Alignment
-            no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
-            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
-            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
+            from .template_writer import DEFAULT_ALIGNMENT
+            ws.cell(row=row_idx, column=1).alignment = DEFAULT_ALIGNMENT
+            ws.cell(row=row_idx, column=2).alignment = DEFAULT_ALIGNMENT
+            
+        self._autofit_columns(ws, max_cols=2)
+
 
     
     def _fill_component_parameters(self, writer: TemplateExcelWriter) -> None:
@@ -345,16 +362,14 @@ class OASToExcelConverter:
                         example = examples_list[0]
             ws.cell(row=row_idx, column=14, value=str(example) if example is not None else '')
             
-            from openpyxl.styles import Alignment
-            no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
             # Apply alignment
             for col in range(1, 15):
                 ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
-            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
-            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
-
-            
+                
             row_idx += 1
+            
+        self._autofit_columns(ws, max_cols=2)
+
     
     def _fill_component_headers(self, writer: TemplateExcelWriter) -> None:
         """Fill Headers sheet with component headers."""
@@ -405,15 +420,13 @@ class OASToExcelConverter:
                         example = examples_list[0]
             ws.cell(row=row_idx, column=13, value=_to_string(example) if example is not None else '')  # Example
             
-            from openpyxl.styles import Alignment
-            no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
             for col in range(1, 14):
                 ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
-            ws.cell(row=row_idx, column=1).alignment = no_wrap_top
-            ws.cell(row=row_idx, column=2).alignment = no_wrap_top
-
-            
+                
             row_idx += 1
+            
+        self._autofit_columns(ws, max_cols=2)
+
     
     def _fill_schemas_sheet(self, writer: TemplateExcelWriter) -> None:
         """Fill Schemas sheet with all component schemas flattened."""
@@ -491,20 +504,20 @@ class OASToExcelConverter:
                     cell.alignment = DEFAULT_ALIGNMENT
                 
                 from openpyxl.styles import Alignment
-                # Override column A and B with visual indent & no-wrap
+                # Override column A with visual indent & KEEP wrap_text=True
                 try:
                     cell_a = ws.cell(row=row_idx, column=1)
-                    cell_a.alignment = Alignment(horizontal="left", vertical="top", wrap_text=False, indent=indent)
-                    cell_b = ws.cell(row=row_idx, column=2)
-                    cell_b.alignment = Alignment(horizontal="left", vertical="top", wrap_text=False)
+                    cell_a.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True, indent=indent)
                 except Exception:
                     pass
-
-                
+                    
                 row_idx += 1
             
             # Add blank row separator between schema blocks
             row_idx += 1
+            
+        self._autofit_columns(ws, max_cols=2)
+
 
     
     def _fill_component_responses(self, writer: TemplateExcelWriter) -> None:
@@ -545,15 +558,13 @@ class OASToExcelConverter:
                 ws.cell(row=row_idx, column=14, value=flat_row.allowed_values or '')
                 ws.cell(row=row_idx, column=15, value=flat_row.example or '')
                 
-                from openpyxl.styles import Alignment
-                no_wrap_top = Alignment(horizontal='left', vertical='top', wrap_text=False)
                 for col in range(1, 16):
                     ws.cell(row=row_idx, column=col).alignment = DEFAULT_ALIGNMENT
-                ws.cell(row=row_idx, column=1).alignment = no_wrap_top
-                ws.cell(row=row_idx, column=2).alignment = no_wrap_top
-
-                
+                    
                 row_idx += 1
+                
+        self._autofit_columns(ws, max_cols=2)
+
     
     def _extensions_to_yaml(self, extensions: Dict[str, Any]) -> str:
         """
