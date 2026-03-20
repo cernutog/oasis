@@ -79,9 +79,17 @@ class CompatibilityAnalyzer:
                  self._compare_schemas(path, method, f"Param:{location}:{name}", p1['schema'], p2['schema'], name)
 
     def _compare_request_body(self, path: str, method: str, rb1: Dict, rb2: Dict):
+        # Compare required attribute
+        req1 = rb1.get('required', False)
+        req2 = rb2.get('required', False)
+        if req1 != req2:
+             self.issues.append(CompatibilityIssue(path, method, "Request Body", "-", "Constraint Mismatch", f"Property 'required' changed from {req1} to {req2}"))
+
+
         content1 = rb1.get('content', {})
         content2 = rb2.get('content', {})
         common_content = set(content1.keys()) & set(content2.keys())
+
         
         for media_type in common_content:
              self._compare_schemas(path, method, f"Request Body ({media_type})", content1[media_type].get('schema', {}), content2[media_type].get('schema', {}), "")

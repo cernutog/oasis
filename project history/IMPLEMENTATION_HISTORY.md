@@ -823,3 +823,9 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Feature**: Interface Report Naming. Standardized labels representing "Interface Report" on corresponding trigger operations flawlessly.
 - **Key Modules**: `src/preferences_dialog.py`, `src/oas_diff/generators/compatibility_generator.py`, `src/oas_diff_dialog.py`.
 
+### Build v2.2.5 (2026-03-20)
+- **Fix**: Request Body Required Detection. Added condition matching `.get('required', False)` inside `_compare_request_body` absolute.
+- **Fix**: Restore Title Heading. Reverted headings inside `CompatibilityDocxGenerator` back to full descriptive title absolute setup.
+- **Key Modules**: `src/oas_diff/compatibility_analyzer.py`, `src/oas_diff/generators/compatibility_generator.py`.
+
+
