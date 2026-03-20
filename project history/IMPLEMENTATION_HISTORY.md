@@ -841,6 +841,13 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Fix**: Structured Analytical Report Combinators. Replaced flat Added/Removed schema reference strings with indented YAML-style structures absolute absolute.
 - **Key Modules**: `src/oas_diff/generators/analytic_generator.py`.
 
+### Build v2.2.9 (2026-03-20)
+- **Fix**: Structured Combinator Lists. Added hyphen (`- `) to `$ref` lines inside combinators to match YAML syntax absolute.
+- **Fix**: Server 1-to-1 Modification. Merged single-item list URL changes into server modifications bundle instead of dual metrics absolute.
+- **Feature**: Servers Detail Section. Added a dedicated "Servers" chapter inside the Analytical report below General Info for visual diff tables absolute.
+- **Key Modules**: `src/oas_diff/comparator.py`, `src/oas_diff/generators/analytic_generator.py`.
+
+
 
 
 

@@ -174,13 +174,26 @@ def _compare_tags(old_tags: List, new_tags: List, result: DiffResult):
         result.tags_changes = diff # Need to add this field to DiffResult
 
 def _compare_servers(old_servers: List, new_servers: List, result: DiffResult):
-    # Simplified server comparison (by url)
+    # If both lists have exactly 1 item, treat any url change as a modification
+    if len(old_servers) == 1 and len(new_servers) == 1:
+        o_s = old_servers[0]
+        n_s = new_servers[0]
+        diff = {}
+        if o_s.get('url') != n_s.get('url'):
+            diff['url'] = {'old': o_s.get('url'), 'new': n_s.get('url')}
+        if o_s.get('description') != n_s.get('description'):
+            diff['description'] = {'old': o_s.get('description'), 'new': n_s.get('description')}
+        if diff:
+            result.servers_changes = {'modified': {o_s.get('url', 'Server'): diff}}
+        return
+
     old_s = {s['url']: s for s in old_servers}
     new_s = {s['url']: s for s in new_servers}
     
     diff = _compare_dict_items(old_s, new_s, lambda o, n: {'old': o, 'new': n} if o != n else {})
     if diff:
-        result.servers_changes = diff # Need to add this field to DiffResult
+        result.servers_changes = diff
+ # Need to add this field to DiffResult
 
 def _is_effectively_equal(v1: Any, v2: Any) -> bool:
     if v1 == v2:

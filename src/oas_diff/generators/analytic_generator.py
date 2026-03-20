@@ -447,6 +447,7 @@ class AnalyticDocxGenerator:
 
         self._add_dashboard()
         self._add_general_info()
+        self._add_servers_info()
         self._add_endpoints()
         self._add_components()
         
@@ -692,6 +693,53 @@ class AnalyticDocxGenerator:
             
             for cell in row.cells:
                 self._style_body_cell(cell)
+
+    def _add_servers_info(self):
+        if not hasattr(self.diff, 'servers_changes') or not self.diff.servers_changes:
+            return
+            
+        changes = self.diff.servers_changes
+        has_new = 'new' in changes and changes['new']
+        has_rem = 'removed' in changes and changes['removed']
+        has_mod = 'modified' in changes and changes['modified']
+        
+        if not (has_new or has_rem or has_mod):
+            return
+
+        self.doc.add_heading('Servers', 1)
+        
+        if has_new:
+            self.doc.add_heading('New Servers', 2)
+            for s in changes['new']:
+                 p = self.doc.add_paragraph()
+                 self._add_pill_badge(p, "NEW", "28A745")
+                 p.add_run(f" {s}")
+                 
+        if has_rem:
+            self.doc.add_heading('Removed Servers', 2)
+            for s in changes['removed']:
+                 p = self.doc.add_paragraph()
+                 self._add_pill_badge(p, "REMOVED", "DC3545")
+                 p.add_run(f" {s}")
+                 
+        if has_mod:
+            self.doc.add_heading('Modified Servers', 2)
+            for url, m_diff in changes['modified'].items():
+                 p = self.doc.add_paragraph()
+                 self._add_pill_badge(p, "MODIFIED", "FFC107")
+                 p.add_run(f" {url}")
+                 
+                 widths = [Inches(1.5), Inches(2.45), Inches(2.45)]
+                 table = self._create_table(3, widths)
+                 self._style_header_row(table.rows[0], ['Property', 'Old Value', 'New Value'])
+                 
+                 for k, v in m_diff.items():
+                     row = table.add_row()
+                     row.cells[0].text = str(k)
+                     row.cells[1].text = str(v.get('old', '-'))
+                     row.cells[2].text = str(v.get('new', '-'))
+                     for cell in row.cells: self._style_body_cell(cell)
+                 self.doc.add_paragraph()
 
     def _add_endpoints(self):
         self.doc.add_heading('Endpoints Summary', 1)
@@ -1481,7 +1529,7 @@ class AnalyticDocxGenerator:
                                             p_old.add_run(f"{k}:\n")
                                             for item in v['removed']:
                                                 if isinstance(item, dict) and '$ref' in item:
-                                                    p_old.add_run(f"  $ref: '{item['$ref']}'\n")
+                                                    p_old.add_run(f"  - $ref: '{item['$ref']}'\n")
                                                 else:
                                                     p_old.add_run(f"  - {item}\n")
                                                     
@@ -1489,9 +1537,10 @@ class AnalyticDocxGenerator:
                                             p_new.add_run(f"{k}:\n")
                                             for item in v['added']:
                                                 if isinstance(item, dict) and '$ref' in item:
-                                                    p_new.add_run(f"  $ref: '{item['$ref']}'\n")
+                                                    p_new.add_run(f"  - $ref: '{item['$ref']}'\n")
                                                 else:
                                                     p_new.add_run(f"  - {item}\n")
+
 
                                     else:
                                         p_old.add_run(f"{k}: (complex)\n")
