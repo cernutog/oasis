@@ -1476,15 +1476,23 @@ class AnalyticDocxGenerator:
                                         p_old.add_run(f"{k}: {v['old']}\n")
                                         p_new.add_run(f"{k}: {v['new']}\n")
                                     elif isinstance(v, dict) and ('added' in v or 'removed' in v):
-                                        def get_name(item):
-                                            if isinstance(item, dict) and '$ref' in item:
-                                                 return item['$ref'].split('/')[-1]
-                                            return str(item)
-                                        
-                                        if 'added' in v and v['added']:
-                                            p_new.add_run(f"{k} Added:\xa0{', '.join([get_name(x) for x in v['added']])}\n")
+                                        # Format Added/Removed as a structure
                                         if 'removed' in v and v['removed']:
-                                             p_old.add_run(f"{k} Removed:\xa0{', '.join([get_name(x) for x in v['removed']])}\n")
+                                            p_old.add_run(f"{k}:\n")
+                                            for item in v['removed']:
+                                                if isinstance(item, dict) and '$ref' in item:
+                                                    p_old.add_run(f"  $ref: '{item['$ref']}'\n")
+                                                else:
+                                                    p_old.add_run(f"  - {item}\n")
+                                                    
+                                        if 'added' in v and v['added']:
+                                            p_new.add_run(f"{k}:\n")
+                                            for item in v['added']:
+                                                if isinstance(item, dict) and '$ref' in item:
+                                                    p_new.add_run(f"  $ref: '{item['$ref']}'\n")
+                                                else:
+                                                    p_new.add_run(f"  - {item}\n")
+
                                     else:
                                         p_old.add_run(f"{k}: (complex)\n")
                                         p_new.add_run(f"{k}: (complex)\n")
