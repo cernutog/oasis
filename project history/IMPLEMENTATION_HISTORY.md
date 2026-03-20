@@ -832,5 +832,11 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Feature**: Schema Rename with Modification Detection. Enabled vote-based candidate resolution using `$ref` replacement signals for non-identical structural matches absolute.
 - **Key Modules**: `src/oas_diff/comparator.py`.
 
+### Build v2.2.7 (2026-03-20)
+- **Fix**: Analytical Report `(complex)` expansion. Replaced black-box label on combinators (`allOf`, `anyOf`, `oneOf`) with detailed items list detailing added/removed schemas absolute.
+- **Fix**: Avoid Line Breaks after pills. Replaced breaking whitespace with `\xa0` around `.add_run()` adjacent to pill badges inside `AnalyticalDocxGenerator` absolute.
+- **Key Modules**: `src/oas_diff/generators/analytic_generator.py`.
+
+
 
 

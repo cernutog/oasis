@@ -345,7 +345,7 @@ class AnalyticDocxGenerator:
 
     def _add_pill_badge(self, paragraph, text, color_override=None):
         # Add spacing
-        run = paragraph.add_run(f"  {text}  ")
+        run = paragraph.add_run(f"\xa0{text}\xa0")
         run.font.size = Pt(7)
         run.font.bold = True
         run.font.name = 'Segoe UI'
@@ -392,7 +392,7 @@ class AnalyticDocxGenerator:
         run.font.color.rgb = text_color
         
         # Add a small margin run to make the badge look wider
-        paragraph.add_run(" ")
+        paragraph.add_run("\xa0")
 
     def _add_legend(self):
         self.doc.add_heading('Legend of Changes', 1)
@@ -1475,6 +1475,16 @@ class AnalyticDocxGenerator:
                                     elif isinstance(v, dict) and 'old' in v:
                                         p_old.add_run(f"{k}: {v['old']}\n")
                                         p_new.add_run(f"{k}: {v['new']}\n")
+                                    elif isinstance(v, dict) and ('added' in v or 'removed' in v):
+                                        def get_name(item):
+                                            if isinstance(item, dict) and '$ref' in item:
+                                                 return item['$ref'].split('/')[-1]
+                                            return str(item)
+                                        
+                                        if 'added' in v and v['added']:
+                                            p_new.add_run(f"{k} Added:\xa0{', '.join([get_name(x) for x in v['added']])}\n")
+                                        if 'removed' in v and v['removed']:
+                                             p_old.add_run(f"{k} Removed:\xa0{', '.join([get_name(x) for x in v['removed']])}\n")
                                     else:
                                         p_old.add_run(f"{k}: (complex)\n")
                                         p_new.add_run(f"{k}: (complex)\n")
