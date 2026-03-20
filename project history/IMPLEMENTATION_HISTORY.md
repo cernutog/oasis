@@ -828,4 +828,9 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Fix**: Restore Title Heading. Reverted headings inside `CompatibilityDocxGenerator` back to full descriptive title absolute setup.
 - **Key Modules**: `src/oas_diff/compatibility_analyzer.py`, `src/oas_diff/generators/compatibility_generator.py`.
 
+### Build v2.2.6 (2026-03-20)
+- **Feature**: Schema Rename with Modification Detection. Enabled vote-based candidate resolution using `$ref` replacement signals for non-identical structural matches absolute.
+- **Key Modules**: `src/oas_diff/comparator.py`.
+
+
 

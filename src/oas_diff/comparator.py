@@ -541,14 +541,16 @@ def _detect_renamed_type_logic(result: DiffResult, old_spec: Dict, new_spec: Dic
             final_renames[o_name] = (n_name, "Modification")
             current_removed.clear()
             current_new.clear()
-    else: # For schemas, use the iterative propagation logic to find more candidates
-        # This part of the logic was in the original _detect_renamed_schemas
-        # It's about finding more candidates through structural comparison, not resolving.
-        # The current structure resolves candidates based on content_matcher and votes.
-        # If we want to re-introduce structural propagation for schemas, it needs to be
-        # integrated into the candidate generation phase or as a separate pass.
-        # For now, the _scan_refs seeds initial candidates, and the resolution logic handles them.
-        pass
+    else: # For schemas, use votes from ref changes to resolve non-identical renames
+        for o_name in sorted(list(current_removed)):
+            if o_name not in candidates: continue
+            valid_targets = {t: v for t, v in candidates[o_name].items() if t in current_new}
+            if valid_targets:
+                best_match = max(valid_targets, key=valid_targets.get)
+                final_renames[o_name] = (best_match, "Modification")
+                if best_match in current_new:
+                    current_new.remove(best_match)
+
 
     # Finalize Renames and Compute Diffs
     if final_renames:
