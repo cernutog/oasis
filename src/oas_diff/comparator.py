@@ -732,18 +732,27 @@ def _compare_security_scheme(old_s, new_s):
 
 def _unwrap_schema(schema: Any) -> Any:
     """
-    Normalizes schemas by unwrapping single-item allOf/anyOf/oneOf wrappers.
-    e.g., {"allOf": [{"$ref": "..."}]} -> {"$ref": "..."}
+    Normalizes schemas by unwrapping single-item allOf/anyOf/oneOf wrappers
+    and merging them with sibling properties.
     """
     if not isinstance(schema, dict):
         return schema
         
     comb_keys = ['allOf', 'anyOf', 'oneOf']
     for k in comb_keys:
-        if k in schema and len(schema) == 1:
+        if k in schema:
             val = schema[k]
             if isinstance(val, list) and len(val) == 1:
-                return _unwrap_schema(val[0])
+                # Merge the single item's contents with the parent schema (excluding the combinator key)
+                unwrapped_inner = _unwrap_schema(val[0])
+                if isinstance(unwrapped_inner, dict):
+                    merged = dict(schema)
+                    del merged[k]
+                    # Outer properties override inner
+                    for inner_k, inner_v in unwrapped_inner.items():
+                        if inner_k not in merged:
+                            merged[inner_k] = inner_v
+                    return merged
     return schema
 
 def _compare_schema(old_schema: Dict, new_schema: Dict) -> Dict:
