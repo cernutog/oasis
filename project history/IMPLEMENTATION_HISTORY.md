@@ -847,6 +847,12 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Feature**: Servers Detail Section. Added a dedicated "Servers" chapter inside the Analytical report below General Info for visual diff tables absolute.
 - **Key Modules**: `src/oas_diff/comparator.py`, `src/oas_diff/generators/analytic_generator.py`.
 
+### Build v2.2.10 (2026-03-24)
+- **Fix**: Compatibility Issue Type. Changed issue type `'Missing'` to `'Removed'` for removed request bodies, properties, and array items.
+- **Fix**: Property Rename Detection. Added match-by-value pass inside `_compare_schemas` for single-sided Added/Removed property sets to reduce noise.
+- **Key Modules**: `src/oas_diff/compatibility_analyzer.py`.
+
+
 
 
 
