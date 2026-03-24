@@ -428,7 +428,7 @@ def _detect_renamed_components(result: DiffResult, old_spec: Dict, new_spec: Dic
     for c_type in comp_types:
         if c_type == 'schemas':
             # Schemas use the complex iterative propagation logic
-            _detect_renamed_type_logic(result, old_spec, new_spec, c_type, _compare_schema, _is_deeply_identical, use_propagation=True)
+            _detect_renamed_type_logic(result, old_spec, new_spec, c_type, _compare_schema, lambda o, n: _is_deeply_identical(o, n, old_spec, new_spec), use_propagation=True)
         elif c_type == 'examples':
             # Examples use content-based matching (ignoring summary if it matches key)
             def is_ex_identical(o, n):
@@ -591,7 +591,7 @@ def _detect_renamed_type_logic(result: DiffResult, old_spec: Dict, new_spec: Dic
         result.new_components[comp_type] = result_new_list
         result.removed_components[comp_type] = result_removed_list
 
-def _is_deeply_identical(old_s, new_s, visited=None, debug=False):
+def _is_deeply_identical(old_s, new_s, old_spec, new_spec, visited=None, debug=False):
     old_s = _unwrap_schema(old_s)
     new_s = _unwrap_schema(new_s)
     
@@ -616,7 +616,7 @@ def _is_deeply_identical(old_s, new_s, visited=None, debug=False):
         if debug: print(f"    Diff in properties keys: {set(old_props.keys())} != {set(new_props.keys())}")
         return False
     for k in old_props:
-        if not _is_deeply_identical(old_props[k], new_props[k], visited, debug):
+        if not _is_deeply_identical(old_props[k], new_props[k], old_spec, new_spec, visited, debug):
             if debug: print(f"    Diff in property '{k}'")
             return False
 
@@ -625,7 +625,7 @@ def _is_deeply_identical(old_s, new_s, visited=None, debug=False):
         if 'items' not in old_s or 'items' not in new_s:
             if debug: print("    Diff in items existence")
             return False
-        if not _is_deeply_identical(old_s['items'], new_s['items'], visited, debug):
+        if not _is_deeply_identical(old_s['items'], new_s['items'], old_spec, new_spec, visited, debug):
             if debug: print("    Diff in items content")
             return False
 
@@ -641,7 +641,7 @@ def _is_deeply_identical(old_s, new_s, visited=None, debug=False):
                 if debug: print(f"    Diff in combinator '{k}' length")
                 return False
             for i in range(len(ol)):
-                if not _is_deeply_identical(ol[i], nl[i], visited, debug):
+                if not _is_deeply_identical(ol[i], nl[i], old_spec, new_spec, visited, debug):
                     if debug: print(f"    Diff in combinator '{k}' item {i}")
                     return False
 
@@ -669,7 +669,7 @@ def _is_deeply_identical(old_s, new_s, visited=None, debug=False):
 
         if old_target and new_target:
             if debug: print(f"    Recursing into ref: {old_ref} -> {new_ref}")
-            return _is_deeply_identical(old_target, new_target, visited, debug)
+            return _is_deeply_identical(old_target, new_target, old_spec, new_spec, visited, debug)
         else:
             if debug: print(f"    Ref resolution failed: {old_ref} vs {new_ref}")
             return old_ref == new_ref

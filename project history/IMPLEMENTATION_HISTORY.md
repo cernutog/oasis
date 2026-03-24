@@ -852,6 +852,11 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Fix**: Property Rename Detection. Added match-by-value pass inside `_compare_schemas` for single-sided Added/Removed property sets to reduce noise.
 - **Key Modules**: `src/oas_diff/compatibility_analyzer.py`.
 
+### Build v2.2.11 (2026-03-24)
+- **Hotfix**: Undefined Context Variable. Fixed `CRITICAL ERROR: name 'old_spec' is not defined` inside `_is_deeply_identical` method by passing `old_spec` and `new_spec` arguments explicitly throughout the recursion.
+- **Key Modules**: `src/oas_diff/comparator.py`.
+
+
 
 
 
