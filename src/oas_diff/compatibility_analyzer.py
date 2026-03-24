@@ -77,7 +77,7 @@ class CompatibilityAnalyzer:
             
             # Compare schemas
             if 'schema' in p1 and 'schema' in p2:
-                 self._compare_schemas(path, method, f"Param:{location}:{name}", p1['schema'], p2['schema'], name)
+                 self._compare_schemas(path, method, f"Parameter ({location})", p1['schema'], p2['schema'], name)
 
     def _compare_request_body(self, path: str, method: str, rb1: Dict, rb2: Dict):
         # Compare required attribute
