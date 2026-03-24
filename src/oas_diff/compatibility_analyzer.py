@@ -1,5 +1,6 @@
 from typing import Dict, List, Any, Optional
 from dataclasses import dataclass
+from .comparator import _unwrap_schema
 
 @dataclass
 class CompatibilityIssue:
@@ -118,6 +119,9 @@ class CompatibilityAnalyzer:
         Deeply compares two resolved schemas and collects constraint mismatches.
         """
         if visited is None: visited = set()
+        
+        s1 = _unwrap_schema(s1)
+        s2 = _unwrap_schema(s2)
         
         # Cycle detection
         pair_id = (id(s1), id(s2))
