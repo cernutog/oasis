@@ -36,6 +36,9 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
         self._build_ui()
         self._load_saved_path()
 
+        # Handle window close
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
     def _load_saved_path(self):
         if self.prefs_manager:
             last_path = self.prefs_manager.get("last_legacy_dst", "")
@@ -108,6 +111,17 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
             self.focus_force()
             self.entry_path.delete(0, "end")
             self.entry_path.insert(0, p)
+            # Save immediately
+            if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
+                self.prefs_manager.set("last_legacy_dst", p)
+                self.prefs_manager.save()
+
+    def _on_close(self):
+        """Save settings and close window."""
+        if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
+            self.prefs_manager.set("last_legacy_dst", self.entry_path.get())
+            self.prefs_manager.save()
+        self.destroy()
 
     def _log(self, msg):
         self.log_area.configure(state="normal")

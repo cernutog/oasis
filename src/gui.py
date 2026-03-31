@@ -1106,10 +1106,16 @@ class OASGenApp(ctk.CTk):
 
     def _on_close(self):
         """Handle window close - save geometry and exit."""
-        if self.prefs_manager.get("remember_window_pos"):
+        if self.prefs_manager.get("remember_window_pos", True):
             geometry = self.geometry()
             self.prefs_manager.set("window_geometry", geometry)
-            self.prefs_manager.save()
+        
+        # Save current paths if remembered
+        if self.prefs_manager.get("remember_paths", True):
+            self.prefs_manager.set("last_excel_input", self.entry_dir.get())
+            self.prefs_manager.set("last_oas_folder", self.entry_oas_folder.get())
+            
+        self.prefs_manager.save()
         self.destroy()
 
     def _reserve_yaml_hscroll_space(self) -> None:
@@ -4322,12 +4328,13 @@ class ImportDialog(ctk.CTkToplevel):
 
     def _on_close(self):
         """Save paths on dialog close."""
-        try:
-            self.prefs_manager.set("last_excel_output", self.entry_imp_dst.get())
-            self.prefs_manager.set("import_source_file", self.entry_imp_file.get())
-            self.prefs_manager.save()
-        except:
-            pass
+        if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
+            try:
+                self.prefs_manager.set("last_excel_output", self.entry_imp_dst.get())
+                self.prefs_manager.set("import_source_file", self.entry_imp_file.get())
+                self.prefs_manager.save()
+            except:
+                pass
         self.destroy()
 
 

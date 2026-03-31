@@ -574,7 +574,17 @@ class PreferencesDialog(ctk.CTkToplevel):
         self._refresh_vars_list()
 
     def _browse_template(self, type_key):
-        path = filedialog.askopenfilename(filetypes=[("Word Documents", "*.docx")])
+        entry_map = {
+            "syn": self.entry_tmpl_syn,
+            "ana": self.entry_tmpl_ana,
+            "imp": self.entry_tmpl_imp,
+            "comp": self.entry_tmpl_comp
+        }
+        entry = entry_map.get(type_key)
+        current = entry.get() if entry else ""
+        initial = os.path.dirname(current) if current and os.path.exists(current) else None
+        
+        path = filedialog.askopenfilename(parent=self, initialdir=initial, filetypes=[("Word Documents", "*.docx")])
         if path:
             if type_key == "syn":
                 self.entry_tmpl_syn.delete(0, "end")

@@ -124,6 +124,9 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         self._build_ui()
         self._load_saved_paths()
 
+        # Handle window close
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
 
     def _load_saved_paths(self):
         if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
@@ -135,6 +138,14 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 self.entry_dst.insert(0, last_dst)
         else:
             print("DEBUG: remember_paths is False or prefs_manager is None")
+
+    def _on_close(self):
+        """Save settings and close window."""
+        if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
+            self.prefs_manager.set("last_legacy_src", self.entry_src.get())
+            self.prefs_manager.set("last_legacy_dst", self.entry_dst.get())
+            self.prefs_manager.save()
+        self.destroy()
 
     def _build_ui(self):
         # Container

@@ -179,13 +179,19 @@ class RedocGenerator:
         }};
         
         function toggleSnap() {{
+            console.log('toggleSnap: button clicked, isSnapped currently:', isSnapped);
             // Call Python API via pywebview
             if (window.pywebview && window.pywebview.api) {{
+                console.log('toggleSnap: API found, calling toggle_snap');
                 window.pywebview.api.toggle_snap().then(function(newState) {{
+                    console.log('toggleSnap: Received newState from Python:', newState);
                     isSnapped = newState;
                     updateSnapButton();
+                }}).catch(function(err) {{
+                    console.error('toggleSnap: Error calling toggle_snap:', err);
                 }});
             }} else {{
+                console.warn('toggleSnap: API NOT found, using fallback local toggle');
                 // Fallback if pywebview API not available
                 isSnapped = !isSnapped;
                 updateSnapButton();
@@ -353,12 +359,32 @@ class RedocGenerator:
         }}
         
         // Initialize snap state from Python
-        document.addEventListener('DOMContentLoaded', function() {{
-            updateSnapButton(); // Initial render
+        function initSnapState() {{
+            console.log('initSnapState: checking for pywebview.api');
             if (window.pywebview && window.pywebview.api) {{
+                console.log('initSnapState: API found, fetching state');
                 window.pywebview.api.get_snap_state().then(function(state) {{
+                    console.log('initSnapState: Received state:', state);
                     isSnapped = state;
                     updateSnapButton();
+                }}).catch(function(err) {{
+                    console.error('initSnapState: Error fetching state:', err);
+                }});
+            }} else {{
+                console.warn('initSnapState: API NOT found at this time');
+            }}
+        }}
+
+        document.addEventListener('DOMContentLoaded', function() {{
+            console.log('DOMContentLoaded: Initial button render');
+            updateSnapButton(); // Initial render
+            
+            if (window.pywebview && window.pywebview.api) {{
+                initSnapState();
+            }} else {{
+                window.addEventListener('pywebviewready', function() {{
+                    console.log('pywebviewready event received');
+                    initSnapState();
                 }});
             }}
         }});

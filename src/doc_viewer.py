@@ -9,6 +9,7 @@ from multiprocessing import Value
 import os
 import sys
 import ctypes
+import pygetwindow as gw
 
 
 def resource_path(relative_path):
@@ -21,7 +22,7 @@ def resource_path(relative_path):
 
 
 def debug_log(msg):
-    pass
+    print(f"[DocViewer] {msg}", file=sys.stderr, flush=True)
 
 
 class DocViewerAPI:
@@ -436,8 +437,8 @@ class DockedDocViewer:
                         win.moveTo(target_x, target_y)
                         win.resizeTo(win.width, outer_height)
 
-        except Exception:
-            pass
+        except Exception as e:
+            debug_log(f"Error in _sync_position loop: {e}")
 
         if not self._closed:
             self.parent.after(100, self._sync_position)

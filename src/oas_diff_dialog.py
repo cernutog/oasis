@@ -39,6 +39,9 @@ class OASDiffDialog(ctk.CTkToplevel):
         self._build_ui()
         self._load_saved_paths()
 
+        # Handle window close
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
+
     def _load_saved_paths(self):
         if self.prefs_manager:
             old_path = self.prefs_manager.get("diff_old_spec", "")
@@ -198,7 +201,15 @@ class OASDiffDialog(ctk.CTkToplevel):
         self.log_area.pack(fill="both", expand=True, padx=10, pady=(0, 10))
 
     def _browse_file(self, target):
-        path = filedialog.askopenfilename(filetypes=[("OAS Files", "*.yaml *.yml *.json")])
+        current_path = self.entry_old.get() if target == "old" else self.entry_new.get()
+        initial_dir = os.path.dirname(current_path) if current_path and os.path.exists(current_path) else None
+        
+        path = filedialog.askopenfilename(
+            parent=self,
+            initialdir=initial_dir,
+            title=f"Select {'Old' if target == 'old' else 'New'} OAS File",
+            filetypes=[("OAS Files", "*.yaml *.yml *.json")]
+        )
         if path:
             if target == "old":
                 self.entry_old.delete(0, "end")
@@ -207,13 +218,29 @@ class OASDiffDialog(ctk.CTkToplevel):
                 self.entry_new.delete(0, "end")
                 self.entry_new.insert(0, path)
             self.lift()
+            self.focus_force()
 
     def _browse_dir(self):
-        path = filedialog.askdirectory()
+        current_path = self.entry_out.get()
+        initial_dir = current_path if current_path and os.path.exists(current_path) else None
+        
+        path = filedialog.askdirectory(parent=self, initialdir=initial_dir, title="Select Output Directory")
         if path:
             self.entry_out.delete(0, "end")
             self.entry_out.insert(0, path)
             self.lift()
+            self.focus_force()
+
+    def _on_close(self):
+        """Save settings and close window."""
+        if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
+            self.prefs_manager.update({
+                "diff_old_spec": self.entry_old.get(),
+                "diff_new_spec": self.entry_new.get(),
+                "diff_output_dir": self.entry_out.get()
+            })
+            self.prefs_manager.save()
+        self.destroy()
 
     def _log(self, msg):
         # 1. Local Log (No timestamp)

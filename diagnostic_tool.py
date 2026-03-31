@@ -88,11 +88,11 @@ def _flatten(s):
     return s
 
 class MegaAnalyzer(CompatibilityAnalyzer):
-    def _compare_schemas(self, path, method, location, s1, s2, prefix, visited=None):
+    def _compare_schemas(self, path, method, location, s1, s2, prefix, visited=None, skip_description=False):
         s1 = _flatten(s1)
         s2 = _flatten(s2)
         # Re-run normalizing function as expected by parent
-        super()._compare_schemas(path, method, location, s1, s2, prefix, visited)
+        super()._compare_schemas(path, method, location, s1, s2, prefix, visited, skip_description)
 
 analyzer = MegaAnalyzer(r1, r2)
 issues = analyzer.analyze()

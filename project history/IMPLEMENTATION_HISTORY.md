@@ -856,10 +856,10 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Hotfix**: Undefined Context Variable. Fixed `CRITICAL ERROR: name 'old_spec' is not defined` inside `_is_deeply_identical` method by passing `old_spec` and `new_spec` arguments explicitly throughout the recursion.
 - **Key Modules**: `src/oas_diff/comparator.py`.
 
-
-
-
-
-
+### Build v2.2.13 (2026-03-31)
+- **Fix**: Launch Stability. Renamed `cmd.py` to `diagnostic_tool.py` to eliminate module shadowing conflicts with the Python standard library.
+- **Fix**: Path Persistence. Standardized path saving/restoration and "Browse" button behavior across all windows (OASGenApp, ImportDialog, OASDiffDialog, LegacyConverterDialog, LegacySchemaTracerDialog).
+- **Fix**: MegaAnalyzer signature alignment with CompatibilityAnalyzer base class to resolve runtime TypeError.
+- **Key Modules**: `src/gui.py`, `src/oas_diff_dialog.py`, `src/legacy_converter_dialog.py`, `src/legacy_schema_tracer_dialog.py`, `src/preferences_dialog.py`, `diagnostic_tool.py`.
 
 
