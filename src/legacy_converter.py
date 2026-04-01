@@ -970,7 +970,7 @@ class LegacyConverter:
             
         self.log("="*len(header) + "\n")
 
-    def run_standalone_check(self, folder_path):
+    def run_standalone_check(self, folder_path, inject_refs=False):
         """Analyze an existing converted folder by reading its $index file and all endpoints."""
         p = Path(folder_path)
         index_file = None
@@ -1277,12 +1277,182 @@ class LegacyConverter:
             self.schema_usage = {k: self.schema_usage.get(k, []) for k in _hnp}
 
             self._log_usage_summary()
+
+            if inject_refs:
+                self._inject_schema_references(p, index_file, ep_files)
+
             return True
             
         except Exception as e:
             self.log(f"Error during standalone check: {e}")
             return False
     
+    def _inject_schema_references(self, folder: Path, index_file: Path, ep_files: list):
+        """Create a 'Schema References' sheet in $index.xlsx with merged cells and hyperlinks."""
+        from openpyxl.styles import Font, PatternFill, Border, Side, Color
+
+        # 1. Build display_name → actual filename mapping
+        display_to_fname: Dict[str, str] = {}
+        for fname, _opid in ep_files:
+            disp = self._endpoint_display_name(str(fname))
+            if disp and disp not in display_to_fname:
+                display_to_fname[disp] = str(fname)
+
+        # 2. Parse schema_usage into flat (schema, endpoint, sheet) triples
+        triples: List[Tuple[str, str, str]] = []
+        for schema_name, usages in self.schema_usage.items():
+            for u in usages:
+                u = str(u).strip()
+                m = re.match(r"^(.*?)\s*\((.+)\)\s*$", u)
+                if not m:
+                    continue
+                ep = m.group(1).strip()
+                ctx = m.group(2).strip()
+                if not ep or not ctx:
+                    continue
+                triples.append((schema_name, ep, ctx))
+
+        if not triples:
+            self.log("  No schema references to inject.")
+            return
+
+        # 3. Sort: schema (case-insensitive), then endpoint, then sheet (numeric first)
+        def _sort_key(t):
+            s, e, sh = t
+            try:
+                sh_num = (0, int(sh))
+            except ValueError:
+                sh_num = (1, sh.lower())
+            return (s.lower(), s, e.lower(), e, sh_num)
+
+        triples.sort(key=_sort_key)
+
+        # 4. Open index workbook and create/replace sheet
+        try:
+            wb = load_workbook(index_file)
+        except Exception as ex:
+            self.log(f"  ERROR: Cannot open {index_file.name}: {ex}")
+            return
+
+        sheet_title = "Schema References"
+        if sheet_title in wb.sheetnames:
+            del wb[sheet_title]
+        ws = wb.create_sheet(sheet_title)
+        ws.sheet_properties.tabColor = "8B0000"  # dark red tab
+
+        # 5. Styles — match the Schemas sheet header (red bold Calibri, theme 7 fill)
+        header_font = Font(bold=True, color=Color(rgb="FFFF0000"), size=11, name="Calibri")
+        header_fill = PatternFill(fill_type="solid",
+                                  fgColor=Color(theme=7, tint=0.7999816888943144))
+        thin_side = Side(style="thin", color="CCCCCC")
+        med_side = Side(style="medium", color="666666")
+        thin_border = Border(left=thin_side, right=thin_side,
+                             top=thin_side, bottom=thin_side)
+        # Separator: medium TOP border on the first row of each new schema group.
+        # Using top (not bottom) because merged cells preserve the top-left cell's
+        # top border, while bottom borders on the last row of a merge are lost.
+        sep_top_border = Border(left=thin_side, right=thin_side,
+                                top=med_side, bottom=thin_side)
+
+        headers = ["Schema Name", "Endpoint", "Sheet"]
+        for ci, h in enumerate(headers, start=1):
+            cell = ws.cell(row=1, column=ci, value=h)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="left", vertical="top", wrap_text=True)
+            cell.border = thin_border
+
+        # 6. Precompute merge ranges from sorted data
+        schema_ranges: List[Tuple[int, int]] = []   # (start_row, end_row)
+        ep_ranges: List[Tuple[int, int]] = []        # (start_row, end_row)
+
+        prev_schema = None
+        prev_ep = None
+        schema_start = 2
+        ep_start = 2
+
+        for idx, (schema, ep, _sh) in enumerate(triples):
+            current_row = idx + 2  # data starts at row 2
+            if schema != prev_schema:
+                if prev_schema is not None:
+                    schema_ranges.append((schema_start, current_row - 1))
+                    ep_ranges.append((ep_start, current_row - 1))
+                schema_start = current_row
+                ep_start = current_row
+                prev_schema = schema
+                prev_ep = ep
+            elif ep != prev_ep:
+                ep_ranges.append((ep_start, current_row - 1))
+                ep_start = current_row
+                prev_ep = ep
+
+        if prev_schema is not None:
+            last_data_row = len(triples) + 1
+            schema_ranges.append((schema_start, last_data_row))
+            ep_ranges.append((ep_start, last_data_row))
+
+        # Build set of rows that START a new schema group (except the very first)
+        separator_start_rows = set(start for start, _end in schema_ranges if start > 2)
+
+        # 7. Write data rows
+        link_font = Font(color="0563C1", underline="single", size=10, name="Calibri")
+        schema_font = Font(bold=True, size=10, name="Calibri")
+        normal_font = Font(size=10, name="Calibri")
+        center_align = Alignment(horizontal="center", vertical="center")
+        left_align = Alignment(vertical="center")
+
+        for ri, (schema, ep, sheet) in enumerate(triples, start=2):
+            row_border = sep_top_border if ri in separator_start_rows else thin_border
+
+            # Schema Name (bold)
+            c1 = ws.cell(row=ri, column=1, value=schema)
+            c1.font = schema_font
+            c1.alignment = left_align
+            c1.border = row_border
+
+            # Endpoint
+            c2 = ws.cell(row=ri, column=2, value=ep)
+            c2.font = normal_font
+            c2.alignment = left_align
+            c2.border = row_border
+
+            # Sheet (with hyperlink)
+            c3 = ws.cell(row=ri, column=3, value=sheet)
+            c3.font = link_font
+            c3.alignment = center_align
+            c3.border = row_border
+            actual_fname = display_to_fname.get(ep)
+            if actual_fname:
+                target = f"{actual_fname}#{sheet}!A1"
+                c3.hyperlink = target
+                c3.style = "Hyperlink"
+                c3.font = link_font    # re-apply after style override
+                c3.border = row_border  # re-apply after style override
+
+        # 8. Merge cells (data-driven)
+        for start, end in schema_ranges:
+            if end > start:
+                ws.merge_cells(start_row=start, start_column=1, end_row=end, end_column=1)
+                ws.cell(row=start, column=1).alignment = Alignment(vertical="center")
+
+        for start, end in ep_ranges:
+            if end > start:
+                ws.merge_cells(start_row=start, start_column=2, end_row=end, end_column=2)
+                ws.cell(row=start, column=2).alignment = Alignment(vertical="center")
+
+        # 9. Column widths
+        ws.column_dimensions["A"].width = 35
+        ws.column_dimensions["B"].width = 30
+        ws.column_dimensions["C"].width = 12
+
+        # 10. Save
+        try:
+            wb.save(index_file)
+            self.log(f"\n  Injected '{sheet_title}' sheet into {index_file.name} "
+                     f"({len(triples)} references for {len(set(t[0] for t in triples))} schemas).")
+        except Exception as ex:
+            self.log(f"  ERROR saving {index_file.name}: {ex}")
+
     def _pre_read_index(self, index_path: Path):
         """Pre-read index to map filenames to operationIds."""
         try:
@@ -1913,6 +2083,34 @@ class LegacyConverter:
                         cell.alignment = Alignment(horizontal="left", wrap_text=False, indent=indent)
                     except Exception:
                         pass
+        except Exception:
+            pass
+
+        # Add internal hyperlinks: col F ("Schema Name") → root definition in col A
+        try:
+            from openpyxl.styles import Font
+            # 1. Build map: root schema name → row number
+            root_row_map: Dict[str, int] = {}
+            for ri in range(2, ws.max_row + 1):
+                name_val = ws.cell(row=ri, column=1).value
+                parent_val = ws.cell(row=ri, column=2).value
+                if name_val and (not parent_val or str(parent_val).strip() == ""):
+                    sn = str(name_val).strip()
+                    if sn not in root_row_map:
+                        root_row_map[sn] = ri
+
+            # 2. Add hyperlinks on col F cells that reference a known root schema
+            link_font = Font(color="0563C1", underline="single")
+            for ri in range(2, ws.max_row + 1):
+                schema_ref = ws.cell(row=ri, column=6).value
+                if not schema_ref:
+                    continue
+                ref_str = str(schema_ref).strip()
+                target_row = root_row_map.get(ref_str)
+                if target_row:
+                    cell = ws.cell(row=ri, column=6)
+                    cell.hyperlink = f"#Schemas!A{target_row}"
+                    cell.font = link_font
         except Exception:
             pass
     

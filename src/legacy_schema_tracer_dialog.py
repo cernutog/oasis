@@ -24,7 +24,11 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
         
         self.resizable(True, True)
         self.after(300, self.lift)
-
+        
+        # Make modal to stay on top
+        self.transient(parent)
+        self.grab_set()
+        
         # Set icon if exists
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.ico")
         if os.path.exists(icon_path):
@@ -73,12 +77,28 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
         # Folder Selection
         path_frame = ctk.CTkFrame(input_frame, fg_color="transparent")
         path_frame.pack(fill="x", pady=10, padx=15)
-        ctk.CTkLabel(path_frame, text="Converted Project Folder:", width=180, anchor="w").pack(side="left")
+        ctk.CTkLabel(path_frame, text="Template Folder:", width=180, anchor="w").pack(side="left")
         self.entry_path = ctk.CTkEntry(path_frame, placeholder_text="Path to folder containing $index file...")
         self.entry_path.pack(side="left", fill="x", expand=True, padx=5)
         ctk.CTkButton(path_frame, text="Browse", width=80, 
                       fg_color="#0A809E", hover_color="#076075",
                       command=self._browse_path).pack(side="left")
+        self.btn_open_folder = ctk.CTkButton(path_frame, text="📁", width=40,
+                                            fg_color="#0A809E", hover_color="#076075",
+                                            font=ctk.CTkFont(size=18),
+                                            anchor="center",
+                                            command=self._open_template_folder)
+        self.btn_open_folder.pack(side="left", padx=(5, 0), pady=(2, 0))
+
+        # Options Frame
+        opts_frame = ctk.CTkFrame(input_frame, fg_color="transparent")
+        opts_frame.pack(fill="x", pady=(0, 10), padx=15)
+        self.inject_refs_var = ctk.BooleanVar(value=False)
+        ctk.CTkCheckBox(opts_frame,
+                        text="Inject Schema References into $index.xlsx",
+                        variable=self.inject_refs_var,
+                        fg_color="#0A809E", hover_color="#076075",
+                        font=ctk.CTkFont(size=13)).pack(side="left")
 
         # Action Button
         btn_frame = ctk.CTkFrame(self.container, fg_color="transparent")
@@ -105,7 +125,7 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
 
     def _browse_path(self):
         initial = self._get_initial_dir()
-        p = filedialog.askdirectory(parent=self, initialdir=initial, title="Select Converted Project Folder")
+        p = filedialog.askdirectory(parent=self, initialdir=initial, title="Select Template Folder")
         if p:
             self.lift()
             self.focus_force()
@@ -115,6 +135,11 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
             if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
                 self.prefs_manager.set("last_legacy_dst", p)
                 self.prefs_manager.save()
+
+    def _open_template_folder(self):
+        p = self.entry_path.get()
+        if p and os.path.exists(p):
+            os.startfile(p)
 
     def _on_close(self):
         """Save settings and close window."""
@@ -159,7 +184,8 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
                 include_descriptions_in_collision=include_desc,
                 include_examples_in_collision=include_ex,
             )
-            success = converter.run_standalone_check(path)
+            inject_refs = self.inject_refs_var.get()
+            success = converter.run_standalone_check(path, inject_refs=inject_refs)
             
             if success:
                 self._log("\nANALYSIS COMPLETED SUCCESSFULLY.")

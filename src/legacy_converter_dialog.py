@@ -220,7 +220,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         self.btn_convert.pack(side="left", padx=10)
 
         self.btn_open_folder = ctk.CTkButton(btn_frame, text="Open Output Folder", 
-                                            fg_color="transparent", border_width=2,
+                                            fg_color="#F5F5F5", border_width=2,
                                             border_color="#0A809E", text_color="#0A809E",
                                             font=ctk.CTkFont(weight="bold"),
                                             hover_color="#E0F0F3",
