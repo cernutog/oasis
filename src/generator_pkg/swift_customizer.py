@@ -53,47 +53,9 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
         "description": "The access token obtained as a result of OAuth 2.0 flows. SWIFT supports two OAuth grant types depending on the API service.\n* JWT-Bearer grant type [RFC 7523](https://tools.ietf.org/html/rfc7523)\n* Password grant type\n\nThis API uses JWT-Bearer grant type.\n\nPlease visit [SWIFT OAuth Token API](https://developer.swift.com/swift-oauth-token-api) page for more information and examples on how to generate an OAuth token.\n\nIn this declaration only the basic security element to transport the bearer token of an OAuth2 process is declared.\n",
     }
 
-    # 3.2 Parameters (ivUserKey, ivUserBic)
+    # 3.2 Parameters (Removed hardcoded ivUserKey/ivUserBic as per request)
     if "parameters" not in comps:
         comps["parameters"] = {}
-
-    # Ensure proper order - ivUserKey and ivUserBic MUST be first
-    new_params = {}
-
-    specific_params = {
-        "ivUserKey": {
-            "name": "ivUserKey",
-            "in": "header",
-            "description": "The subscription key of a Participant. cn=<SSO+BIC+UserId+T>,o=BIC8,o=swift. SSO is a fixed string, last char is for environment (P for production and T for test) eg SSOUNCRITMMAPI12345P, o=uncritmm,o=swift",
-            "required": True,
-            "schema": {
-                "type": "string",
-                "description": "The subscription key of a Participant. cn=<SSO+BIC+UserId+T>,o=BIC8,o=swift. SSO is a fixed string, last char is for environment (P for production and T for test) eg SSOUNCRITMMAPI12345P, o=uncritmm,o=swift",
-                "example": "cn=SSOUNCRITMMAPI12345P,o=uncritmm,o=swift",
-            },
-        },
-        "ivUserBic": {
-            "name": "ivUserBic",
-            "in": "header",
-            "description": "BIC of the user.",
-            "required": True,
-            "schema": {
-                "type": "string",
-                "description": "BIC of the user.",
-                "example": "UNCRITMM",
-                "pattern": "^[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}([A-Z0-9]{3,3}){0,1}$",
-            },
-        },
-    }
-
-    new_params.update(specific_params)
-
-    # Add existing params (avoiding duplicates)
-    for k, v in comps["parameters"].items():
-        if k not in new_params:
-            new_params[k] = v
-
-    comps["parameters"] = new_params
 
     # 3.3 Headers (X-Request-ID)
     if "headers" not in comps:
@@ -167,17 +129,9 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
                 if method.startswith("x-") or not isinstance(op, dict):
                     continue
 
-                # 5.1 Inject Parameters
+                # 5.1 Inject Parameters (Removed hardcoded ivUserKey/ivUserBic as per request)
                 if "parameters" not in op:
                     op["parameters"] = []
-
-                # Ensure ivUserKey/ivUserBic are at the top
-                new_refs = [
-                    {"$ref": "#/components/parameters/ivUserKey"},
-                    {"$ref": "#/components/parameters/ivUserBic"},
-                ]
-                existing_params = [p for p in op["parameters"] if p not in new_refs]
-                op["parameters"] = new_refs + existing_params
 
                 if "responses" in op:
                     for code, resp in op["responses"].items():

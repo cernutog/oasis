@@ -1392,7 +1392,7 @@ class LegacyConverter:
             for c in range(1, ws_idx.max_column + 1):
                 row_vals.append(ws_idx.cell(row=r, column=c).value)
             if all(v is None or v == "" for v in row_vals):
-                rows.append([None] * ws_idx.max_column)
+                continue
             else:
                 rows.append(row_vals)
 
@@ -1841,8 +1841,6 @@ class LegacyConverter:
         final_final_rows = []
         for i, (_, block) in enumerate(all_blocks):
             final_final_rows.extend(block)
-            if i < len(all_blocks) - 1:
-                final_final_rows.append([None] * 14) # Blank line R10
                 
         # Compute hierarchy levels for grouping.
         # Level is written to column O (15) and used for Excel outline grouping.
@@ -1967,10 +1965,11 @@ class LegacyConverter:
         if status_codes:
             self._convert_responses(wb, xl, op_id, status_codes, legacy_path.name)
 
-        try:
-            self._sync_endpoint_schemas_from_index(wb)
-        except Exception:
-            pass
+        # (Removed as per request: endpoints should not have Schemas sheet)
+        # try:
+        #     self._sync_endpoint_schemas_from_index(wb)
+        # except Exception:
+        #     pass
         
         wb.save(output_path)
         

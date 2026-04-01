@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.14] - 2026-04-01
+- **Optimization(Excel)**: Removed blank row separators between schema blocks in both modern and legacy converters for better Excel filtering.
+- **Fix(LegacyConverter)**: Disabled automatic "Schemas" sheet creation in endpoint Excel files.
+- **Maintenance(SWIFT)**: Removed hardcoded `ivUserKey` and `ivUserBic` parameter injection from SWIFT customizer.
+
 ## [2.2] - 2026-03-11
 ### Major Features
 - **Integrated Dual Linter**: Vacuum engine now available alongside Spectral for deep OAS validation with interactive switching.

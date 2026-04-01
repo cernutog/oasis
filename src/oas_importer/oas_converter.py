@@ -513,9 +513,6 @@ class OASToExcelConverter:
                     
                 row_idx += 1
             
-            # Add blank row separator between schema blocks
-            row_idx += 1
-            
         self._autofit_columns(ws, max_cols=2)
 
 
