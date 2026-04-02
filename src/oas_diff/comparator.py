@@ -272,9 +272,17 @@ def _compare_operation(old_op: Dict, new_op: Dict) -> Dict:
     ext_diff = _compare_extensions(old_op, new_op)
     if ext_diff: diff.update(ext_diff)
 
-    # Compare Parameters
-    old_params = {p.get('name'): p for p in old_op.get('parameters', [])}
-    new_params = {p.get('name'): p for p in new_op.get('parameters', [])}
+    # Compare Parameters - handle parameters without names by using index as key
+    old_params = {}
+    new_params = {}
+    
+    for i, p in enumerate(old_op.get('parameters', [])):
+        key = p.get('name', f"_param_{i}")
+        old_params[key] = p
+    
+    for i, p in enumerate(new_op.get('parameters', [])):
+        key = p.get('name', f"_param_{i}")
+        new_params[key] = p
     
     params_diff = _compare_dict_items(old_params, new_params, _compare_parameter)
     if params_diff:
@@ -384,6 +392,27 @@ def _compare_dict_items(old_dict: Dict, new_dict: Dict, item_comparator) -> Dict
     
     new_items = list(new_keys - old_keys)
     removed_items = list(old_keys - new_keys)
+    
+    # Extract actual names for removed parameters
+    if removed_items and any(key.startswith('_param_') for key in removed_items):
+        removed_names = []
+        for key in removed_items:
+            param = old_dict[key]
+            if key.startswith('_param_'):
+                if param.get('name'):
+                    removed_names.append(param['name'])
+                elif '$ref' in param:
+                    # Extract name from $ref, e.g., '#/components/parameters/ivUserKey' -> 'ivUserKey'
+                    ref_parts = param['$ref'].split('/')
+                    if len(ref_parts) > 0:
+                        removed_names.append(ref_parts[-1])
+                    else:
+                        removed_names.append(key)
+                else:
+                    removed_names.append(key)
+            else:
+                removed_names.append(key)
+        removed_items = removed_names
     
     if new_items: diff['new'] = new_items
     if removed_items: diff['removed'] = removed_items

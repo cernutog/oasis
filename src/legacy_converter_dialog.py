@@ -103,10 +103,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         
         self.resizable(True, True)
         
-        # Remove transient if we want it to be truly independent and allow main window on top
-        # self.transient(parent) 
-        # self.grab_set() # Do NOT use grab_set to keep it non-modal
-
+        
         # Focus management
         self.after(300, self.lift)
 

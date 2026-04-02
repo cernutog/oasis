@@ -66,11 +66,29 @@ class CompatibilityAnalyzer:
     def _compare_parameters(self, path: str, method: str, params1: List[Dict], params2: List[Dict]):
         # Map parameters to unique keys: (name, location)
         def get_param_map(params):
-            return {(p.get('name'), p.get('in')): p for p in params}
+            result = {}
+            for p in params:
+                name = p.get('name')
+                loc = p.get('in')
+                if name:
+                    result[(name, loc)] = p
+            return result
 
         map1 = get_param_map(params1)
         map2 = get_param_map(params2)
 
+        # Detect removed parameters
+        for (name, location) in set(map1.keys()) - set(map2.keys()):
+            self.issues.append(CompatibilityIssue(path, method, f"Parameter ({location})", name, "Removed", f"Parameter '{name}' has been removed.", severity="CRITICAL"))
+
+        # Detect added parameters
+        for (name, location) in set(map2.keys()) - set(map1.keys()):
+            p2 = map2[(name, location)]
+            req = p2.get('required', False)
+            sev = "HIGH" if req else "LOW"
+            self.issues.append(CompatibilityIssue(path, method, f"Parameter ({location})", name, "Added", f"New {'required ' if req else 'optional '}parameter '{name}' added.", severity=sev))
+
+        # Compare common parameters
         for (name, location) in set(map1.keys()) & set(map2.keys()):
             p1 = map1[(name, location)]
             p2 = map2[(name, location)]

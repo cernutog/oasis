@@ -163,10 +163,8 @@ class HeuristicEngine:
                             ))
 
     def _analyze_parameters(self):
-        """
-        Implements Parameter Rules (P01-P12)
-        """
-        if not hasattr(self.diff, 'modified_paths'):
+        """Analyze parameter changes for insights."""
+        if not self.diff.modified_paths:
             return
 
         for path, p_changes in self.diff.modified_paths.items():
@@ -182,33 +180,41 @@ class HeuristicEngine:
 
                 # P01: Parameter Removed
                 if params.get('removed'):
-                    # Ensure context uses uppercase method for matching
-                    context = context.upper() if " " not in context else context
-                    self.insights.append(Insight(
-                        rule_id="P01",
-                        title="Parameter Removed",
-                        description=f"Parameters removed: {', '.join(params['removed'])}.",
-                        severity=Severity.CRITICAL,
-                        category="PARAMETER",
-                        context=context,
-                        affected_items=params['removed']
-                    ))
+                    # Filter out None values and convert to strings
+                    removed_params = [str(p) for p in params['removed'] if p is not None]
+                    if removed_params:
+                        # Ensure context uses uppercase method for matching
+                        context = context.upper() if " " not in context else context
+                        self.insights.append(Insight(
+                            rule_id="P01",
+                            title="Parameter Removed",
+                            description=f"Parameters removed: {', '.join(removed_params)}.",
+                            severity=Severity.CRITICAL,
+                            category="PARAMETER",
+                            context=context,
+                            affected_items=removed_params
+                        ))
 
                 # P02: Required Param Added
                 if 'added_required' in params:
-                    self.insights.append(Insight(
-                        rule_id="P02",
-                        title="New Required Parameter",
-                        description=f"New required parameters added: {', '.join(params['added_required'])}.",
-                        severity=Severity.CRITICAL,
-                        category="PARAMETER",
-                        context=context,
-                        affected_items=params['added_required']
-                    ))
+                    # Filter out None values and convert to strings
+                    added_required = [str(p) for p in params['added_required'] if p is not None]
+                    if added_required:
+                        self.insights.append(Insight(
+                            rule_id="P02",
+                            title="New Required Parameter",
+                            description=f"New required parameters added: {', '.join(added_required)}.",
+                            severity=Severity.CRITICAL,
+                            category="PARAMETER",
+                            context=context,
+                            affected_items=added_required
+                        ))
 
                 # P03: Optional Param Added
                 if 'added_optional' in params:
-                    for p_name in params['added_optional']:
+                    # Filter out None values and convert to strings
+                    added_optional = [str(p) for p in params['added_optional'] if p is not None]
+                    for p_name in added_optional:
                         self.insights.append(Insight(
                             rule_id="P03",
                             title="New Optional Parameter",
@@ -301,15 +307,18 @@ class HeuristicEngine:
                 old_req = set(old_val if old_val is not None else [])
                 added = new_req - old_req
                 if added:
-                    self.insights.append(Insight(
-                        rule_id="S02",
-                        title="New Required Property",
-                        description=f"Properties made required: {', '.join(added)}.",
-                        severity=Severity.CRITICAL,
-                        category="SCHEMA",
-                        context=context,
-                        affected_items=list(added)
-                    ))
+                    # Filter out None values and convert to strings
+                    added_str = [str(p) for p in added if p is not None]
+                    if added_str:
+                        self.insights.append(Insight(
+                            rule_id="S02",
+                            title="New Required Property",
+                            description=f"Properties made required: {', '.join(added_str)}.",
+                            severity=Severity.CRITICAL,
+                            category="SCHEMA",
+                            context=context,
+                            affected_items=added_str
+                        ))
 
             # Properties
             if 'properties' in s_changes:
@@ -317,16 +326,19 @@ class HeuristicEngine:
                 
                 # S01: Property Removed
                 if props.get('removed'):
-                    names = sorted(props['removed'])
-                    self.insights.append(Insight(
-                        rule_id="S01",
-                        title="Property Removed",
-                        description=f"Properties removed: {', '.join(names)}.",
-                        severity=Severity.CRITICAL,
-                        category="SCHEMA",
-                        context=context,
-                        affected_items=names
-                    ))
+                    # Filter out None values and convert to strings
+                    names = [str(p) for p in props['removed'] if p is not None]
+                    if names:
+                        names = sorted(names)
+                        self.insights.append(Insight(
+                            rule_id="S01",
+                            title="Property Removed",
+                            description=f"Properties removed: {', '.join(names)}.",
+                            severity=Severity.CRITICAL,
+                            category="SCHEMA",
+                            context=context,
+                            affected_items=names
+                        ))
 
                 # Modified Properties
                 if 'modified' in props:

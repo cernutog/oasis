@@ -25,10 +25,6 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
         self.resizable(True, True)
         self.after(300, self.lift)
         
-        # Make modal to stay on top
-        self.transient(parent)
-        self.grab_set()
-        
         # Set icon if exists
         icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.ico")
         if os.path.exists(icon_path):
@@ -39,6 +35,9 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
         
         self._build_ui()
         self._load_saved_path()
+
+        # Focus management (same as Legacy Converter)
+        self.after(300, self.lift)
 
         # Handle window close
         self.protocol("WM_DELETE_WINDOW", self._on_close)
