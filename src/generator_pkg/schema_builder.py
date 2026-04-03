@@ -139,6 +139,11 @@ def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
             except ValueError:
                 pass
 
+        elif type_val == "boolean":
+            bool_map = {"true": True, "false": False}
+            enum_list = [bool_map[x.strip().lower()] for x in enum_list
+                         if x.strip().lower() in bool_map]
+
         elif type_val == "string":
             # If the schema expects a string but the enum token looks numeric,
             # force quoting to avoid YAML type inference / octal-like artifacts.

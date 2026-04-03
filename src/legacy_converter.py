@@ -1902,7 +1902,7 @@ class LegacyConverter:
                     _refs_set.add(_sn)
                 elif _dt == "array" and _it and _it.lower() not in _prim:
                     _refs_set.add(_it)
-            _ref_graph[_bn] = _refs_set
+            _ref_graph.setdefault(_bn, set()).update(_refs_set)
         # BFS from entry points
         _reachable = set()
         _queue = list(entry_points)
@@ -2755,6 +2755,13 @@ class LegacyConverter:
                 else:
                     resolved_type = dtype # Pass through unknown
             
+            # Track non-primitive array items as referenced schemas so they
+            # get emitted in the global schemas section of the Schemas sheet.
+            if resolved_type == "array" and items_type:
+                _it_low = items_type.lower()
+                if _it_low not in ("string", "number", "integer", "boolean", "object", "array"):
+                    referenced_data_types.add(items_type)
+
             # Convert mandatory
             mand_value = "M" if mandatory in ["M", "m", "Yes", "yes", "Y", "y"] else \
                          "O" if mandatory in ["O", "o", "No", "no", "N", "n"] else mandatory
@@ -2783,6 +2790,7 @@ class LegacyConverter:
                 transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
 
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            referenced_data_types.update(_refs)
             extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
             extra_schema_blocks.extend(nested_blocks)
@@ -2805,6 +2813,7 @@ class LegacyConverter:
                 transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
 
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            referenced_data_types.update(_refs)
             extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
             extra_schema_blocks.extend(nested_blocks)
@@ -2871,12 +2880,23 @@ class LegacyConverter:
         # Per-type rotation counter (shared across the whole call so siblings rotate)
         type_counters: Dict[str, int] = {}
 
-        def get_rotated_value(dtype: str, dt: Optional['DataType'], item_offset: int = 0) -> Any:
+        def get_rotated_value(dtype: str, dt: Optional['DataType'], item_offset: int = 0, is_array_item: bool = False) -> Any:
             """Pick example value using per-type rotation + item_offset for array diversity."""
             examples = self._get_example_values(dt)
             low = dtype.lower() if dtype else "string"
 
             if examples:
+                # For array items, return the full examples list (or subset) instead of single value
+                if is_array_item:
+                    count = type_counters.get(low, 0)
+                    # Return all examples as array, or single example if only one exists
+                    if len(examples) >= 2:
+                        # Rotate starting point for diversity across different arrays
+                        start_idx = (count + item_offset) % len(examples)
+                        type_counters[low] = count + 1
+                        return [examples[(start_idx + i) % len(examples)] for i in range(min(2, len(examples)))]
+                    return [examples[0]]
+                
                 count = type_counters.get(low, 0)
                 idx = (count + item_offset) % len(examples)
                 type_counters[low] = count + 1
@@ -2902,7 +2922,8 @@ class LegacyConverter:
                     low_t = dt.type.lower()
                 else:
                     low_t = low
-                return self._generate_synthetic_value(low_t)
+                synthetic = self._generate_synthetic_value(low_t)
+                return [synthetic] if is_array_item else synthetic
 
         # Build parent → children tree.
         # IMPORTANT: legacy structures can contain duplicate field names under different parents.
@@ -2977,12 +2998,15 @@ class LegacyConverter:
                     return [{}]
                 else:
                     # Array of scalars
-                    v1 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=0)
-                    examples_list = self._get_example_values(items_dt)
-                    if len(examples_list) >= 2:
-                        v2 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=1)
-                        return [v1, v2]
-                    return [v1]
+                    v1 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=0, is_array_item=True)
+                    if isinstance(v1, list) and len(v1) >= 2:
+                        # Already got multiple values from examples list
+                        return v1
+                    # Try to get a second distinct value for diversity
+                    v2 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=1, is_array_item=True)
+                    if isinstance(v2, list):
+                        return [v1[0] if isinstance(v1, list) else v1, v2[0]]
+                    return [v1[0] if isinstance(v1, list) else v1, v2] if v2 is not None else [v1[0] if isinstance(v1, list) else v1]
 
             # --- OBJECT ---
             if low_dtype == "object" or (dt and dt.type.lower() == "object" and my_children):
