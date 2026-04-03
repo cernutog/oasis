@@ -1850,7 +1850,10 @@ class LegacyConverter:
         global_blocks = []
         for out_name in sorted(referenced_data_types):
             if out_name in self.emitted_wrappers: continue
-            
+            # Skip schemas already emitted as structured named-array inline components
+            # (they were written with proper type=array + children via named_array_key_map)
+            if out_name in self.emitted_inline_components: continue
+
             # RULE: Filter out literal 'array' or 'object' schemas as they are handled inlined
             if out_name.lower() in ["array", "object"]: continue
 
@@ -2546,9 +2549,16 @@ class LegacyConverter:
         object_key_subtrees: Dict[Tuple[str, str], List[Tuple]] = {}
         array_key_map: Dict[Tuple[str, str], str] = {}
         array_key_subtrees: Dict[Tuple[str, str], List[Tuple]] = {}
+        # Named-DataType arrays: dtype is a named schema whose resolved type is 'array'.
+        # The property should be a $ref to the schema (which IS the array), not an inline
+        # array wrapping the schema. The schema is emitted as type=array with children as
+        # items.properties — avoiding the double-array anti-pattern.
+        named_array_key_map: Dict[Tuple[str, str], str] = {}
+        named_array_key_subtrees: Dict[Tuple[str, str], List[Tuple]] = {}
         # Legacy name-only maps kept for has-children checks in schema_ref_nodes pass.
         object_ref_map: Dict[str, str] = {}
         array_items_ref_map: Dict[str, str] = {}
+        named_array_items_ref_map: Dict[str, str] = {}
         for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
             if _norm(dtype) != "object":
                 continue
@@ -2596,7 +2606,19 @@ class LegacyConverter:
         for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
             low_dtype = _norm(dtype)
             out_name, dt = self._resolve_data_type(str(dtype).strip() if dtype is not None else "", ep_filename)
-            is_array = low_dtype == "array" or (dt and dt.type and dt.type.lower() == "array")
+            is_literal_array = low_dtype == "array"
+            # Named-DataType array: dtype is a named schema whose resolved type is 'array'
+            # (e.g. dtype="alerts" → DataType Alerts with type=array).  These properties
+            # must emit a plain $ref to the schema (not type=array wrapping the schema),
+            # otherwise the generator produces a double-array.
+            is_named_array_dt = (
+                not is_literal_array
+                and out_name is not None
+                and dt is not None
+                and dt.type
+                and dt.type.lower() == "array"
+            )
+            is_array = is_literal_array or is_named_array_dt
             if not is_array:
                 continue
             name_norm = _norm(name)
@@ -2607,37 +2629,76 @@ class LegacyConverter:
 
             descendants = _bfs_descendants(name_norm, parent_norm)
 
-            if descendants:
-                array_key_subtrees[key] = descendants
-                ex_sig = _subtree_example_signature(descendants)
-                fp = _fp_inline_subtree(descendants, name_norm)
-                if fp in self.inline_component_fingerprints:
-                    existing = self.inline_component_fingerprints[fp]
-                    array_items_ref_map[name_norm] = existing
-                    array_key_map[key] = existing
-                    if not self.include_descriptions_in_collision:
-                        root_desc = (str(desc).strip() if desc is not None else "")
-                        canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
-                        if root_desc and root_desc != canon_desc:
-                            self._record_merge_provenance(existing, "description", root_desc, ep_filename or "")
-                    if not self.include_examples_in_collision:
-                        canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
-                        if ex_sig and ex_sig != canon_ex:
-                            self._record_merge_provenance(existing, "example", ex_sig, ep_filename or "")
+            if is_named_array_dt:
+                # Named-DataType array with children: register in named_array_key_map.
+                # Use out_name as the preferred base name (preserves the DataType identity).
+                # Full fingerprint + collision logic applies just like for inline components.
+                if descendants:
+                    named_array_key_subtrees[key] = descendants
+                    ex_sig = _subtree_example_signature(descendants)
+                    fp = _fp_inline_subtree(descendants, name_norm)
+                    if fp in self.inline_component_fingerprints:
+                        existing = self.inline_component_fingerprints[fp]
+                        named_array_items_ref_map[name_norm] = existing
+                        named_array_key_map[key] = existing
+                        if not self.include_descriptions_in_collision:
+                            root_desc = (str(desc).strip() if desc is not None else "")
+                            canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
+                            if root_desc and root_desc != canon_desc:
+                                self._record_merge_provenance(existing, "description", root_desc, ep_filename or "")
+                        if not self.include_examples_in_collision:
+                            canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
+                            if ex_sig and ex_sig != canon_ex:
+                                self._record_merge_provenance(existing, "example", ex_sig, ep_filename or "")
+                    else:
+                        # Prefer out_name as schema name; _unique_inline_component_name handles
+                        # conflicts if another component already uses the same name.
+                        comp_name = _unique_inline_component_name(out_name)
+                        named_array_items_ref_map[name_norm] = comp_name
+                        named_array_key_map[key] = comp_name
+                        self.inline_component_fingerprints[fp] = comp_name
+                        self.inline_component_fingerprint_by_name[comp_name] = fp
+                        self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
+                        self.inline_component_example_sig[comp_name] = ex_sig
+                # No-children named-array: not added to named_array_key_map.
+                # The property will fall through to primitive-inline behaviour (type=array,
+                # items=primitive) in the second pass, which is the desired behaviour for
+                # arrays whose item structure is not explicitly defined in the sheet.
+                if key in named_array_key_map:
+                    _track_inline_component_usage(named_array_key_map[key])
+            else:
+                # Literal 'array' dtype: existing inline-object-component behaviour.
+                if descendants:
+                    array_key_subtrees[key] = descendants
+                    ex_sig = _subtree_example_signature(descendants)
+                    fp = _fp_inline_subtree(descendants, name_norm)
+                    if fp in self.inline_component_fingerprints:
+                        existing = self.inline_component_fingerprints[fp]
+                        array_items_ref_map[name_norm] = existing
+                        array_key_map[key] = existing
+                        if not self.include_descriptions_in_collision:
+                            root_desc = (str(desc).strip() if desc is not None else "")
+                            canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
+                            if root_desc and root_desc != canon_desc:
+                                self._record_merge_provenance(existing, "description", root_desc, ep_filename or "")
+                        if not self.include_examples_in_collision:
+                            canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
+                            if ex_sig and ex_sig != canon_ex:
+                                self._record_merge_provenance(existing, "example", ex_sig, ep_filename or "")
+                    else:
+                        comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                        array_items_ref_map[name_norm] = comp_name
+                        array_key_map[key] = comp_name
+                        self.inline_component_fingerprints[fp] = comp_name
+                        self.inline_component_fingerprint_by_name[comp_name] = fp
+                        self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
+                        self.inline_component_example_sig[comp_name] = ex_sig
                 else:
                     comp_name = _unique_inline_component_name(self._to_pascal_case(name))
                     array_items_ref_map[name_norm] = comp_name
                     array_key_map[key] = comp_name
-                    self.inline_component_fingerprints[fp] = comp_name
-                    self.inline_component_fingerprint_by_name[comp_name] = fp
-                    self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
-                    self.inline_component_example_sig[comp_name] = ex_sig
-            else:
-                comp_name = _unique_inline_component_name(self._to_pascal_case(name))
-                array_items_ref_map[name_norm] = comp_name
-                array_key_map[key] = comp_name
 
-            _track_inline_component_usage(array_key_map[key])
+                _track_inline_component_usage(array_key_map[key])
         
         # First pass: determine which nodes resolve to a schema reference.
         # Children of such nodes should be suppressed (they live in the component schema).
@@ -2649,6 +2710,9 @@ class LegacyConverter:
                 schema_ref_nodes.add(name_norm)
                 continue
             if name_norm in array_items_ref_map:
+                schema_ref_nodes.add(name_norm)
+                continue
+            if name_norm in named_array_items_ref_map:
                 schema_ref_nodes.add(name_norm)
                 continue
             low_dtype = _norm(dtype)
@@ -2735,7 +2799,20 @@ class LegacyConverter:
                 resolved_type = dt.type.lower()
                 schema_name = ""
                 if resolved_type == "array":
-                    if key_emit in array_key_map:
+                    # Named-DataType array with children: emit as $ref to the schema.
+                    # The schema (type=array with items.properties) is emitted separately
+                    # via named_array_key_map to avoid the double-array anti-pattern.
+                    if key_emit in named_array_key_map:
+                        resolved_type = "schema"
+                        schema_name = named_array_key_map[key_emit]
+                        items_type = ""
+                        referenced_data_types.add(schema_name)
+                    elif name_norm in named_array_items_ref_map:
+                        resolved_type = "schema"
+                        schema_name = named_array_items_ref_map[name_norm]
+                        items_type = ""
+                        referenced_data_types.add(schema_name)
+                    elif key_emit in array_key_map:
                         items_type = array_key_map[key_emit]
                     elif name_norm in array_items_ref_map:
                         items_type = array_items_ref_map[name_norm]
@@ -2815,6 +2892,42 @@ class LegacyConverter:
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
             referenced_data_types.update(_refs)
             extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
+            extra_schema_blocks.extend(child_rows)
+            extra_schema_blocks.extend(nested_blocks)
+
+        for (prop_low, prop_parent_low), comp_name in named_array_key_map.items():
+            subtree = named_array_key_subtrees.get((prop_low, prop_parent_low))
+            if not subtree:
+                continue
+            if comp_name in self.emitted_inline_components:
+                continue
+            self.emitted_inline_components.add(comp_name)
+
+            # Track parent -> child edge so usage can be propagated transitively
+            if wrapper_name:
+                self.inline_component_children.setdefault(wrapper_name, set()).add(comp_name)
+
+            transformed: List[Tuple] = []
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
+                new_parent = "" if _norm(t_parent) == prop_low else t_parent
+                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
+
+            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            referenced_data_types.update(_refs)
+
+            # Determine the primitive items type of the named-array DataType so we
+            # can emit it correctly as  type=array, items=<primitive>.
+            dt_for_schema = self.global_schemas.get(comp_name)
+            items_primitive = "object"
+            if dt_for_schema and dt_for_schema.items_type:
+                items_primitive = self._recursive_resolve_items(
+                    dt_for_schema.items_type,
+                    dt_for_schema.source_file if dt_for_schema.source_file != "$global" else None,
+                )
+
+            # Emit root row as type=array (NOT object) so generator produces
+            # the correct  {type: array, items: {properties: ...}}  schema.
+            extra_schema_blocks.append([comp_name, "", "", "array", items_primitive, "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
             extra_schema_blocks.extend(nested_blocks)
 

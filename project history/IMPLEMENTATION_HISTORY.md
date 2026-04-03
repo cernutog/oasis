@@ -856,6 +856,11 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Hotfix**: Undefined Context Variable. Fixed `CRITICAL ERROR: name 'old_spec' is not defined` inside `_is_deeply_identical` method by passing `old_spec` and `new_spec` arguments explicitly throughout the recursion.
 - **Key Modules**: `src/oas_diff/comparator.py`.
 
+### Build v2.2.18 (2026-04-04)
+- **Fix**: Legacy Converter — double-array anti-pattern eliminated. Named-DataType arrays (e.g. `alerts: dtype=alerts` where `alerts` is `type=array` in Data Type sheet) now emit a plain `$ref` property instead of `type=array, items=$ref`, and the referenced schema is emitted as `type=array` with its children inlined as `items.properties`. Prevents Spectral `oas3-valid-media-example` violations (`"0" property type must be array`).
+- **Fix**: Renamed `cmd.py` to `oasis_cmd.py` to avoid shadowing the Python stdlib `cmd` module (which caused `AttributeError: module 'cmd' has no attribute 'Cmd'` on `run.bat` launch).
+- **Key Modules**: `src/legacy_converter.py`, `oasis_cmd.py`.
+
 ### Build v2.2.13 (2026-03-31)
 - **Fix**: Launch Stability. Renamed `cmd.py` to `diagnostic_tool.py` to eliminate module shadowing conflicts with the Python standard library.
 - **Fix**: Path Persistence. Standardized path saving/restoration and "Browse" button behavior across all windows (OASGenApp, ImportDialog, OASDiffDialog, LegacyConverterDialog, LegacySchemaTracerDialog).
