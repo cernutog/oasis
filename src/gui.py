@@ -1572,12 +1572,12 @@ class OASGenApp(ctk.CTk):
         if os.path.exists(oas_dir):
             for f in os.listdir(oas_dir):
                 if f.endswith(".yaml") or f.endswith(".json"):
-                    candidates.add(os.path.join(oas_dir, f))
+                    candidates.add(os.path.normpath(os.path.join(oas_dir, f)))
 
         # Also add last generated files (in case they're in a different folder)
         for f in self.last_generated_files:
             if os.path.exists(f):
-                candidates.add(f)
+                candidates.add(os.path.normpath(f))
 
         # Sort based on preference
         sort_order = self.prefs_manager.get("file_sort_order", "alphabetical")
