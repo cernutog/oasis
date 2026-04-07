@@ -76,6 +76,7 @@ class LegacyConverter:
         
         # Operation IDs mapping
         self.filename_to_opid = {}
+        self.filename_to_path: Dict[str, str] = {}  # filename_stem -> API path
         self.emitted_wrappers = set()
         self.emitted_inline_components = set()
         self.inline_component_fingerprints: Dict[Tuple, str] = {}
@@ -88,6 +89,8 @@ class LegacyConverter:
         self.all_tags = set() # Track all tags for the index
         self._current_children_map: Dict[str, frozenset] = {}  # norm_dtype -> frozenset(child_prop_names)
         self.empty_error_responses: Dict[str, str] = {}  # status_code -> description (for empty 4xx/5xx sheets)
+        self.error_response_fingerprints: Dict[Tuple, str] = {}  # fingerprint -> ErrorResponse variant name
+        self.filename_to_error_response: Dict[str, str] = {}  # ep_filename -> ErrorResponse variant name
 
     def _resolve_internal_master_dir(self):
         """Finds 'Templates Master' folder as an internal resource."""
@@ -372,7 +375,14 @@ class LegacyConverter:
         if mapping_key_global in self.output_names:
             out_name = self.output_names[mapping_key_global]
             return out_name, self.global_schemas.get(out_name)
-            
+
+        # 1.5. Fallback: the type is registered under another file's context but not the
+        # current file's or the global context (e.g. a file that references a DataType
+        # defined only in peer endpoint files). Return the base registered name directly
+        # so the property is not left unresolved (which would emit a raw lowercase dtype).
+        if norm_name in self.global_schemas:
+            return norm_name, self.global_schemas[norm_name]
+
         # 2. Not registered yet. This happens during the Naming Pass.
         # Find the best raw definition available
         raw_dt = None
@@ -399,9 +409,15 @@ class LegacyConverter:
         for norm_name, dt in global_types.items():
             self._register_data_type("$global", norm_name, dt)
             
-        # Per-endpoint DataTypes are registered lazily on first encounter
-        # during actual endpoint conversion (_resolve_data_type), matching
-        # the old tool's processing order.
+        # 2. Register per-endpoint DataTypes in Paths-sheet order so that naming
+        # priority (base name vs suffixed variant) matches the schema-building pass,
+        # which also follows ordered_filenames. Files not listed in the index are
+        # appended in alphabetical order as a deterministic fallback.
+        indexed = [f for f in self.ordered_filenames if f in self.raw_data_types]
+        extras = sorted(k for k in self.raw_data_types if k != "$global" and k not in set(indexed))
+        for file_key in indexed + extras:
+            for norm_name, dt in self.raw_data_types[file_key].items():
+                self._register_data_type(file_key, norm_name, dt)
 
     def _track_recursive_usage(self, child_tuple, ep_filename, op_id, sheet):
         """Deprecated: retained for backward compatibility; usage tracking is now done with full property paths."""
@@ -888,11 +904,29 @@ class LegacyConverter:
                             top_bits.append(f"- (+{len(removed_list) - 10} more)")
 
                     if "changed" in diff_dict:
+                        _oas_primitives = {
+                            "string", "number", "integer", "boolean",
+                            "array", "object", "schema", "(empty)", "",
+                        }
                         for prop, info in list(diff_dict["changed"].items())[:10]:
                             val = info["base_type"] if is_base else info["other_type"]
                             delta = info.get("constraint_delta", [])
                             extra = f" ({', '.join(delta[:4])})" if delta else ""
-                            per_prop.setdefault(prop, []).append(f"- Type: {val}{extra}")
+                            # Strip trailing [] to test the base type name
+                            is_array_suffix = val.endswith("[]")
+                            base_val = val[:-2] if is_array_suffix else val
+                            if base_val.lower() not in _oas_primitives:
+                                # Schema reference: look up PascalCase name in global_schemas
+                                display_val = base_val
+                                for gname in self.global_schemas:
+                                    if gname.lower() == base_val.lower():
+                                        display_val = gname
+                                        break
+                                if is_array_suffix:
+                                    display_val += "[]"
+                                per_prop.setdefault(prop, []).append(f"- $ref: {display_val}{extra}")
+                            else:
+                                per_prop.setdefault(prop, []).append(f"- Type: {val}{extra}")
 
                     if "mandatory" in diff_dict:
                         for prop, info in list(diff_dict["mandatory"].items())[:20]:
@@ -1027,10 +1061,15 @@ class LegacyConverter:
 
                     _object_types = {"object", "schema"}
 
+                    # Collect property rows per schema to build inline fingerprints for
+                    # wrapper schemas (e.g. ErrorResponse variants) so _log_usage_summary
+                    # can detect and display structural differences in the DIFFERENCES column.
+                    _schema_prop_rows: Dict[str, List[Tuple]] = {}
+
                     for _, row in df_s.iterrows():
                         name = self._clean_value(row.get('name'))
                         if not name: continue
-                        
+
                         raw_type = (get_col_val(row, ['type']) or 'string').lower()
                         dt = DataType(
                             name=name,
@@ -1057,6 +1096,20 @@ class LegacyConverter:
                         if parent and parent not in _primitive:
                             # Mark that this parent schema has children/properties.
                             has_parent_schema.add(parent)
+                            # Collect property row for fingerprinting.
+                            # Use the schema reference (Schema Name col) as dtype identifier so
+                            # that variants using RequestId vs RequestId1 produce distinct fps.
+                            ref_val = ""
+                            for rc in _ref_cols:
+                                v = self._clean_value(row.get(rc))
+                                if v and v not in _primitive:
+                                    ref_val = v
+                                    break
+                            mand_val = (get_col_val(row, ['mandatory']) or "").strip().upper()
+                            dtype_fp = (ref_val or raw_type).lower()
+                            _schema_prop_rows.setdefault(parent, []).append(
+                                (name.lower(), "", "", "", dtype_fp, "", mand_val, "")
+                            )
                         else:
                             # Root-level schema definition.
                             has_no_parent_schema.add(name)
@@ -1067,6 +1120,13 @@ class LegacyConverter:
                             ref_val = self._clean_value(row.get(rc))
                             if ref_val and ref_val not in _primitive:
                                 schema_refs.setdefault(owner_schema, set()).add(ref_val)
+
+                    # Build inline fingerprints for root-level object/wrapper schemas so that
+                    # _log_usage_summary can compare ErrorResponse, ErrorResponse1, … and show
+                    # what differs in the DIFFERENCES column.
+                    for _sn, _props in _schema_prop_rows.items():
+                        if _props and _sn not in self.inline_component_fingerprint_by_name:
+                            self.inline_component_fingerprint_by_name[_sn] = tuple(sorted(_props))
 
 
             # 2. Get list of endpoint files from Paths sheet
@@ -1083,8 +1143,11 @@ class LegacyConverter:
                     for _, row in df_p.iterrows():
                         fname = self._clean_value(row.get('excel file'))
                         opid = self._clean_value(row.get('operationid'))
+                        api_path = self._clean_value(row.get('path') or row.get('paths') or '')
                         if fname:
                             ep_files.append((fname, opid))
+                            if api_path:
+                                self.filename_to_path[fname] = api_path
                         if opid:
                             op_id_norms.add(opid.lower())
 
@@ -1105,43 +1168,30 @@ class LegacyConverter:
                     # --- Wrapper usage seeding fallback ---
                     # Some endpoint artifacts do not reliably carry the wrapper name in each sheet.
                     # We seed wrapper usage based on the presence of Body/response sheets and map
-                    # to the wrapper schema names actually present in $index (may include .YYMMDD).
-                    stem = Path(str(fname)).stem
-                    m_date = re.match(r"^(.*)\.(\d{6})$", stem)
-                    ep_base = m_date.group(1) if m_date else stem
-                    ep_date = m_date.group(2) if m_date else ""
-
-                    def _map_wrapper(base: str, suffix: str) -> str:
-                        if ep_date:
-                            cand = f"{base}.{ep_date}{suffix}"
-                            if cand in self.global_schemas:
-                                return cand
-                        cand2 = f"{base}{suffix}"
-                        if cand2 in self.global_schemas:
-                            return cand2
-                        return cand2
+                    # to the wrapper schema names consistent with the conversion pass.
+                    ep_wrapper_base = self._to_wrapper_case(self._extract_wrapper_base(str(fname)))
 
                     # Seed Request wrapper if Body sheet exists
                     if "Body" in xl_ep.sheet_names:
-                        w_req = _map_wrapper(ep_base, "Request")
+                        w_req = f"{ep_wrapper_base}Request"
                         self.schema_usage.setdefault(w_req, [])
                         if f"{self._endpoint_display_name(str(fname))} (Body)" not in self.schema_usage[w_req]:
                             self.schema_usage[w_req].append(f"{self._endpoint_display_name(str(fname))} (Body)")
                         bfs_seed_wrappers.add(w_req)
 
-                    # Seed Response / ErrorResponse wrappers based on available response code sheets
+                    # Seed success Response wrappers based on available response code sheets.
+                    # Error responses (>=400) are NOT pre-seeded here because the actual
+                    # ErrorResponse variant name (ErrorResponse, ErrorResponse1, …) can only be
+                    # determined by reading the Schema Name column from the converted sheet (step 2
+                    # below). Pre-seeding with the hardcoded base "ErrorResponse" would cause all
+                    # error usages to be attributed to that base variant even when a file actually
+                    # uses a different variant (e.g. ErrorResponse1), producing wrong BFS propagation.
                     for sh in xl_ep.sheet_names:
                         if not re.fullmatch(r"\d{3}", str(sh).strip()):
                             continue
                         code = str(sh).strip()
-                        if int(code) >= 400:
-                            self.schema_usage.setdefault("ErrorResponse", [])
-                            u = f"{self._endpoint_display_name(str(fname))} ({code})"
-                            if u not in self.schema_usage["ErrorResponse"]:
-                                self.schema_usage["ErrorResponse"].append(u)
-                            bfs_seed_wrappers.add("ErrorResponse")
-                        else:
-                            w_resp = _map_wrapper(ep_base, "Response")
+                        if int(code) < 400:
+                            w_resp = f"{ep_wrapper_base}Response"
                             self.schema_usage.setdefault(w_resp, [])
                             u = f"{self._endpoint_display_name(str(fname))} ({code})"
                             if u not in self.schema_usage[w_resp]:
@@ -1798,7 +1848,7 @@ class LegacyConverter:
             # 1.2 Body & Responses (Wrappers)
             # Use FILENAME as wrapper base (matching old tool behaviour),
             # NOT the operationId from the index which may differ.
-            wrapper_base = self._to_wrapper_case(self._extract_operation_id(ep_fname))
+            wrapper_base = self._to_wrapper_case(self._extract_wrapper_base(ep_fname))
             op_id = wrapper_base
             usage_ep = self._endpoint_display_name(str(ep_fname))
             
@@ -1823,32 +1873,84 @@ class LegacyConverter:
                 if code in xl.sheet_names:
                     children = self._read_legacy_structure(xl, code)
                     if children:
-                        wrapper = "ErrorResponse" if int(code) >= 400 else f"{op_id}Response"
-                        if wrapper not in self.emitted_wrappers:
-                            self.emitted_wrappers.add(wrapper)
-                            child_rows, refs, extra_blocks = self._build_children_rows(
-                                wrapper,
+                        if int(code) >= 400:
+                            # ErrorResponse: fingerprint/split mechanism.
+                            # Build children with file context, then fingerprint to
+                            # detect structural differences (e.g. different DataType
+                            # variants for requestId).  Each unique structure gets
+                            # its own ErrorResponse variant name.
+                            placeholder = "ErrorResponse"
+                            candidate_rows, refs, extra_blocks = self._build_children_rows(
+                                placeholder,
                                 children,
                                 ep_fname,
                                 usage_ctx=f"{usage_ep} ({code})",
                                 reserved_names=set(referenced_data_types),
                             )
-                            final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
-                            final_rows.extend(child_rows)
-                            final_rows.extend(extra_blocks)
-                            referenced_data_types.update(refs)
+                            # Fingerprint: structurally significant fields to detect distinct error body shapes.
+                            # Must include r[5] (schema_name / DataType reference) so that error responses
+                            # referencing different DataType variants (e.g. RequestId vs RequestId1) are
+                            # treated as separate ErrorResponse variants. Without r[5], two structures that
+                            # differ only in their DataType variant would share the same ErrorResponse, causing
+                            # BFS to attribute all error usages to whichever variant the first-processed file
+                            # happened to resolve — producing misleading tracer output.
+                            fp_rows = []
+                            for r in candidate_rows:
+                                par = r[1] if r[1] != placeholder else "__W__"
+                                schema_ref = r[5] if len(r) > 5 else ""
+                                fp_rows.append((r[0], par, r[3], r[4], schema_ref, r[7]))
+                            fp = tuple(fp_rows)
+
+                            if fp in self.error_response_fingerprints:
+                                # Existing variant — reuse
+                                wrapper = self.error_response_fingerprints[fp]
+                                final_rows.extend(extra_blocks)
+                                referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
+                            else:
+                                # New variant — assign unique name
+                                wrapper = "ErrorResponse"
+                                counter = 1
+                                while wrapper in self.emitted_wrappers:
+                                    wrapper = f"ErrorResponse{counter}"
+                                    counter += 1
+                                self.error_response_fingerprints[fp] = wrapper
+                                self.emitted_wrappers.add(wrapper)
+                                # Fix parent references if variant name differs
+                                if wrapper != placeholder:
+                                    for r in candidate_rows:
+                                        if r[1] == placeholder:
+                                            r[1] = wrapper
+                                final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
+                                final_rows.extend(candidate_rows)
+                                final_rows.extend(extra_blocks)
+                                referenced_data_types.update(refs)
+
+                            self.filename_to_error_response[ep_fname] = wrapper
                         else:
-                            _, _refs, extra_blocks = self._build_children_rows(
-                                wrapper,
-                                children,
-                                ep_fname,
-                                usage_ctx=f"{usage_ep} ({code})",
-                                reserved_names=set(referenced_data_types),
-                            )
-                            final_rows.extend(extra_blocks)
-                            # Wrapper already emitted: keep only refs that are actually
-                            # introduced by newly emitted extra blocks.
-                            referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
+                            wrapper = f"{op_id}Response"
+                            if wrapper not in self.emitted_wrappers:
+                                self.emitted_wrappers.add(wrapper)
+                                child_rows, refs, extra_blocks = self._build_children_rows(
+                                    wrapper,
+                                    children,
+                                    ep_fname,
+                                    usage_ctx=f"{usage_ep} ({code})",
+                                    reserved_names=set(referenced_data_types),
+                                )
+                                final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
+                                final_rows.extend(child_rows)
+                                final_rows.extend(extra_blocks)
+                                referenced_data_types.update(refs)
+                            else:
+                                _, _refs, extra_blocks = self._build_children_rows(
+                                    wrapper,
+                                    children,
+                                    ep_fname,
+                                    usage_ctx=f"{usage_ep} ({code})",
+                                    reserved_names=set(referenced_data_types),
+                                )
+                                final_rows.extend(extra_blocks)
+                                referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
 
         # 2. Emit actually used Global Schemas
         global_blocks = []
@@ -2013,6 +2115,12 @@ class LegacyConverter:
             except Exception:
                 pass
 
+            # Update ErrorResponse variant mapping so endpoint response sheets
+            # reference the renumbered name.
+            for ep_key, er_name in list(self.filename_to_error_response.items()):
+                if er_name in rename_map:
+                    self.filename_to_error_response[ep_key] = rename_map[er_name]
+
         all_blocks.sort(key=lambda x: str(x[0]).lower())
         
         final_final_rows = []
@@ -2140,7 +2248,7 @@ class LegacyConverter:
         
         # Use FILENAME as wrapper base (matching old tool behaviour),
         # NOT the operationId from the index which may differ.
-        op_id = self._to_wrapper_case(self._extract_operation_id(legacy_path.name))
+        op_id = self._to_wrapper_case(self._extract_wrapper_base(legacy_path.name))
         
         status_codes = [s for s in xl.sheet_names if s.isdigit()]
         
@@ -2262,7 +2370,8 @@ class LegacyConverter:
             if int(code) < 400:
                 wrapper_name = f"{op_id}Response"
             else:
-                wrapper_name = "ErrorResponse"
+                # Use the correct ErrorResponse variant for this endpoint
+                wrapper_name = self.filename_to_error_response.get(filename, "ErrorResponse")
             
             # Extract description from legacy title
             desc = ""
@@ -2818,7 +2927,18 @@ class LegacyConverter:
             
             name_out = str(name).strip() if name is not None else ""
             low_dtype = _norm(dtype)
+            
+            # Try to resolve by dtype first
             out_name, dt = self._resolve_data_type(str(dtype).strip() if dtype is not None else "", ep_filename)
+            
+            # If dtype is primitive but element name matches any global DataType, prioritize the DataType
+            if not dt and low_dtype in ["string", "number", "integer", "boolean"] and name_out:
+                # Search for any global DataType that matches this element name
+                for global_name, global_dt in self.global_schemas.items():
+                    if global_name.lower() == name_out.lower():
+                        alt_name = self.output_names.get(("$global", global_name), global_name)
+                        out_name, dt = alt_name, global_dt
+                        break
             
             # RULE: Only inline if the literal NAME is 'object' or 'array'.
             name_norm = _norm(name)
@@ -2878,11 +2998,13 @@ class LegacyConverter:
                 schema_name = out_name
                 referenced_data_types.add(out_name)
             else:
-                # Fallback to literal primitives for any other case
+                # Fallback: only valid OAS primitive types, otherwise schema
                 if low_dtype in ["string", "number", "integer", "boolean"]:
                     resolved_type = low_dtype
                 else:
-                    resolved_type = dtype # Pass through unknown
+                    # Not a valid OAS type and no DataType resolved - treat as schema reference
+                    resolved_type = "schema"
+                    schema_name = dtype  # Use the dtype as schema name
             
             # Track non-primitive array items as referenced schemas so they
             # get emitted in the global schemas section of the Schemas sheet.
@@ -3602,11 +3724,29 @@ class LegacyConverter:
         start_row = self._find_last_used_row(ws) + 1
         self._write_rows(ws, rows, start_row=start_row)
     
-    def _extract_operation_id(self, filename: str) -> str:
-        """Extract operationId from filename: testOperation.260209.xlsm → testOperation"""
+    def _extract_wrapper_base(self, filename: str) -> str:
+        """Extract wrapper base from the API path's last non-parameter segment.
+        
+        E.g. /files/fileDetails/{senderBic} → fileDetails
+        Falls back to filename-based extraction if no path mapping exists.
+        """
+        # Try path-based extraction first (preferred)
+        api_path = self.filename_to_path.get(filename)
+        if not api_path:
+            # Try without extension variants
+            stem_key = filename.replace(".xlsm", "").replace(".xlsx", "")
+            api_path = self.filename_to_path.get(stem_key)
+        if api_path:
+            segments = [s for s in api_path.split('/') if s and not s.startswith('{')]
+            if segments:
+                return segments[-1]
+        # Fallback: derive from filename
         base = filename.replace(".xlsm", "").replace(".xlsx", "")
         parts = base.rsplit(".", 1)
-        return parts[0] if len(parts) > 1 and parts[1].isdigit() else base
+        stem = parts[0] if len(parts) > 1 and parts[1].isdigit() else base
+        if "_" in stem:
+            stem = stem.split("_", 1)[1]
+        return stem
     
     def _find_header_row(self, df: pd.DataFrame, keywords: List[str]) -> int:
         """Find row containing header keywords by scoring matches."""

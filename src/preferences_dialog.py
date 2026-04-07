@@ -273,7 +273,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_capitalize_schemas = ctk.BooleanVar(value=True)
         self.chk_legacy_capitalize_schemas = ctk.CTkSwitch(
             self.tab_templates,
-            text="Capitalize operationId in schema names (PascalCase)",
+            text="Capitalize wrapper names (PascalCase)",
             variable=self.var_legacy_capitalize_schemas,
             progress_color="#0A809E",
         )
