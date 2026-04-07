@@ -1421,7 +1421,6 @@ class OASGenApp(ctk.CTk):
         self.last_generated_files = []
         # Refresh file lists
         self.update_file_list()
-        self.update_file_list()
         self.refresh_view_files()
         # Save preference
         self.prefs_manager.set("oas_folder", new_path)
@@ -1561,7 +1560,6 @@ class OASGenApp(ctk.CTk):
 
             def reset_btn():
                 self.btn_gen.configure(state="normal", text="GENERATE")
-                self.after(0, self.update_file_list)  # Final refresh
 
             self.after(0, reset_btn)
 
