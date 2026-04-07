@@ -87,6 +87,7 @@ class LegacyConverter:
         self.current_ep_name = None
         self.all_tags = set() # Track all tags for the index
         self._current_children_map: Dict[str, frozenset] = {}  # norm_dtype -> frozenset(child_prop_names)
+        self.empty_error_responses: Dict[str, str] = {}  # status_code -> description (for empty 4xx/5xx sheets)
 
     def _resolve_internal_master_dir(self):
         """Finds 'Templates Master' folder as an internal resource."""
@@ -180,10 +181,13 @@ class LegacyConverter:
             if ep_file.name not in self.ordered_filenames:
                 self._convert_endpoint(ep_file)
 
+        # 4. Post-processing: write Responses sheet in $index.xlsx
+        self._write_responses_sheet()
+
         # 11. Final Summary
         if self.tracing_enabled:
             self.run_standalone_check(str(self.output_dir))
-        self.log(f"Conversion complete. Output: {self.output_dir}")
+        self.log(f"Conversion complete. Output: {self.output_dir.as_posix()}")
         return True
 
 
@@ -1532,7 +1536,7 @@ class LegacyConverter:
             wb.save(output_path)
         except Exception as e:
             self.log(f"  WARNING: Could not apply cosmetic polish to index: {e}")
-        self.log(f"  Saved: {output_path}")
+        self.log(f"  Saved: {output_path.as_posix()}")
 
     def _sync_endpoint_schemas_from_index(self, wb) -> None:
         try:
@@ -2182,7 +2186,7 @@ class LegacyConverter:
             wb.save(output_path)
         except Exception as e:
             self.log(f"  WARNING: Could not apply cosmetic polish to {filename}: {e}")
-        self.log(f"  Saved: {output_path}")
+        self.log(f"  Saved: {output_path.as_posix()}")
     
     def _convert_parameters(self, wb, xl):
         """Convert Parameters from Path and Header sheets."""
@@ -2292,7 +2296,6 @@ class LegacyConverter:
             ws.cell(row=1, column=3).value = desc
             
             # Row 3+: media type row with schema reference to wrapper
-            # PROPERTIES CHECK: If the legacy sheet is empty, do not add any content row.
             children = self._read_legacy_structure(xl, code)
             if children:
                 # Media type row with schema reference to wrapper
@@ -2317,7 +2320,56 @@ class LegacyConverter:
                         response_children=children,
                         ep_filename=filename,
                     )
+            elif int(code) >= 400 or code == "204":
+                # Empty 4xx/5xx/204 sheet: create a ref to a shared ErrorResponse_<code> component
+                resp_component = f"ErrorResponse_{code}"
+                media_row = ["content", desc, "", desc, "response", "", resp_component, "", "",
+                             "", "", "", "", "", ""]
+                self._write_rows(ws, [media_row], start_row=3)
+                # Register for the global Responses sheet (once per status code)
+                if code not in self.empty_error_responses:
+                    self.empty_error_responses[code] = desc
     
+    def _write_responses_sheet(self):
+        """Populate the Responses sheet in $index.xlsx with ErrorResponse_<code> components."""
+        if not self.empty_error_responses:
+            return
+
+        index_path = self.output_dir / "$index.xlsx"
+        if not index_path.exists():
+            return
+
+        wb = load_workbook(index_path)
+        if "Responses" not in wb.sheetnames:
+            wb.create_sheet("Responses")
+        ws = wb["Responses"]
+
+        rows: List[List[Any]] = []
+        for code in sorted(self.empty_error_responses.keys()):
+            desc = self.empty_error_responses[code]
+            comp = f"ErrorResponse_{code}"
+            example_value = "" if code == "204" else desc
+            rows.extend([
+                ["", comp, "", desc, "", "", "", "", "", "", "", "", "", "", ""],
+                ["", "x-sandbox-request-name", comp, "", "string", "", "", "", "", "", "", "", "", "", ""],
+                ["", "x-sandbox-request-path-params", comp, "", "string", "", "", "", "", "", "", "", "", "", ""],
+                ["", "senderBic", "x-sandbox-request-path-params", "x sandbox request path params", "string", "", "", "", "", "", "", "", "", "", ""],
+                ["content", "text/plain", comp, "", "string", "", "", "", "", "", "", "", "", "", f"TSTBICXX{code}"],
+                ["examples", desc, "text/plain", "Error message", "string", "", "", "", "", "", "", "", "", "", ""],
+                ["examples", "value", desc, "", "string", "", "", "", "", "", "", "", "", "", example_value],
+            ])
+
+        self._write_rows(ws, rows, start_row=2)
+
+        # Cosmetic polish
+        try:
+            self._autofit_columns(ws)
+        except Exception:
+            pass
+
+        wb.save(index_path)
+        self.log(f"  Responses sheet: {len(self.empty_error_responses)} ErrorResponse components written.")
+
     # === Helper Methods ===
     
     def _read_legacy_structure(self, xl, sheet_name: str) -> List[Tuple]:

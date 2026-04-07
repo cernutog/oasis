@@ -1,6 +1,7 @@
 import os
 import sys
 import pandas as pd
+from pathlib import Path
 
 # Add src to path if needed or assume relative imports work if run as module
 # If run as script, parser/generator are in same dir.
@@ -189,13 +190,13 @@ def generate_oas(
         os.makedirs(gen_dir, exist_ok=True)
 
         fname_30 = build_filename("3.0")
-        out_30 = os.path.join(gen_dir, fname_30)
-        log_callback(f"Writing OAS 3.0 to: {out_30}")
+        out_30 = Path(gen_dir) / fname_30
+        log_callback(f"Writing OAS 3.0 to: {out_30.as_posix()}")
         with open(out_30, "w", encoding="utf-8") as f:
             f.write(generator_30.get_yaml())
 
         # Write Source Map
-        map_30 = os.path.join(map_dir, fname_30 + ".map.json")
+        map_30 = Path(map_dir) / (fname_30 + ".map.json")
         with open(map_30, "w", encoding="utf-8") as f:
             f.write(generator_30.get_source_map_json())
 
@@ -220,13 +221,13 @@ def generate_oas(
         os.makedirs(gen_dir, exist_ok=True)
 
         fname_31 = build_filename("3.1")
-        out_31 = os.path.join(gen_dir, fname_31)
-        log_callback(f"Writing OAS 3.1 to: {out_31}")
+        out_31 = Path(gen_dir) / fname_31
+        log_callback(f"Writing OAS 3.1 to: {out_31.as_posix()}")
         with open(out_31, "w", encoding="utf-8") as f:
             f.write(generator_31.get_yaml())
 
         # Write Source Map
-        map_31 = os.path.join(map_dir, fname_31 + ".map.json")
+        map_31 = Path(map_dir) / (fname_31 + ".map.json")
         with open(map_31, "w", encoding="utf-8") as f:
             f.write(generator_31.get_source_map_json())
 
@@ -259,13 +260,13 @@ def generate_oas(
         # Ensure OAS output folder exists
         os.makedirs(gen_dir, exist_ok=True)
 
-        out_sw_30 = os.path.join(gen_dir, build_filename("3.0", "SWIFT"))
-        log_callback(f"Writing OAS 3.0 (SWIFT) to: {out_sw_30}")
+        out_sw_30 = Path(gen_dir) / build_filename("3.0", "SWIFT")
+        log_callback(f"Writing OAS 3.0 (SWIFT) to: {out_sw_30.as_posix()}")
         with open(out_sw_30, "w", encoding="utf-8") as f:
             f.write(sw_gen_30.get_yaml())
 
         # Write Source Map
-        map_sw_30 = os.path.join(map_dir, os.path.basename(out_sw_30) + ".map.json")
+        map_sw_30 = Path(map_dir) / (out_sw_30.name + ".map.json")
         with open(map_sw_30, "w", encoding="utf-8") as f:
             f.write(sw_gen_30.get_source_map_json())
 
@@ -287,13 +288,13 @@ def generate_oas(
         # Pass the filename of the corresponding standard OAS
         sw_gen_31.apply_swift_customization(source_filename=build_filename("3.1"))
 
-        out_sw_31 = os.path.join(gen_dir, build_filename("3.1", "SWIFT"))
-        log_callback(f"Writing OAS 3.1 (SWIFT) to: {out_sw_31}")
+        out_sw_31 = Path(gen_dir) / build_filename("3.1", "SWIFT")
+        log_callback(f"Writing OAS 3.1 (SWIFT) to: {out_sw_31.as_posix()}")
         with open(out_sw_31, "w", encoding="utf-8") as f:
             f.write(sw_gen_31.get_yaml())
         
         # Write Source Map
-        map_sw_31 = os.path.join(map_dir, os.path.basename(out_sw_31) + ".map.json")
+        map_sw_31 = Path(map_dir) / (out_sw_31.name + ".map.json")
         with open(map_sw_31, "w", encoding="utf-8") as f:
             f.write(sw_gen_31.get_source_map_json())
 
