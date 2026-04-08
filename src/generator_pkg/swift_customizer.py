@@ -152,9 +152,19 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
                                 "content" in resp
                                 and "application/json" in resp["content"]
                             ):
+                                # Detect which ErrorResponse variant this endpoint uses
+                                # so the oneOf references the correct variant, not always
+                                # the base 'ErrorResponse'.
+                                _existing = resp["content"]["application/json"].get("schema", {})
+                                _err_ref = "#/components/schemas/ErrorResponse"
+                                _candidate = _existing.get("$ref", "")
+                                if _candidate:
+                                    _cname = _candidate.split("/")[-1]
+                                    if _cname.lower().startswith("errorresponse"):
+                                        _err_ref = _candidate
                                 resp["content"]["application/json"]["schema"] = {
                                     "oneOf": [
-                                        {"$ref": "#/components/schemas/ErrorResponse"},
+                                        {"$ref": _err_ref},
                                         {"$ref": "#/components/schemas/Errors"},
                                     ]
                                 }
