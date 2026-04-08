@@ -91,7 +91,7 @@ class CompatibilityDocxGenerator:
 
     def generate(self, output_path: str):
         """Builds the document structure and saves it."""
-        self.doc.add_heading('OpenAPI Comparison - Interface Compatibility Report', 0)
+        self.doc.add_heading('OpenAPI Comparison - Interface Changelog Report', 0)
 
 
         

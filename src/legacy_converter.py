@@ -1952,6 +1952,29 @@ class LegacyConverter:
                                 final_rows.extend(extra_blocks)
                                 referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
 
+        # 2a. Transitively expand referenced_data_types: array DataTypes whose
+        #     items_type is itself a named DataType (e.g. AosId → AosIdItem)
+        #     are not encountered as direct property types in endpoint sheets,
+        #     so they would be missed without this expansion.
+        _prim_expand = {"string", "number", "integer", "boolean", "array", "object"}
+        _expand_pending = set(referenced_data_types)
+        _expand_visited: set = set()
+        while _expand_pending:
+            _ename = _expand_pending.pop()
+            if _ename in _expand_visited:
+                continue
+            _expand_visited.add(_ename)
+            _edt = self.global_schemas.get(_ename)
+            if not _edt or _edt.type.lower() != "array" or not _edt.items_type:
+                continue
+            _eitems = self._recursive_resolve_items(
+                _edt.items_type,
+                _edt.source_file if _edt.source_file != "$global" else None,
+            )
+            if _eitems and _eitems.lower() not in _prim_expand and _eitems not in referenced_data_types:
+                referenced_data_types.add(_eitems)
+                _expand_pending.add(_eitems)
+
         # 2. Emit actually used Global Schemas
         global_blocks = []
         for out_name in sorted(referenced_data_types):
@@ -1960,8 +1983,9 @@ class LegacyConverter:
             # (they were written with proper type=array + children via named_array_key_map)
             if out_name in self.emitted_inline_components: continue
 
-            # RULE: Filter out literal 'array' or 'object' schemas as they are handled inlined
-            if out_name.lower() in ["array", "object"]: continue
+            # RULE: Never create a schema whose name equals an OAS primitive type,
+            # to avoid components named String/Number/Integer/Boolean/Array/Object.
+            if out_name.lower() in {"string", "number", "integer", "boolean", "array", "object"}: continue
 
             dt = self.global_schemas.get(out_name)
             if not dt: continue
@@ -2989,10 +3013,20 @@ class LegacyConverter:
                     elif name_norm in array_items_ref_map:
                         items_type = array_items_ref_map[name_norm]
                     else:
-                        it_to_resolve = items_type_row
-                        if not it_to_resolve:
-                            it_to_resolve = dt.items_type or ""
-                        items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
+                        # Named-DataType array with no inline children in this
+                        # endpoint sheet: emit as $ref so constraints (minItems/
+                        # maxItems) from the DataType sheet are preserved.
+                        # The component schema is emitted via global_blocks.
+                        if out_name and out_name.lower() not in ["array", "object"]:
+                            resolved_type = "schema"
+                            schema_name = out_name
+                            items_type = ""
+                            referenced_data_types.add(out_name)
+                        else:
+                            it_to_resolve = items_type_row
+                            if not it_to_resolve:
+                                it_to_resolve = dt.items_type or ""
+                            items_type = self._recursive_resolve_items(it_to_resolve, dt.source_file if dt and dt.source_file != "$global" else None)
             elif dt:
                 resolved_type = "schema"
                 schema_name = out_name
