@@ -3101,7 +3101,10 @@ class LegacyConverter:
 
             # Emit root row as type=array (NOT object) so generator produces
             # the correct  {type: array, items: {properties: ...}}  schema.
-            extra_schema_blocks.append([comp_name, "", "", "array", items_primitive, "", "", "", "", "", "", "", "", ""])
+            # Carry minItems/maxItems from the original DataType definition.
+            _na_min = dt_for_schema.min_val if dt_for_schema else ""
+            _na_max = dt_for_schema.max_val if dt_for_schema else ""
+            extra_schema_blocks.append([comp_name, "", "", "array", items_primitive, "", "", "", _na_min, _na_max, "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
             extra_schema_blocks.extend(nested_blocks)
 
