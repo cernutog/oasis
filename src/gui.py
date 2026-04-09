@@ -683,6 +683,7 @@ class OASGenApp(ctk.CTk):
             self.frame_list_container, label_text="Issues List", border_width=0, corner_radius=0
         )
         self.frame_list.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.frame_list_container.bind("<Configure>", self._on_validation_list_resize)
         self.paned_val_main.add(
             self.frame_list_container, minsize=280, sticky="nsew", stretch="always"
         )
@@ -1184,6 +1185,35 @@ class OASGenApp(ctk.CTk):
         except Exception:
             return 11
 
+    def _get_validation_wraplength(self):
+        try:
+            width = self.frame_list_container.winfo_width()
+            if width and width > 120:
+                return max(220, width - 70)
+        except Exception:
+            pass
+        return 350
+
+    def _on_validation_list_resize(self, event=None):
+        """Re-wrap issue cards when the issues panel width changes materially."""
+        if not getattr(self, "_current_validation_details", None):
+            return
+        try:
+            width = int(self.frame_list_container.winfo_width())
+        except Exception:
+            return
+        last_width = getattr(self, "_last_validation_render_width", 0)
+        if abs(width - last_width) < 24:
+            return
+        if hasattr(self, "_validation_resize_job") and self._validation_resize_job:
+            try:
+                self.after_cancel(self._validation_resize_job)
+            except Exception:
+                pass
+        self._validation_resize_job = self.after(
+            80, lambda: self._render_validation_issue_list(self._current_validation_details)
+        )
+
     def _on_validation_font_size_change(self, value):
         """Handle font size slider change in Validation tab."""
         if getattr(self, "_suspend_validation_font_events", False):
@@ -1201,11 +1231,18 @@ class OASGenApp(ctk.CTk):
 
     def _render_validation_issue_list(self, details):
         """Render validation issues using the configured accessibility font size."""
+        self._current_validation_details = list(details or [])
+        self._validation_resize_job = None
+        try:
+            self._last_validation_render_width = int(self.frame_list_container.winfo_width())
+        except Exception:
+            self._last_validation_render_width = 0
         for widget in self.frame_list.winfo_children():
             widget.destroy()
 
         total_issues = len(details)
         font_size = self._get_validation_font_size()
+        wraplength = self._get_validation_wraplength()
         badge_font_size = max(8, font_size - 1)
         code_font_size = max(9, font_size)
         path_font_size = max(8, font_size - 1)
@@ -1313,7 +1350,7 @@ class OASGenApp(ctk.CTk):
                     font=("Consolas", path_font_size),
                     anchor="w",
                     justify="left",
-                    wraplength=350,
+                    wraplength=wraplength,
                 ).pack(fill="x", padx=5, pady=2)
 
             ctk.CTkLabel(
@@ -1321,7 +1358,7 @@ class OASGenApp(ctk.CTk):
                 text=item["message"],
                 anchor="w",
                 justify="left",
-                wraplength=350,
+                wraplength=wraplength,
                 font=("Arial", font_size),
                 text_color=("#333333", "#FFFFFF"),
             ).pack(fill="x", padx=5, pady=(0, 5))

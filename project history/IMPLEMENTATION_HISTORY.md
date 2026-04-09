@@ -893,4 +893,9 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Feature**: Added a safe legacy helper utility at `utilities/normalize_legacy_example_separators.py` to normalize comma-vs-semicolon example separators only for high-confidence legacy `Data Type` cases, while reporting ambiguous rows instead of auto-changing them.
 - **Key Modules**: `src/gui.py`, `src/preferences.py`, `src/preferences_dialog.py`, `utilities/normalize_legacy_example_separators.py`.
 
+### Build v2.2.30 (2026-04-10)
+- **Fix**: Validation issue cards now rewrap dynamically when the Issues pane is resized, so path and message text expand to use the newly available width instead of remaining constrained to a fixed wrap length.
+- **Refinement**: Validation panel polish continued with small sash, inset, and wrapper adjustments after the resizable split rollout, while keeping validation rerenders lightweight and free from linter re-execution.
+- **Key Modules**: `src/gui.py`.
+
 
