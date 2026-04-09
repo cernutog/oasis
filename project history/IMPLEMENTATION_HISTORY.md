@@ -867,4 +867,9 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Fix**: MegaAnalyzer signature alignment with CompatibilityAnalyzer base class to resolve runtime TypeError.
 - **Key Modules**: `src/gui.py`, `src/oas_diff_dialog.py`, `src/legacy_converter_dialog.py`, `src/legacy_schema_tracer_dialog.py`, `src/preferences_dialog.py`, `diagnostic_tool.py`.
 
+### Build v2.2.26 (2026-04-09)
+- **Fix**: Interface Compatibility Report summary/detail references now use a shared value normalization path, so enum changes serialized as list values keep the same summary ID when rendered inside endpoint detail tables.
+- **Verification**: Regenerated the compatibility report using the latest OAS comparison paths from user preferences and confirmed the enum change for `AosIdItem` keeps summary item `[5]` linked across all impacted endpoints.
+- **Key Modules**: `src/oas_diff/generators/compatibility_generator.py`.
+
 
