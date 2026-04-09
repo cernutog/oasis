@@ -2138,17 +2138,26 @@ class LegacyConverter:
                 continue
             has_base = bool(info.get("base")) and stem in used_after
             nums = sorted(set(info.get("nums") or []))
-            # Only renumber when there is a base and numbering is not already contiguous
-            if not has_base:
-                continue
-            expected = list(range(1, max(nums) + 1))
-            if nums == expected:
-                continue
-            # Existing variant names in this stem
             existing_variant_names = [f"{stem}{n}" for n in nums if f"{stem}{n}" in used_after]
-            # Target names
-            target_variant_names = [f"{stem}{i}" for i in range(1, len(existing_variant_names) + 1)]
-            for old_nm, new_nm in zip(existing_variant_names, target_variant_names):
+
+            if has_base:
+                expected = list(range(1, len(existing_variant_names) + 1))
+                if nums[: len(expected)] == expected and len(nums) == len(expected):
+                    continue
+                rename_pairs = list(
+                    zip(
+                        existing_variant_names,
+                        [f"{stem}{i}" for i in range(1, len(existing_variant_names) + 1)],
+                    )
+                )
+            else:
+                # When the unsuffixed base is no longer reachable/emitted, compact the
+                # remaining variants so the first live variant becomes the base name.
+                # Example: Number1, Number2 -> Number, Number1
+                target_names = [stem] + [f"{stem}{i}" for i in range(1, len(existing_variant_names))]
+                rename_pairs = list(zip(existing_variant_names, target_names))
+
+            for old_nm, new_nm in rename_pairs:
                 if old_nm == new_nm:
                     continue
                 # Guard against accidental clash outside this stem
@@ -2166,6 +2175,19 @@ class LegacyConverter:
                 for old_nm, new_nm in rename_map.items():
                     if old_nm in self.global_schemas and new_nm not in self.global_schemas:
                         self.global_schemas[new_nm] = self.global_schemas.pop(old_nm)
+                self.used_names = {rename_map.get(nm, nm) for nm in self.used_names}
+                self.output_names = {
+                    key: rename_map.get(out_name, out_name)
+                    for key, out_name in self.output_names.items()
+                }
+                self.fingerprints = {
+                    fp: rename_map.get(out_name, out_name)
+                    for fp, out_name in self.fingerprints.items()
+                }
+                self.merge_provenance = {
+                    rename_map.get(name, name): prov
+                    for name, prov in self.merge_provenance.items()
+                }
             except Exception:
                 pass
 
@@ -2390,8 +2412,8 @@ class LegacyConverter:
             if out_name:
                 param_type = "schema"
                 schema_name = out_name
-            elif param_type.lower() in ["string", "number", "integer", "boolean", "array", "object"]:
-                param_type = param_type.lower()
+            elif self._is_oas_primitive_name(param_type):
+                param_type = str(param_type).strip()
             
             rows.append([
                 p["name"], p["description"], p["in"], param_type,
@@ -2660,8 +2682,7 @@ class LegacyConverter:
             def _ex_for_type(type_name: str) -> str:
                 if not type_name:
                     return ""
-                low = str(type_name).strip().lower()
-                if low in ["string", "number", "integer", "boolean", "array", "object", "schema"]:
+                if self._is_oas_primitive_name(type_name, allow_schema=True):
                     return ""
                 out_name, dt = self._resolve_data_type(str(type_name).strip(), ep_filename)
                 if dt and getattr(dt, "example", None):
@@ -3214,8 +3235,7 @@ class LegacyConverter:
 
     def _resolve_leaf_dt(self, dtype: str, ep_filename: Optional[str]) -> Optional['DataType']:
         """Resolve a field type to its DataType, or None for primitives."""
-        low = dtype.lower()
-        if low in ("string", "number", "integer", "boolean", "array", "object", ""):
+        if self._is_oas_primitive_name(dtype):
             return None
         _, dt = self._resolve_data_type(dtype, ep_filename)
         return dt
@@ -3241,6 +3261,35 @@ class LegacyConverter:
         # Per-type rotation counter (shared across the whole call so siblings rotate)
         type_counters: Dict[str, int] = {}
 
+        def _coerce_numeric_example(raw_value: Any, numeric_type: str) -> Any:
+            """Preserve integer-looking number examples without forcing a trailing '.0'."""
+            raw_text = str(raw_value).strip()
+            if not raw_text:
+                return raw_value
+
+            normalized = raw_text.replace(",", ".")
+
+            if numeric_type in ("integer", "int"):
+                try:
+                    return int(normalized)
+                except (ValueError, TypeError):
+                    return raw_value
+
+            if numeric_type in ("number", "float", "double", "decimal"):
+                # A numeric example that is lexically an integer should remain an integer
+                # in generated YAML instead of being normalized to '<n>.0'.
+                if re.fullmatch(r"[+-]?\d+", normalized):
+                    try:
+                        return int(normalized)
+                    except (ValueError, TypeError):
+                        return raw_value
+                try:
+                    return float(normalized)
+                except (ValueError, TypeError):
+                    return raw_value
+
+            return raw_value
+
         def get_rotated_value(dtype: str, dt: Optional['DataType'], item_offset: int = 0, is_array_item: bool = False) -> Any:
             """Pick example value using per-type rotation + item_offset for array diversity."""
             examples = self._get_example_values(dt)
@@ -3264,16 +3313,10 @@ class LegacyConverter:
                 raw = examples[idx]
                 # Coerce to numeric if the DataType says so
                 if dt:
-                    if dt.type.lower() in ("integer", "int"):
-                        try:
-                            return int(raw)
-                        except (ValueError, TypeError):
-                            pass
-                    elif dt.type.lower() in ("number", "float", "double", "decimal"):
-                        try:
-                            return float(raw)
-                        except (ValueError, TypeError):
-                            pass
+                    if dt.type.lower() in ("integer", "int", "number", "float", "double", "decimal"):
+                        coerced = _coerce_numeric_example(raw, dt.type.lower())
+                        if coerced is not raw:
+                            return coerced
                     elif dt.type.lower() == "boolean":
                         return raw.lower() in ("true", "yes", "1")
                 return raw
@@ -3890,6 +3933,23 @@ class LegacyConverter:
         """Clean cell value."""
         s = str(val).strip()
         return "" if s.lower() == "nan" else s
+
+    def _is_oas_primitive_name(self, type_name: Any, allow_schema: bool = False) -> bool:
+        """
+        Return True only for actual lowercase OAS primitive literals.
+
+        Named DataTypes such as 'Number', 'Boolean', 'String' must NOT be treated
+        as primitives just because their lowercase form matches an OAS primitive.
+        """
+        if type_name is None:
+            return False
+        raw = str(type_name).strip()
+        if not raw:
+            return True
+        primitives = {"string", "number", "integer", "boolean", "array", "object"}
+        if allow_schema:
+            primitives.add("schema")
+        return raw in primitives
 
     def _close_excel_file(self, excel_file) -> None:
         """Best-effort close for pandas/openpyxl-backed Excel readers."""

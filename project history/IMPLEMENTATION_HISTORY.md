@@ -878,4 +878,11 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Fix**: Hardened workbook and Excel reader cleanup in the legacy converter and standalone schema tracer paths so `$index.xlsx` and endpoint files are explicitly closed after conversion/tracing.
 - **Key Modules**: `src/legacy_converter.py`.
 
+### Build v2.2.28 (2026-04-09)
+- **Fix**: Legacy body example generation now preserves integer-looking `number` examples as integers instead of forcing a trailing `.0`, so values like `day: 1` remain stable from converted templates into generated OAS examples.
+- **Fix**: Named DataTypes such as `Number` and `Boolean` are no longer misclassified as OAS primitives during legacy example/schema resolution, restoring real DataType examples in `Body Example` generation instead of synthetic fallbacks like `0.0`.
+- **Fix**: Final schema collision compaction now promotes the first remaining live variant back to the unsuffixed base name when the original base is absent after pruning, so families like `Number1`, `Number2` collapse to `Number`, `Number1` in emitted converted schemas.
+- **Verification**: Re-converted `setDefaultAgenda.211207` in isolation and confirmed `Body Example` uses `day: 1/5`, resolves `lowerPosition`/`basePosition`/`upperPosition` through `Number`, and emits `Number` as the live base schema name.
+- **Key Modules**: `src/legacy_converter.py`.
+
 
