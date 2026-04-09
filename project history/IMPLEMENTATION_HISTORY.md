@@ -872,4 +872,10 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Verification**: Regenerated the compatibility report using the latest OAS comparison paths from user preferences and confirmed the enum change for `AosIdItem` keeps summary item `[5]` linked across all impacted endpoints.
 - **Key Modules**: `src/oas_diff/generators/compatibility_generator.py`.
 
+### Build v2.2.27 (2026-04-09)
+- **Fix**: Legacy schema tracing now treats digit-ending schemas as base names when the stem without digits does not exist, allowing valid split chains such as `Bic8` -> `Bic81` and restoring variant differences in the tracer output.
+- **Fix**: Legacy converter now emits named schemas such as `Boolean` instead of filtering them out as primitive types solely by case-insensitive comparison, preventing broken `$ref` entries like `#/components/schemas/Boolean`.
+- **Fix**: Hardened workbook and Excel reader cleanup in the legacy converter and standalone schema tracer paths so `$index.xlsx` and endpoint files are explicitly closed after conversion/tracing.
+- **Key Modules**: `src/legacy_converter.py`.
+
 

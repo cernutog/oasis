@@ -212,63 +212,68 @@ class LegacyConverter:
 
     def _collect_data_types_from_file(self, file_path: Path, is_global: bool = False):
         """Collect data types from a single file's 'Data Type' sheet."""
-        xl = pd.ExcelFile(file_path)
-        if "Data Type" not in xl.sheet_names:
-            return
-            
-        df = pd.read_excel(xl, sheet_name="Data Type", dtype=str, header=None)
-        header_keywords = ["name", "type", "description"]
-        header_row_idx = self._find_header_row(df, header_keywords)
-        
-        if header_row_idx == -1:
-            return
-            
-        df.columns = [str(c).strip().lower() for c in df.iloc[header_row_idx]]
-        df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
-        file_key = "$global" if is_global else file_path.name
-        
-        def gv(keywords, default=""):
-            for col in df.columns:
-                if any(kw in str(col).lower() for kw in keywords):
-                    return col
-            return None
+        xl = None
+        try:
+            xl = pd.ExcelFile(file_path)
+            if "Data Type" not in xl.sheet_names:
+                return
 
-        name_c = gv(["name"])
-        desc_c = gv(["description"])
-        type_c = gv(["type"])
-        fmt_c = gv(["format"])
-        items_c = gv(["items data type", "array only"])
-        min_c = gv(["min"])
-        max_c = gv(["max"])
-        reg_c = gv(["regex"])
-        pat_c = gv(["pattern", "eba"])
-        all_c = gv(["allowed value", "allowed"])
-        ex_c = gv(["example"])
-        
-        for _, row in df.iterrows():
-            name = self._clean_value(row.get(name_c, ""))
-            if not name or str(name).lower() == "nan": continue
-            
-            norm_name = self._to_pascal_case(name)
-            dt = DataType(
-                name=norm_name,
-                type=self._clean_value(row.get(type_c, "string")),
-                format=self._clean_value(row.get(fmt_c, "")),
-                min_val=self._clean_value(row.get(min_c, "")),
-                max_val=self._clean_value(row.get(max_c, "")),
-                description=self._clean_value(row.get(desc_c, "")),
-                pattern_eba=self._clean_value(row.get(pat_c, "")),
-                regex=self._clean_value(row.get(reg_c, "")),
-                allowed_values=self._clean_value(row.get(all_c, "")),
-                example=self._clean_value(row.get(ex_c, "")),
-                items_type=self._clean_value(row.get(items_c, "")),
-                source_file=file_key
-            )
-            
-            # Defer registration naming
-            if file_key not in self.raw_data_types:
-                self.raw_data_types[file_key] = {}
-            self.raw_data_types[file_key][norm_name] = dt
+            df = pd.read_excel(xl, sheet_name="Data Type", dtype=str, header=None)
+            header_keywords = ["name", "type", "description"]
+            header_row_idx = self._find_header_row(df, header_keywords)
+
+            if header_row_idx == -1:
+                return
+
+            df.columns = [str(c).strip().lower() for c in df.iloc[header_row_idx]]
+            df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+            file_key = "$global" if is_global else file_path.name
+
+            def gv(keywords, default=""):
+                for col in df.columns:
+                    if any(kw in str(col).lower() for kw in keywords):
+                        return col
+                return None
+
+            name_c = gv(["name"])
+            desc_c = gv(["description"])
+            type_c = gv(["type"])
+            fmt_c = gv(["format"])
+            items_c = gv(["items data type", "array only"])
+            min_c = gv(["min"])
+            max_c = gv(["max"])
+            reg_c = gv(["regex"])
+            pat_c = gv(["pattern", "eba"])
+            all_c = gv(["allowed value", "allowed"])
+            ex_c = gv(["example"])
+
+            for _, row in df.iterrows():
+                name = self._clean_value(row.get(name_c, ""))
+                if not name or str(name).lower() == "nan":
+                    continue
+
+                norm_name = self._to_pascal_case(name)
+                dt = DataType(
+                    name=norm_name,
+                    type=self._clean_value(row.get(type_c, "string")),
+                    format=self._clean_value(row.get(fmt_c, "")),
+                    min_val=self._clean_value(row.get(min_c, "")),
+                    max_val=self._clean_value(row.get(max_c, "")),
+                    description=self._clean_value(row.get(desc_c, "")),
+                    pattern_eba=self._clean_value(row.get(pat_c, "")),
+                    regex=self._clean_value(row.get(reg_c, "")),
+                    allowed_values=self._clean_value(row.get(all_c, "")),
+                    example=self._clean_value(row.get(ex_c, "")),
+                    items_type=self._clean_value(row.get(items_c, "")),
+                    source_file=file_key
+                )
+
+                # Defer registration naming
+                if file_key not in self.raw_data_types:
+                    self.raw_data_types[file_key] = {}
+                self.raw_data_types[file_key][norm_name] = dt
+        finally:
+            self._close_excel_file(xl)
 
     def _register_data_type(self, file_key: str, norm_name: str, dt: DataType):
         """Registers a data type, deduplicating by content and handling name collisions."""
@@ -440,16 +445,14 @@ class LegacyConverter:
         # We handle two distinct cases:
         # 1) Split variants where the base itself ends with digits (e.g. Bic11 -> Bic111)
         # 2) Classic collision naming where the base name is absent (e.g. Foo1/Foo2/...)
-        def _trailing_digit_run_len(s: str) -> int:
-            m = re.search(r'(\d+)$', str(s))
-            return len(m.group(1)) if m else 0
-
         def _find_split_base(name: str, all_names: set) -> Optional[Tuple[str, int]]:
             """If `name` is a split/collision variant of an original schema, return (base_name, suffix_int).
 
-            Handles bases that already end with digits (e.g. Bic11 -> Bic111). To avoid
-            false positives on semantic 1-digit suffix names (e.g. Bic8/Bic81), we only
-            consider digit-ending bases with >=2 trailing digits.
+            Rule:
+            - a digit-ending schema is a valid base when its stem without trailing digits
+              does not exist (e.g. Bic8 is a base because Bic does not exist)
+            - a longer digit-ending schema is a split/variant only when the candidate base
+              exists among known schema names (e.g. Bic81 -> Bic8, Bic111 -> Bic11)
             """
             s = str(name)
             m = re.search(r'(\d+)$', s)
@@ -464,9 +467,6 @@ class LegacyConverter:
                 base = s[:-k]
                 suffix = s[-k:]
                 if base in all_names:
-                    base_digit_len = _trailing_digit_run_len(base)
-                    if base_digit_len == 1:
-                        return None
                     try:
                         return base, int(suffix)
                     except Exception:
@@ -1024,6 +1024,7 @@ class LegacyConverter:
         self.log(f"Analyzing project: {p.name}")
         self.log(f"Reading index: {index_file.name}")
         
+        xl_idx = None
         try:
             xl_idx = pd.ExcelFile(index_file)
             
@@ -1162,6 +1163,7 @@ class LegacyConverter:
                     self.log(f"Warning: Endpoint file {fname} not found, skipping usage mapping.")
                     continue
                 
+                xl_ep = None
                 try:
                     xl_ep = pd.ExcelFile(fpath)
 
@@ -1298,6 +1300,8 @@ class LegacyConverter:
                                         self.schema_usage[dtype].append(usage_str)
                 except Exception as ex:
                     self.log(f"Error reading endpoint {fname}: {ex}")
+                finally:
+                    self._close_excel_file(xl_ep)
 
             # 4. Propagate usages transitively through the schema reference graph.
             # For each schema that has direct usages, BFS through schema_refs to
@@ -1340,6 +1344,8 @@ class LegacyConverter:
         except Exception as e:
             self.log(f"Error during standalone check: {e}")
             return False
+        finally:
+            self._close_excel_file(xl_idx)
     
     def _inject_schema_references(self, folder: Path, index_file: Path, ep_files: list):
         """Create a 'Schema References' sheet in $index.xlsx with merged cells and hyperlinks."""
@@ -1382,6 +1388,7 @@ class LegacyConverter:
         triples.sort(key=_sort_key)
 
         # 4. Open index workbook and create/replace sheet
+        wb = None
         try:
             wb = load_workbook(index_file)
         except Exception as ex:
@@ -1506,9 +1513,12 @@ class LegacyConverter:
                      f"({len(triples)} references for {len(set(t[0] for t in triples))} schemas).")
         except Exception as ex:
             self.log(f"  ERROR saving {index_file.name}: {ex}")
+        finally:
+            self._close_workbook(wb)
 
     def _pre_read_index(self, index_path: Path):
         """Pre-read index to map filenames to operationIds."""
+        xl = None
         try:
             xl = pd.ExcelFile(index_path)
             if "Paths" in xl.sheet_names:
@@ -1548,6 +1558,8 @@ class LegacyConverter:
                                 self.log(f"  WARNING: File '{entry_name}' from index not found in {self.input_dir}")
         except Exception as e:
             self.log(f"Error pre-reading index: {e}")
+        finally:
+            self._close_excel_file(xl)
 
     def _convert_index(self, legacy_path: Path):
         """Convert $index.xlsm or $index.xlsx to $index.xlsx in output."""
@@ -1560,32 +1572,41 @@ class LegacyConverter:
             
         output_path = self.output_dir / "$index.xlsx"
         shutil.copy(master_index, output_path)
-        
-        wb = load_workbook(output_path)
-        xl_legacy = pd.ExcelFile(legacy_path)
-        
-        # 1. General Description
-        self._convert_general_description(wb, xl_legacy)
-        
-        # 2. Paths
-        self._convert_paths(wb, xl_legacy)
-        
-        # 3. Tags
-        self._convert_tags(wb)
-        
-        # 4. Schemas (most complex - builds from Body/Response structures)
-        self._convert_schemas(wb)
-        
-        wb.save(output_path)
-        
-        # Cosmetic Polish
+
+        wb = None
+        xl_legacy = None
         try:
             wb = load_workbook(output_path)
-            for sheet_name in wb.sheetnames:
-                self._autofit_columns(wb[sheet_name])
+            xl_legacy = pd.ExcelFile(legacy_path)
+
+            # 1. General Description
+            self._convert_general_description(wb, xl_legacy)
+
+            # 2. Paths
+            self._convert_paths(wb, xl_legacy)
+
+            # 3. Tags
+            self._convert_tags(wb)
+
+            # 4. Schemas (most complex - builds from Body/Response structures)
+            self._convert_schemas(wb)
+
             wb.save(output_path)
+        finally:
+            self._close_excel_file(xl_legacy)
+            self._close_workbook(wb)
+
+        # Cosmetic Polish
+        polish_wb = None
+        try:
+            polish_wb = load_workbook(output_path)
+            for sheet_name in polish_wb.sheetnames:
+                self._autofit_columns(polish_wb[sheet_name])
+            polish_wb.save(output_path)
         except Exception as e:
             self.log(f"  WARNING: Could not apply cosmetic polish to index: {e}")
+        finally:
+            self._close_workbook(polish_wb)
         self.log(f"  Saved: {output_path.as_posix()}")
 
     def _sync_endpoint_schemas_from_index(self, wb) -> None:
@@ -1601,33 +1622,37 @@ class LegacyConverter:
         if not idx_path.exists():
             return
 
+        wb_idx = None
         try:
             wb_idx = load_workbook(idx_path)
         except Exception:
             return
 
-        if "Schemas" not in wb_idx.sheetnames:
-            return
-        ws_idx = wb_idx["Schemas"]
-
-        rows: List[List[Any]] = []
-        for r in range(1, ws_idx.max_row + 1):
-            row_vals = []
-            for c in range(1, ws_idx.max_column + 1):
-                row_vals.append(ws_idx.cell(row=r, column=c).value)
-            if all(v is None or v == "" for v in row_vals):
-                continue
-            else:
-                rows.append(row_vals)
-
         try:
-            for r in range(1, ws_ep.max_row + 1):
-                for c in range(1, ws_ep.max_column + 1):
-                    ws_ep.cell(row=r, column=c).value = None
-        except Exception:
-            pass
+            if "Schemas" not in wb_idx.sheetnames:
+                return
+            ws_idx = wb_idx["Schemas"]
 
-        self._write_rows(ws_ep, rows, start_row=1)
+            rows: List[List[Any]] = []
+            for r in range(1, ws_idx.max_row + 1):
+                row_vals = []
+                for c in range(1, ws_idx.max_column + 1):
+                    row_vals.append(ws_idx.cell(row=r, column=c).value)
+                if all(v is None or v == "" for v in row_vals):
+                    continue
+                else:
+                    rows.append(row_vals)
+
+            try:
+                for r in range(1, ws_ep.max_row + 1):
+                    for c in range(1, ws_ep.max_column + 1):
+                        ws_ep.cell(row=r, column=c).value = None
+            except Exception:
+                pass
+
+            self._write_rows(ws_ep, rows, start_row=1)
+        finally:
+            self._close_workbook(wb_idx)
     
     def _convert_general_description(self, wb, xl_legacy):
         """Convert General Description sheet."""
@@ -1906,6 +1931,7 @@ class LegacyConverter:
                                 wrapper = self.error_response_fingerprints[fp]
                                 final_rows.extend(extra_blocks)
                                 referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
+
                             else:
                                 # New variant — assign unique name
                                 wrapper = "ErrorResponse"
@@ -1952,6 +1978,8 @@ class LegacyConverter:
                                 final_rows.extend(extra_blocks)
                                 referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
 
+            self._close_excel_file(xl)
+
         # 2a. Transitively expand referenced_data_types: array DataTypes whose
         #     items_type is itself a named DataType (e.g. AosId → AosIdItem)
         #     are not encountered as direct property types in endpoint sheets,
@@ -1983,9 +2011,11 @@ class LegacyConverter:
             # (they were written with proper type=array + children via named_array_key_map)
             if out_name in self.emitted_inline_components: continue
 
-            # RULE: Never create a schema whose name equals an OAS primitive type,
-            # to avoid components named String/Number/Integer/Boolean/Array/Object.
-            if out_name.lower() in {"string", "number", "integer", "boolean", "array", "object"}: continue
+            # Only skip true primitive schema names. Named DataTypes such as
+            # 'Boolean' or 'Number' must still be emitted as components when
+            # they exist in the legacy templates.
+            if out_name in {"string", "number", "integer", "boolean", "array", "object"}:
+                continue
 
             dt = self.global_schemas.get(out_name)
             if not dt: continue
@@ -2266,58 +2296,61 @@ class LegacyConverter:
         shutil.copy(master_ep, output_path)
         
         self.current_ep_name = legacy_path.name
-        
-        wb = load_workbook(output_path)
-        xl = pd.ExcelFile(legacy_path)
-        
-        # Use FILENAME as wrapper base (matching old tool behaviour),
-        # NOT the operationId from the index which may differ.
-        op_id = self._to_wrapper_case(self._extract_wrapper_base(legacy_path.name))
-        
-        status_codes = [s for s in xl.sheet_names if s.isdigit()]
-        
-        # Remove unused response sheets
-        sheets_to_remove = [s for s in wb.sheetnames if s.isdigit() and s not in status_codes]
-        for s in sheets_to_remove:
-            del wb[s]
-        
-        # Create needed response sheets
-        if "Response" in wb.sheetnames:
-            response_tpl = wb["Response"]
-            for code in status_codes:
-                if code not in wb.sheetnames:
-                    new_sheet = wb.copy_worksheet(response_tpl)
-                    new_sheet.title = code
-            del wb["Response"]
-        
-        # 1. Parameters
-        self._convert_parameters(wb, xl)
-        
-        # 2. Body
-        if "Body" in xl.sheet_names:
-            self._convert_body(wb, xl, op_id, legacy_path.name)
-            self._convert_body_example(wb, xl, op_id, legacy_path.name)
-        
-        # 3. Response sheets
-        if status_codes:
-            self._convert_responses(wb, xl, op_id, status_codes, legacy_path.name)
 
-        # (Removed as per request: endpoints should not have Schemas sheet)
-        # try:
-        #     self._sync_endpoint_schemas_from_index(wb)
-        # except Exception:
-        #     pass
-        
-        wb.save(output_path)
-        
-        # Cosmetic Polish
+        wb = None
+        xl = None
         try:
             wb = load_workbook(output_path)
-            for sheet_name in wb.sheetnames:
-                self._autofit_columns(wb[sheet_name])
+            xl = pd.ExcelFile(legacy_path)
+
+            # Use FILENAME as wrapper base (matching old tool behaviour),
+            # NOT the operationId from the index which may differ.
+            op_id = self._to_wrapper_case(self._extract_wrapper_base(legacy_path.name))
+
+            status_codes = [s for s in xl.sheet_names if s.isdigit()]
+
+            # Remove unused response sheets
+            sheets_to_remove = [s for s in wb.sheetnames if s.isdigit() and s not in status_codes]
+            for s in sheets_to_remove:
+                del wb[s]
+
+            # Create needed response sheets
+            if "Response" in wb.sheetnames:
+                response_tpl = wb["Response"]
+                for code in status_codes:
+                    if code not in wb.sheetnames:
+                        new_sheet = wb.copy_worksheet(response_tpl)
+                        new_sheet.title = code
+                del wb["Response"]
+
+            # 1. Parameters
+            self._convert_parameters(wb, xl)
+
+            # 2. Body
+            if "Body" in xl.sheet_names:
+                self._convert_body(wb, xl, op_id, legacy_path.name)
+                self._convert_body_example(wb, xl, op_id, legacy_path.name)
+
+            # 3. Response sheets
+            if status_codes:
+                self._convert_responses(wb, xl, op_id, status_codes, legacy_path.name)
+
             wb.save(output_path)
+        finally:
+            self._close_excel_file(xl)
+            self._close_workbook(wb)
+
+        # Cosmetic Polish
+        polish_wb = None
+        try:
+            polish_wb = load_workbook(output_path)
+            for sheet_name in polish_wb.sheetnames:
+                self._autofit_columns(polish_wb[sheet_name])
+            polish_wb.save(output_path)
         except Exception as e:
             self.log(f"  WARNING: Could not apply cosmetic polish to {filename}: {e}")
+        finally:
+            self._close_workbook(polish_wb)
         self.log(f"  Saved: {output_path.as_posix()}")
     
     def _convert_parameters(self, wb, xl):
@@ -2472,36 +2505,40 @@ class LegacyConverter:
         if not index_path.exists():
             return
 
-        wb = load_workbook(index_path)
-        if "Responses" not in wb.sheetnames:
-            wb.create_sheet("Responses")
-        ws = wb["Responses"]
-
-        rows: List[List[Any]] = []
-        for code in sorted(self.empty_error_responses.keys()):
-            desc = self.empty_error_responses[code]
-            comp = f"ErrorResponse_{code}"
-            example_value = "" if code == "204" else desc
-            rows.extend([
-                ["", comp, "", desc, "", "", "", "", "", "", "", "", "", "", ""],
-                ["", "x-sandbox-request-name", comp, "", "string", "", "", "", "", "", "", "", "", "", ""],
-                ["", "x-sandbox-request-path-params", comp, "", "string", "", "", "", "", "", "", "", "", "", ""],
-                ["", "senderBic", "x-sandbox-request-path-params", "x sandbox request path params", "string", "", "", "", "", "", "", "", "", "", ""],
-                ["content", "text/plain", comp, "", "string", "", "", "", "", "", "", "", "", "", f"TSTBICXX{code}"],
-                ["examples", desc, "text/plain", "Error message", "string", "", "", "", "", "", "", "", "", "", ""],
-                ["examples", "value", desc, "", "string", "", "", "", "", "", "", "", "", "", example_value],
-            ])
-
-        self._write_rows(ws, rows, start_row=2)
-
-        # Cosmetic polish
+        wb = None
         try:
-            self._autofit_columns(ws)
-        except Exception:
-            pass
+            wb = load_workbook(index_path)
+            if "Responses" not in wb.sheetnames:
+                wb.create_sheet("Responses")
+            ws = wb["Responses"]
 
-        wb.save(index_path)
-        self.log(f"  Responses sheet: {len(self.empty_error_responses)} ErrorResponse components written.")
+            rows: List[List[Any]] = []
+            for code in sorted(self.empty_error_responses.keys()):
+                desc = self.empty_error_responses[code]
+                comp = f"ErrorResponse_{code}"
+                example_value = "" if code == "204" else desc
+                rows.extend([
+                    ["", comp, "", desc, "", "", "", "", "", "", "", "", "", "", ""],
+                    ["", "x-sandbox-request-name", comp, "", "string", "", "", "", "", "", "", "", "", "", ""],
+                    ["", "x-sandbox-request-path-params", comp, "", "string", "", "", "", "", "", "", "", "", "", ""],
+                    ["", "senderBic", "x-sandbox-request-path-params", "x sandbox request path params", "string", "", "", "", "", "", "", "", "", "", ""],
+                    ["content", "text/plain", comp, "", "string", "", "", "", "", "", "", "", "", "", f"TSTBICXX{code}"],
+                    ["examples", desc, "text/plain", "Error message", "string", "", "", "", "", "", "", "", "", "", ""],
+                    ["examples", "value", desc, "", "string", "", "", "", "", "", "", "", "", "", example_value],
+                ])
+
+            self._write_rows(ws, rows, start_row=2)
+
+            # Cosmetic polish
+            try:
+                self._autofit_columns(ws)
+            except Exception:
+                pass
+
+            wb.save(index_path)
+            self.log(f"  Responses sheet: {len(self.empty_error_responses)} ErrorResponse components written.")
+        finally:
+            self._close_workbook(wb)
 
     # === Helper Methods ===
     
@@ -3853,6 +3890,33 @@ class LegacyConverter:
         """Clean cell value."""
         s = str(val).strip()
         return "" if s.lower() == "nan" else s
+
+    def _close_excel_file(self, excel_file) -> None:
+        """Best-effort close for pandas/openpyxl-backed Excel readers."""
+        if excel_file is None:
+            return
+        try:
+            close = getattr(excel_file, "close", None)
+            if callable(close):
+                close()
+        except Exception:
+            pass
+        try:
+            book = getattr(excel_file, "book", None)
+            close_book = getattr(book, "close", None)
+            if callable(close_book):
+                close_book()
+        except Exception:
+            pass
+
+    def _close_workbook(self, workbook) -> None:
+        """Best-effort close for openpyxl workbooks."""
+        if workbook is None:
+            return
+        try:
+            workbook.close()
+        except Exception:
+            pass
     
     def _ensure_xlsx_extension(self, filename) -> str:
         """Ensure filename has .xlsx extension."""
