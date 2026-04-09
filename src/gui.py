@@ -589,7 +589,17 @@ class OASGenApp(ctk.CTk):
 
         # Use PanedWindow for resizable Log Console
         self.paned_val = tk.PanedWindow(
-            self.tab_val, orient="vertical", sashrelief="raised", bg="#d0d0d0"
+            self.tab_val,
+            orient="vertical",
+            bd=0,
+            borderwidth=0,
+            sashrelief="flat",
+            sashwidth=6,
+            sashpad=0,
+            showhandle=True,
+            handlesize=7,
+            handlepad=3,
+            bg="#B8B8B8",
         )
         self.paned_val.grid(
             row=3, column=0, columnspan=2, sticky="nsew", padx=5, pady=5
@@ -601,32 +611,96 @@ class OASGenApp(ctk.CTk):
             self.frame_val_content, minsize=200, sticky="nsew", stretch="always"
         )
 
-        self.frame_val_content.grid_columnconfigure(0, weight=1)
-        self.frame_val_content.grid_columnconfigure(1, weight=1)
         self.frame_val_content.grid_rowconfigure(0, weight=0)  # Filter bar (fixed)
         self.frame_val_content.grid_rowconfigure(1, weight=1)  # Content (expand)
+        self.frame_val_content.grid_columnconfigure(0, weight=1)
 
         # Filter bar (row 0)
         self.frame_filters = ctk.CTkFrame(
             self.frame_val_content, height=28, fg_color="transparent"
         )
-        self.frame_filters.grid(
-            row=0, column=0, columnspan=2, sticky="ew", padx=5, pady=(2, 0)
-        )
+        self.frame_filters.grid(row=0, column=0, sticky="ew", padx=5, pady=(2, 0))
+        self.frame_filters.grid_propagate(False)
+        self.frame_filters.grid_columnconfigure(0, weight=1)
+        self.frame_filters.grid_columnconfigure(1, weight=0)
         self.frame_filters.bind("<Configure>", self._handle_filter_resize)
 
-        # Issues list + Chart (row 1)
-        self.frame_list = ctk.CTkScrollableFrame(
-            self.frame_val_content, label_text="Issues List"
-        )
-        self.frame_list.grid(row=1, column=0, sticky="nsew", padx=(0, 5), pady=5)
+        self.frame_filter_buttons = ctk.CTkFrame(self.frame_filters, fg_color="transparent")
+        self.frame_filter_buttons.grid(row=0, column=0, sticky="ew")
 
-        self.frame_chart_container = ctk.CTkFrame(self.frame_val_content)
-        self.frame_chart_container.grid(
-            row=1, column=1, sticky="nsew", padx=(5, 0), pady=5
+        self.frame_val_font = ctk.CTkFrame(self.frame_filters, fg_color="transparent")
+        self.frame_val_font.grid(row=0, column=1, padx=(10, 0), sticky="e")
+        ctk.CTkLabel(self.frame_val_font, text="Font:", font=("Arial", 12)).pack(
+            side="left", padx=(0, 5)
         )
-        self.chart = SemanticPieChart(self.frame_chart_container)
-        self.chart.pack(fill="both", expand=True, padx=10, pady=10)
+        self.slider_validation_font = ctk.CTkSlider(
+            self.frame_val_font,
+            from_=8,
+            to=24,
+            number_of_steps=16,
+            width=140,
+            button_color="#0A809E",
+            progress_color="#0A809E",
+            button_hover_color="#076075",
+            command=self._on_validation_font_size_change,
+        )
+        self.slider_validation_font.pack(side="left", padx=(0, 5))
+        validation_font_size = self.prefs_manager.get("validation_font_size", 11)
+        self._suspend_validation_font_events = True
+        self.slider_validation_font.set(validation_font_size)
+        self._suspend_validation_font_events = False
+        self.lbl_validation_font_size_val = ctk.CTkLabel(
+            self.frame_val_font, text=str(validation_font_size), width=24
+        )
+        self.lbl_validation_font_size_val.pack(side="left")
+
+        # Issues list + Chart (row 1) - resizable horizontal split
+        self.paned_val_main = tk.PanedWindow(
+            self.frame_val_content,
+            orient="horizontal",
+            bd=0,
+            borderwidth=0,
+            sashrelief="flat",
+            sashwidth=4,
+            sashpad=0,
+            showhandle=True,
+            handlesize=5,
+            handlepad=2,
+            bg="#CFCFCF",
+        )
+        self.paned_val_main.grid(row=1, column=0, sticky="nsew", padx=0, pady=0)
+
+        self.frame_list_container = ctk.CTkFrame(
+            self.paned_val_main,
+            fg_color=("#D9D9D9", "#2B2B2B"),
+            border_width=1,
+            border_color="#9A9A9A",
+            corner_radius=0,
+        )
+        self.frame_list_container.grid_rowconfigure(0, weight=1)
+        self.frame_list_container.grid_columnconfigure(0, weight=1)
+        self.frame_list = ctk.CTkScrollableFrame(
+            self.frame_list_container, label_text="Issues List", border_width=0, corner_radius=0
+        )
+        self.frame_list.grid(row=0, column=0, sticky="nsew", padx=1, pady=1)
+        self.paned_val_main.add(
+            self.frame_list_container, minsize=280, sticky="nsew", stretch="always"
+        )
+
+        self.frame_chart_container = ctk.CTkFrame(
+            self.paned_val_main,
+            fg_color=("#D9D9D9", "#2B2B2B"),
+            border_width=1,
+            border_color="#9A9A9A",
+            corner_radius=0,
+        )
+        self.paned_val_main.add(
+            self.frame_chart_container, minsize=260, sticky="nsew", stretch="always"
+        )
+        self.chart = SemanticPieChart(
+            self.frame_chart_container, border_width=0, corner_radius=0
+        )
+        self.chart.pack(fill="both", expand=True, padx=1, pady=1)
 
         # Log Pane (Created but added dynamically)
         self.val_log_frame = ctk.CTkFrame(self.paned_val)  # Container
@@ -1104,6 +1178,154 @@ class OASGenApp(ctk.CTk):
         except (tk.TclError, AttributeError):
             pass
 
+    def _get_validation_font_size(self):
+        try:
+            return int(self.prefs_manager.get("validation_font_size", 11))
+        except Exception:
+            return 11
+
+    def _on_validation_font_size_change(self, value):
+        """Handle font size slider change in Validation tab."""
+        if getattr(self, "_suspend_validation_font_events", False):
+            return
+        font_size = int(value)
+        if font_size == self._get_validation_font_size():
+            if hasattr(self, "lbl_validation_font_size_val"):
+                self.lbl_validation_font_size_val.configure(text=str(font_size))
+            return
+        self.lbl_validation_font_size_val.configure(text=str(font_size))
+        self.prefs_manager.set("validation_font_size", font_size)
+        self.prefs_manager.save()
+        if getattr(self, "last_lint_result", None):
+            self.show_results(self.last_lint_result, fresh_run=False)
+
+    def _render_validation_issue_list(self, details):
+        """Render validation issues using the configured accessibility font size."""
+        for widget in self.frame_list.winfo_children():
+            widget.destroy()
+
+        total_issues = len(details)
+        font_size = self._get_validation_font_size()
+        badge_font_size = max(8, font_size - 1)
+        code_font_size = max(9, font_size)
+        path_font_size = max(8, font_size - 1)
+        line_font_size = max(8, font_size - 1)
+        empty_font_size = max(12, font_size + 5)
+
+        if total_issues == 0:
+            ctk.CTkLabel(
+                self.frame_list,
+                text="No issues found! Great job!",
+                text_color="#0A809E",
+                font=("Arial", empty_font_size),
+            ).pack(pady=20)
+            return
+
+        for item in details:
+            card = ctk.CTkFrame(
+                self.frame_list,
+                border_width=1,
+                border_color="#C0C0C0",
+                fg_color=("#E0E0E0", "#2B2B2B"),
+                corner_radius=6,
+            )
+            card.pack(fill="x", pady=3, padx=2)
+
+            r1 = ctk.CTkFrame(card, fg_color="transparent")
+            r1.pack(fill="x", padx=6, pady=6)
+
+            badge_fg = "gray"
+            badge_text_color = "white"
+            if item["severity"] == "error":
+                badge_fg = "#FF4444"
+            elif item["severity"] == "warning":
+                badge_fg = "#FFBB33"
+                badge_text_color = "black"
+            elif item["severity"] == "info":
+                badge_fg = "#33B5E5"
+
+            ctk.CTkLabel(
+                r1,
+                text=f" {item['severity'].upper()} ",
+                fg_color=badge_fg,
+                text_color=badge_text_color,
+                corner_radius=6,
+                font=("Arial", badge_font_size, "bold"),
+                height=20,
+            ).pack(side="left")
+
+            ctk.CTkLabel(
+                r1,
+                text=item["code"],
+                font=("Arial", code_font_size, "bold"),
+                text_color=("#333333", "#F0F0F0"),
+            ).pack(side="left", padx=8)
+
+            line_num = item["line"]
+            line_btn = ctk.CTkButton(
+                r1,
+                text=f"Line {line_num}",
+                font=("Arial", line_font_size),
+                fg_color="transparent",
+                text_color=("#666666", "#AAAAAA"),
+                hover_color=("#D0D0D0", "#3A3A3A"),
+                border_width=1,
+                border_color=("#BBBBBB", "#555555"),
+                corner_radius=4,
+                width=60,
+                height=20,
+                command=lambda ln=line_num: self._goto_line(ln),
+            )
+            line_btn.pack(side="right")
+
+            if self.current_source_map and item["path"]:
+                source_info = self._resolve_source_file(item["path"])
+                if source_info:
+                    if isinstance(source_info, dict):
+                        filename = source_info.get("file")
+                        sheetname = source_info.get("sheet")
+                    else:
+                        filename = source_info
+                        sheetname = None
+
+                    if filename:
+                        ctk.CTkButton(
+                            r1,
+                            text="Template Sheet",
+                            height=20,
+                            width=100,
+                            fg_color="transparent",
+                            border_width=1,
+                            border_color="#107C41",
+                            text_color="#107C41",
+                            hover_color="#E6F2EA",
+                            font=("Arial", line_font_size, "bold"),
+                            corner_radius=4,
+                            command=lambda f=filename, s=sheetname: self._open_excel_file(f, s),
+                        ).pack(side="right", padx=5)
+
+            if item["path"] and item["path"] != "Root":
+                path_color = ("#555555", "#AAAAAA")
+                ctk.CTkLabel(
+                    card,
+                    text=f"Path: {item['path']}",
+                    text_color=path_color,
+                    font=("Consolas", path_font_size),
+                    anchor="w",
+                    justify="left",
+                    wraplength=350,
+                ).pack(fill="x", padx=5, pady=2)
+
+            ctk.CTkLabel(
+                card,
+                text=item["message"],
+                anchor="w",
+                justify="left",
+                wraplength=350,
+                font=("Arial", font_size),
+                text_color=("#333333", "#FFFFFF"),
+            ).pack(fill="x", padx=5, pady=(0, 5))
+
     def _on_close(self):
         """Handle window close - save geometry and exit."""
         if self.prefs_manager.get("remember_window_pos", True):
@@ -1250,6 +1472,20 @@ class OASGenApp(ctk.CTk):
         if "yaml_word_wrap" in new_prefs:
             try:
                 self.txt_yaml.configure(wrap=("word" if new_prefs["yaml_word_wrap"] else "none"))
+            except Exception:
+                pass
+
+        if "validation_font_size" in new_prefs:
+            try:
+                font_size = int(new_prefs["validation_font_size"])
+                if hasattr(self, "slider_validation_font"):
+                    self._suspend_validation_font_events = True
+                    self.slider_validation_font.set(font_size)
+                    self._suspend_validation_font_events = False
+                if hasattr(self, "lbl_validation_font_size_val"):
+                    self.lbl_validation_font_size_val.configure(text=str(font_size))
+                if getattr(self, "last_lint_result", None):
+                    self.show_results(self.last_lint_result, fresh_run=False)
             except Exception:
                 pass
 
@@ -1826,133 +2062,7 @@ class OASGenApp(ctk.CTk):
             progress_label.configure(text="Building issue list...")
             self.update_idletasks()  # Force label update
         
-        # Populate List - Clear previous cards
-        for widget in self.frame_list.winfo_children():
-            widget.destroy()
-
-        if total_issues == 0:
-            ctk.CTkLabel(
-                self.frame_list,
-                text="No issues found! Great job!",
-                text_color="#0A809E",
-                font=("Arial", 16),
-            ).pack(pady=20)
-        else:
-            for item in details:
-                # Card Frame - RESTORED BOX (Subtle & Elegant)
-                # Tuned for visual comfort: #E0E0E0 prevents the "glare" of pure white
-                card = ctk.CTkFrame(
-                    self.frame_list,
-                    border_width=1,
-                    border_color="#C0C0C0",  # Slightly darker border for definition
-                    fg_color=("#E0E0E0", "#2B2B2B"),  # Calm grey in light mode
-                    corner_radius=6,
-                )
-                card.pack(fill="x", pady=3, padx=2)  # Balanced spacing
-
-                # Row 1: Code + Severity
-                r1 = ctk.CTkFrame(card, fg_color="transparent")
-                r1.pack(fill="x", padx=6, pady=6)
-
-                # SEVERITY BADGE (Colored Label)
-                badge_fg = "gray"
-                badge_text_color = "white"
-                if item["severity"] == "error":
-                    badge_fg = "#FF4444"
-                elif item["severity"] == "warning":
-                    badge_fg = "#FFBB33"
-                    badge_text_color = "black"  # Black text on Yellow for readability
-                elif item["severity"] == "info":
-                    badge_fg = "#33B5E5"
-
-                ctk.CTkLabel(
-                    r1,
-                    text=f" {item['severity'].upper()} ",  # Spaces for padding effect
-                    fg_color=badge_fg,
-                    text_color=badge_text_color,
-                    corner_radius=6,  # Rounded badge
-                    font=("Arial", 10, "bold"),
-                    height=20
-                ).pack(side="left")
-
-                ctk.CTkLabel(
-                    r1,
-                    text=item["code"],
-                    font=("Arial", 11, "bold"),
-                    text_color=("#333333", "#F0F0F0") # Dark in light mode
-                ).pack(
-                    side="left", padx=8
-                )
-
-                # Clickable line number - styled as minimal button
-                line_num = item["line"]
-                line_btn = ctk.CTkButton(
-                    r1,
-                    text=f"Line {line_num}",
-                    font=("Arial", 10),
-                    fg_color="transparent",
-                    text_color=("#666666", "#AAAAAA"),
-                    hover_color=("#D0D0D0", "#3A3A3A"), # Darker than bg for visibility
-                    border_width=1,
-                    border_color=("#BBBBBB", "#555555"),
-                    corner_radius=4,
-                    width=60,
-                    height=20,
-                    command=lambda ln=line_num: self._goto_line(ln),
-                )
-                line_btn.pack(side="right")
-
-                # Excel Link (Moved to Header) - "Open Template"
-                if self.current_source_map and item["path"]:
-                     source_info = self._resolve_source_file(item["path"])
-                     if source_info:
-                         # Handle both string (old) and dict (new) format
-                         if isinstance(source_info, dict):
-                             filename = source_info.get("file")
-                             sheetname = source_info.get("sheet")
-                         else:
-                             filename = source_info
-                             sheetname = None
-
-                         if filename:
-                             ctk.CTkButton(
-                                 r1, # Pack in Row 1
-                                 text="Template Sheet",
-                                 height=20,
-                                 width=100,
-                                 fg_color="transparent",
-                                 border_width=1,          # Thinner 1px
-                                 border_color="#107C41",  # Excel Green
-                                 text_color="#107C41",    
-                                 hover_color="#E6F2EA",  
-                                 font=("Arial", 10, "bold"),
-                                 corner_radius=4,
-                                 command=lambda f=filename, s=sheetname: self._open_excel_file(f, s)
-                             ).pack(side="right", padx=5)
-
-                # Row 2: Path
-                if item["path"] and item["path"] != "Root":
-                    path_color = ("#555555", "#AAAAAA")
-                    ctk.CTkLabel(
-                        card,
-                        text=f"Path: {item['path']}",
-                        text_color=path_color,
-                        font=("Consolas", 10),
-                        anchor="w",
-                        justify="left",
-                        wraplength=350,
-                    ).pack(fill="x", padx=5, pady=2)
-
-                # Row 3: Message
-                ctk.CTkLabel(
-                    card,
-                    text=item["message"],
-                    anchor="w",
-                    justify="left",
-                    wraplength=350,
-                    font=("Arial", 11),
-                    text_color=("#333333", "#FFFFFF") # Standard text color
-                ).pack(fill="x", padx=5, pady=(0, 5))
+        self._render_validation_issue_list(details)
 
         # Force complete rendering of all cards BEFORE closing modal
         # This ensures the "PAM!" effect where everything appears at once
@@ -1972,7 +2082,7 @@ class OASGenApp(ctk.CTk):
 
     def update_filter_buttons(self, code_summary):
         """Create thin color-coded filter buttons from validation categories."""
-        for w in self.frame_filters.winfo_children():
+        for w in self.frame_filter_buttons.winfo_children():
             w.destroy()
         self.filter_buttons = []
         self._last_code_summary = code_summary  # store for CTRL+click
@@ -1993,7 +2103,7 @@ class OASGenApp(ctk.CTk):
                 text_col = "black"
 
             btn = ctk.CTkButton(
-                self.frame_filters,
+                self.frame_filter_buttons,
                 text=f"{code} ({count})",
                 height=22,
                 width=60,
@@ -2071,7 +2181,7 @@ class OASGenApp(ctk.CTk):
             return
 
         self.update_idletasks()
-        available = self.frame_filters.winfo_width() - 20
+        available = self.frame_filter_buttons.winfo_width() - 20
 
         # Estimate total width needed for full labels
         total_req = sum(

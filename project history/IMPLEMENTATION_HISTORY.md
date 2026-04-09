@@ -885,4 +885,12 @@ v1.2.2 consolidates these fixes into a stable release, verified by both automate
 - **Verification**: Re-converted `setDefaultAgenda.211207` in isolation and confirmed `Body Example` uses `day: 1/5`, resolves `lowerPosition`/`basePosition`/`upperPosition` through `Number`, and emits `Number` as the live base schema name.
 - **Key Modules**: `src/legacy_converter.py`.
 
+### Build v2.2.29 (2026-04-09)
+- **Feature**: Validation accessibility controls. Added a dedicated font-size slider for the Issues panel directly in the Validation filter bar, persisted it through preferences, and exposed the same setting in the Preferences dialog with a `8..24` range.
+- **Feature**: Resizable Validation split. Replaced the fixed side-by-side layout with a draggable horizontal sash between the Issues panel and the validation chart, plus matching styling refinements for the Spectral output separator.
+- **Refinement**: Validation panel styling. Tuned sash appearance, stabilized the filter-bar height on first open, and adjusted panel wrappers/insets so the Issues and chart areas render with a cleaner, more uniform frame layout.
+- **Fix**: Prevented repeated `Check Complete` log spam while resizing by avoiding unnecessary issue-list rerenders when the validation font size callback receives the current value again.
+- **Feature**: Added a safe legacy helper utility at `utilities/normalize_legacy_example_separators.py` to normalize comma-vs-semicolon example separators only for high-confidence legacy `Data Type` cases, while reporting ambiguous rows instead of auto-changing them.
+- **Key Modules**: `src/gui.py`, `src/preferences.py`, `src/preferences_dialog.py`, `utilities/normalize_legacy_example_separators.py`.
+
 

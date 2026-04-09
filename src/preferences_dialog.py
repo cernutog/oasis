@@ -294,6 +294,26 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_ignore_br.pack(anchor="w", padx=20, pady=(10, 20))
 
+        frame_val_font = ctk.CTkFrame(self.tab_val, fg_color="transparent")
+        frame_val_font.pack(anchor="w", padx=20, pady=(0, 20))
+        ctk.CTkLabel(frame_val_font, text="Issues Font Size:").pack(side="left", padx=(0, 10))
+        self.slider_validation_font = ctk.CTkSlider(
+            frame_val_font,
+            from_=8,
+            to=24,
+            number_of_steps=16,
+            width=150,
+            button_color="#0A809E",
+            progress_color="#0A809E",
+            button_hover_color="#076075",
+        )
+        self.slider_validation_font.pack(side="left")
+        self.lbl_validation_font_val = ctk.CTkLabel(frame_val_font, text="11", width=30)
+        self.lbl_validation_font_val.pack(side="left", padx=(5, 0))
+        self.slider_validation_font.configure(
+            command=lambda v: self.lbl_validation_font_val.configure(text=str(int(v)))
+        )
+
 
         # === 5. VIEW TAB ===
         ctk.CTkLabel(self.tab_view, text="Theme:").grid(row=0, column=0, sticky="w", padx=(10, 10), pady=10)
@@ -310,7 +330,16 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.frame_font = ctk.CTkFrame(self.tab_view, fg_color="transparent")
         self.frame_font.grid(row=2, column=1, sticky="w", pady=10)
         
-        self.slider_font = ctk.CTkSlider(self.frame_font, from_=8, to=20, number_of_steps=12, width=150)
+        self.slider_font = ctk.CTkSlider(
+            self.frame_font,
+            from_=8,
+            to=24,
+            number_of_steps=16,
+            width=150,
+            button_color="#0A809E",
+            progress_color="#0A809E",
+            button_hover_color="#076075",
+        )
         self.slider_font.pack(side="left")
         self.lbl_font_val = ctk.CTkLabel(self.frame_font, text="12", width=30)
         self.lbl_font_val.pack(side="left", padx=(5, 0))
@@ -477,6 +506,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         engine = prefs.get("linter_engine", "spectral").capitalize()
         if engine in ["Spectral", "Vacuum"]: self.cbo_linter_engine.set(engine)
         if prefs.get("ignore_bad_request", True): self.chk_ignore_br.select()
+        else: self.chk_ignore_br.deselect()
+        self.slider_validation_font.set(prefs.get("validation_font_size", 11))
+        self.lbl_validation_font_val.configure(text=str(prefs.get("validation_font_size", 11)))
 
         # View
         theme = prefs.get("yaml_theme", "oas-dark")
@@ -630,6 +662,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             # Validation
             "linter_engine": self.cbo_linter_engine.get().lower(),
             "ignore_bad_request": bool(self.chk_ignore_br.get()),
+            "validation_font_size": int(self.slider_validation_font.get()),
             
             # View
             "yaml_theme": self.cbo_theme.get(),
@@ -694,6 +727,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         
         self.chk_ignore_br.select()
         self.cbo_linter_engine.set("Spectral")
+        self.slider_validation_font.set(11)
+        self.lbl_validation_font_val.configure(text="11")
         
         self.cbo_theme.set("oas-dark")
         self.cbo_font.set("Consolas")

@@ -48,6 +48,7 @@ class PreferencesManager:
         "default_tab": "OAS Generation",  # OAS Generation, Validation, View
         "linter_engine": "spectral",  # spectral or vacuum
         "ignore_bad_request": True,
+        "validation_font_size": 11,
         "remember_window_pos": False,
         "window_geometry": None,  # "WxH+X+Y" format
         # Documentation Viewer
