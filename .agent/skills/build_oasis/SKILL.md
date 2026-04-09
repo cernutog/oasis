@@ -50,7 +50,7 @@ The `build_exe.bat` script **automatically increments** the build number:
 # 🛑 MANDATORY POST-BUILD STEPS (DO NOT IGNORE)
 
 > [!IMPORTANT]
-> **YOU MUST COMMIT IMMEDIATELY AFTER A SUCCESSFUL BUILD.**
+> **YOU MUST COMMIT AND PUSH IMMEDIATELY AFTER A SUCCESSFUL BUILD.**
 > Failure to do so results in version drift and untracked changes in the release history. 
 > 
 > **FOLLOW THESE STEPS PRECISELY:**
@@ -66,5 +66,10 @@ The `build_exe.bat` script **automatically increments** the build number:
 >     git commit -m "Build v1.8.XXX: <Description of changes>"
 >     ```
 > 
-> 3.  **Verify History**:
+> 3.  **Push the committed build immediately**:
+>     ```powershell
+>     git push origin master
+>     ```
+> 
+> 4.  **Verify History**:
 >     Ensure `IMPLEMENTATION_HISTORY.md` has been updated with the corresponding build number BEFORE committing.

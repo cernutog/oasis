@@ -89,4 +89,7 @@ temp_*/
 # Local verification outputs and diagnostic artefacts (never commit)
 tmp/
 tmp/**
+.claude/
+Output_Test_Reports/
+.agent/skills/build_oasis/image.png
 
