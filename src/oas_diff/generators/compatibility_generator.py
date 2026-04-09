@@ -46,6 +46,12 @@ class CompatibilityDocxGenerator:
         tblHeader = get_or_add_child(trPr, 'w:tblHeader', [])
         return row
 
+    def _normalize_issue_value(self, value):
+        """Keep issue keys stable between summary and detail rendering."""
+        if isinstance(value, list):
+            return ", ".join(map(str, value))
+        return str(value) if value is not None else "<None>"
+
     """
     Generates a Word Document (.docx) detailing Interface Compatibility issues.
     """
@@ -117,17 +123,8 @@ class CompatibilityDocxGenerator:
         # Calculate frequency and collect for summary
         freq = {}
         for issue in self.issues:
-            # Clean representation for lists (Enums)
-            if isinstance(issue.old_value, list):
-                v1 = ", ".join(map(str, issue.old_value))
-            else:
-                v1 = str(issue.old_value) if issue.old_value is not None else "<None>"
-                
-            if isinstance(issue.new_value, list):
-                v2 = ", ".join(map(str, issue.new_value))
-            else:
-                v2 = str(issue.new_value) if issue.new_value is not None else "<None>"
-            
+            v1 = self._normalize_issue_value(issue.old_value)
+            v2 = self._normalize_issue_value(issue.new_value)
             key = (issue.issue_type, issue.details, v1, v2)
             freq[key] = freq.get(key, 0) + 1
              
@@ -257,8 +254,8 @@ class CompatibilityDocxGenerator:
                 # Details column — each issue gets its own paragraph
                 cell = row_cells[3]
                 for idx, issue in enumerate(group):
-                    v1 = str(issue.old_value) if issue.old_value is not None else "<None>"
-                    v2 = str(issue.new_value) if issue.new_value is not None else "<None>"
+                    v1 = self._normalize_issue_value(issue.old_value)
+                    v2 = self._normalize_issue_value(issue.new_value)
                     
                     key_tuple = (issue.issue_type, issue.details, v1, v2)
                     s_idx = issue_id_map.get(key_tuple, "")
@@ -300,11 +297,7 @@ class CompatibilityDocxGenerator:
                         p_new.add_run("New:").bold = True
                         p_new.add_run(" ")
                         
-                        # Convert lists to strings for diffing (e.g. for enums)
-                        val1 = ", ".join(map(str, issue.old_value)) if isinstance(issue.old_value, list) else v1
-                        val2 = ", ".join(map(str, issue.new_value)) if isinstance(issue.new_value, list) else v2
-                        
-                        self._render_rich_diff(p_old, p_new, val1, val2)
+                        self._render_rich_diff(p_old, p_new, v1, v2)
                     
                     # Space between issues in same cell
                     if idx < len(group) - 1:
