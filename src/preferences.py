@@ -56,6 +56,10 @@ class PreferencesManager:
         
         # Tools Settings
         "tools_legacy_capitalize_schema_names": True,
+        "tools_legacy_contact_name": "",
+        "tools_legacy_contact_url": "",
+        "tools_legacy_release": "",
+        "tools_legacy_filename_pattern": "",
         
         # OAS Diff Settings
         "diff_old_spec": "",

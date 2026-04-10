@@ -279,6 +279,30 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_legacy_capitalize_schemas.pack(anchor="w", padx=20, pady=(3, 6))
 
+        self.frame_legacy_contact_name = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_contact_name.pack(fill="x", padx=20, pady=(8, 4))
+        ctk.CTkLabel(self.frame_legacy_contact_name, text="Contact name:", width=140, anchor="w").pack(side="left")
+        self.entry_legacy_contact_name = ctk.CTkEntry(self.frame_legacy_contact_name)
+        self.entry_legacy_contact_name.pack(side="left", fill="x", expand=True)
+
+        self.frame_legacy_contact_url = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_contact_url.pack(fill="x", padx=20, pady=(3, 6))
+        ctk.CTkLabel(self.frame_legacy_contact_url, text="Contact URL:", width=140, anchor="w").pack(side="left")
+        self.entry_legacy_contact_url = ctk.CTkEntry(self.frame_legacy_contact_url)
+        self.entry_legacy_contact_url.pack(side="left", fill="x", expand=True)
+
+        self.frame_legacy_release = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_release.pack(fill="x", padx=20, pady=(3, 4))
+        ctk.CTkLabel(self.frame_legacy_release, text="Release:", width=140, anchor="w").pack(side="left")
+        self.entry_legacy_release = ctk.CTkEntry(self.frame_legacy_release)
+        self.entry_legacy_release.pack(side="left", fill="x", expand=True)
+
+        self.frame_legacy_filename_pattern = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_filename_pattern.pack(fill="x", padx=20, pady=(3, 6))
+        ctk.CTkLabel(self.frame_legacy_filename_pattern, text="Filename pattern:", width=140, anchor="w").pack(side="left")
+        self.entry_legacy_filename_pattern = ctk.CTkEntry(self.frame_legacy_filename_pattern)
+        self.entry_legacy_filename_pattern.pack(side="left", fill="x", expand=True)
+
 
         # === 4. VALIDATION TAB ===
         frame_linter = ctk.CTkFrame(self.tab_val, fg_color="transparent")
@@ -533,6 +557,14 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_collision_desc.set(prefs.get("tools_legacy_collision_include_descriptions", False))
         self.var_legacy_collision_examples.set(prefs.get("tools_legacy_collision_include_examples", False))
         self.var_legacy_capitalize_schemas.set(prefs.get("tools_legacy_capitalize_schema_names", True))
+        self.entry_legacy_contact_name.delete(0, "end")
+        self.entry_legacy_contact_name.insert(0, prefs.get("tools_legacy_contact_name", ""))
+        self.entry_legacy_contact_url.delete(0, "end")
+        self.entry_legacy_contact_url.insert(0, prefs.get("tools_legacy_contact_url", ""))
+        self.entry_legacy_release.delete(0, "end")
+        self.entry_legacy_release.insert(0, prefs.get("tools_legacy_release", ""))
+        self.entry_legacy_filename_pattern.delete(0, "end")
+        self.entry_legacy_filename_pattern.insert(0, prefs.get("tools_legacy_filename_pattern", ""))
 
 
         # OAS Comparison
@@ -679,6 +711,10 @@ class PreferencesDialog(ctk.CTkToplevel):
             
             # Tools
             "tools_legacy_capitalize_schema_names": self.var_legacy_capitalize_schemas.get(),
+            "tools_legacy_contact_name": self.entry_legacy_contact_name.get().strip(),
+            "tools_legacy_contact_url": self.entry_legacy_contact_url.get().strip(),
+            "tools_legacy_release": self.entry_legacy_release.get().strip(),
+            "tools_legacy_filename_pattern": self.entry_legacy_filename_pattern.get().strip(),
             
             # OAS Comparison
             "diff_template_synthesis": self.entry_tmpl_syn.get(),
@@ -744,3 +780,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_tracing.set(True)
         self.var_legacy_collision_desc.set(False)
         self.var_legacy_collision_examples.set(False)
+        self.var_legacy_capitalize_schemas.set(True)
+        self.entry_legacy_contact_name.delete(0, "end")
+        self.entry_legacy_contact_url.delete(0, "end")
+        self.entry_legacy_release.delete(0, "end")
+        self.entry_legacy_filename_pattern.delete(0, "end")

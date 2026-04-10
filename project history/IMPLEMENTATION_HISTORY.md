@@ -18,6 +18,18 @@
 
 ## Lessons Learned
 
+### 2026-04-10 - Legacy Converter: Preference Injection and Collision-Safe Example Promotion
+
+- Added `Templates > Legacy Tools` preferences for injecting missing `$index.xlsx` `General Description` values generated from legacy templates:
+  - `Contact name`
+  - `Contact URL`
+  - `Release`
+  - `Filename pattern`
+- The legacy converter now writes these values into the converted `$index.xlsx` when the legacy source does not provide them, preventing downstream `info.contact` and related warnings.
+- Fixed schema compaction so semantically numbered base names such as `BIC8` are not incorrectly renamed to `BIC` unless an unsuffixed historical base actually existed.
+- Fixed post-compaction registry alignment so endpoint-specific schema mappings keep pointing to the correct merged `DataType` after rename/compaction.
+- Introduced collision-safe example promotion: when examples are excluded from the fingerprint and a canonical merged schema has no example, the converter now promotes the first fully valid example set from a compatible variant instead of falling back to synthetic placeholder values like `string`.
+
 ### 2026-04-10 - External Files Must Be Backed Up Before Any Edit
 
 - A recovery incident occurred after modifying legacy `.xlsm` templates in an external folder that was not inside the project workspace and not protected by Git history.

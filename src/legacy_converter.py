@@ -49,6 +49,10 @@ class LegacyConverter:
         include_descriptions_in_collision: bool = False,
         include_examples_in_collision: bool = False,
         capitalize_schema_names: bool = True,
+        contact_name: str = "",
+        contact_url: str = "",
+        release: str = "",
+        filename_pattern: str = "",
     ):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
@@ -62,6 +66,10 @@ class LegacyConverter:
         self.include_descriptions_in_collision = bool(include_descriptions_in_collision)
         self.include_examples_in_collision = bool(include_examples_in_collision)
         self.capitalize_schema_names = bool(capitalize_schema_names)
+        self.contact_name = str(contact_name or "").strip()
+        self.contact_url = str(contact_url or "").strip()
+        self.release = str(release or "").strip()
+        self.filename_pattern = str(filename_pattern or "").strip()
         
         # Internal registry
         self.global_schemas: Dict[str, DataType] = {} # out_name -> DataType
@@ -322,6 +330,14 @@ class LegacyConverter:
             try:
                 canon = self.global_schemas.get(out_name)
                 if canon:
+                    if (not self.include_examples_in_collision
+                        and not (canon.example or "").strip()
+                        and self._is_valid_example_set(dt, dt.example)):
+                        # Promote the first valid example set encountered into the canonical
+                        # registry entry when examples are excluded from the collision
+                        # fingerprint. This keeps the consolidated $index and all downstream
+                        # example generation aligned without changing collision grouping.
+                        canon.example = (dt.example or "").strip()
                     if not self.include_descriptions_in_collision:
                         desc_in = (dt.description or "").strip()
                         desc_can = (canon.description or "").strip()
@@ -349,6 +365,100 @@ class LegacyConverter:
         self.fingerprints[fingerprint] = output_name
         self.output_names[mapping_key] = output_name
         return output_name
+
+    def _is_valid_example_set(self, dt: Optional[DataType], example_text: Any) -> bool:
+        """Return True when every ';'-separated example token is valid for the DataType."""
+        if dt is None:
+            return False
+        raw = str(example_text or "").strip()
+        if not raw or raw.lower() == "nan":
+            return False
+        tokens = [tok.strip() for tok in raw.split(";") if tok and str(tok).strip()]
+        if not tokens:
+            return False
+        return all(self._is_valid_example_token(dt, token) for token in tokens)
+
+    def _is_valid_example_token(self, dt: DataType, token: str) -> bool:
+        """Validate a single example token against the DataType constraints."""
+        val = str(token or "").strip()
+        if not val:
+            return False
+
+        allowed_raw = str(dt.allowed_values or "").strip()
+        if allowed_raw and allowed_raw.lower() != "nan":
+            allowed = [p.strip() for p in re.split(r"[;,]", allowed_raw) if p.strip()]
+            if allowed and val not in allowed:
+                return False
+
+        regex_raw = str(dt.regex or "").strip()
+        if regex_raw and regex_raw.lower() != "nan":
+            try:
+                if re.fullmatch(regex_raw, val) is None:
+                    return False
+            except re.error:
+                # Ignore malformed regex values here rather than rejecting otherwise
+                # useful examples.
+                pass
+
+        type_lower = str(dt.type or "string").strip().lower()
+        min_raw = str(dt.min_val or "").strip()
+        max_raw = str(dt.max_val or "").strip()
+
+        if type_lower in ("integer", "int"):
+            try:
+                intval = int(val.replace(",", "."))
+            except Exception:
+                return False
+            if min_raw and min_raw.lower() != "nan":
+                try:
+                    if intval < int(float(min_raw.replace(",", "."))):
+                        return False
+                except Exception:
+                    pass
+            if max_raw and max_raw.lower() != "nan":
+                try:
+                    if intval > int(float(max_raw.replace(",", "."))):
+                        return False
+                except Exception:
+                    pass
+            return True
+
+        if type_lower in ("number", "float", "double", "decimal"):
+            try:
+                numval = float(val.replace(",", "."))
+            except Exception:
+                return False
+            if min_raw and min_raw.lower() != "nan":
+                try:
+                    if numval < float(min_raw.replace(",", ".")):
+                        return False
+                except Exception:
+                    pass
+            if max_raw and max_raw.lower() != "nan":
+                try:
+                    if numval > float(max_raw.replace(",", ".")):
+                        return False
+                except Exception:
+                    pass
+            return True
+
+        if type_lower == "boolean":
+            return val.lower() in ("true", "false", "yes", "no", "1", "0")
+
+        # Default string validation: length constraints.
+        if min_raw and min_raw.lower() != "nan":
+            try:
+                if len(val) < int(float(min_raw.replace(",", "."))):
+                    return False
+            except Exception:
+                pass
+        if max_raw and max_raw.lower() != "nan":
+            try:
+                if len(val) > int(float(max_raw.replace(",", "."))):
+                    return False
+            except Exception:
+                pass
+        return True
 
     def _record_merge_provenance(self, out_name: str, field: str, value: str, file_key: str) -> None:
         if not out_name or not field or value is None:
@@ -1701,7 +1811,18 @@ class LegacyConverter:
         for key, (row, col) in mappings.items():
             if key in kv_map:
                 ws.cell(row=row, column=col).value = kv_map[key]
-        
+
+        # Legacy templates often lack these keys entirely; inject from preferences
+        # so the converted $index.xlsx can satisfy downstream info.contact checks.
+        if self.contact_name:
+            ws.cell(row=5, column=2).value = self.contact_name
+        if self.contact_url:
+            ws.cell(row=6, column=2).value = self.contact_url
+        if self.release:
+            ws.cell(row=9, column=2).value = self.release
+        if self.filename_pattern:
+            ws.cell(row=10, column=2).value = self.filename_pattern
+
         # Servers
         if "servers url" in kv_map:
             server_rows = [7, 8]
@@ -2133,10 +2254,23 @@ class LegacyConverter:
         # Decide rename mapping
         rename_map: Dict[str, str] = {}
         used_after: set = set(names_in_blocks)
+        # Keep memory of names that existed before reachability pruning / final
+        # compaction. This lets us distinguish:
+        # - true collision families where an unsuffixed base really existed
+        # - semantic numeric names such as BIC8, where "BIC" never existed and
+        #   therefore must NOT be synthesized during compaction
+        historical_names: set = (
+            set(self.global_schemas.keys())
+            | set(self.emitted_wrappers)
+            | set(self.emitted_inline_components)
+            | set(self.inline_component_fingerprint_by_name.keys())
+            | set(names_in_blocks)
+        )
         for stem, info in stem_map.items():
             if not info.get("nums"):
                 continue
             has_base = bool(info.get("base")) and stem in used_after
+            had_base_before_pruning = stem in historical_names
             nums = sorted(set(info.get("nums") or []))
             existing_variant_names = [f"{stem}{n}" for n in nums if f"{stem}{n}" in used_after]
 
@@ -2151,8 +2285,13 @@ class LegacyConverter:
                     )
                 )
             else:
+                if not had_base_before_pruning:
+                    # Semantic numeric names (e.g. BIC8 when BIC never existed)
+                    # are valid bases and must keep their original name.
+                    continue
                 # When the unsuffixed base is no longer reachable/emitted, compact the
-                # remaining variants so the first live variant becomes the base name.
+                # remaining variants so the first live variant becomes the base name,
+                # but only for families whose unsuffixed base really existed.
                 # Example: Number1, Number2 -> Number, Number1
                 target_names = [stem] + [f"{stem}{i}" for i in range(1, len(existing_variant_names))]
                 rename_pairs = list(zip(existing_variant_names, target_names))
@@ -2173,8 +2312,13 @@ class LegacyConverter:
             # Keep registries aligned for tracing / later lookups
             try:
                 for old_nm, new_nm in rename_map.items():
-                    if old_nm in self.global_schemas and new_nm not in self.global_schemas:
-                        self.global_schemas[new_nm] = self.global_schemas.pop(old_nm)
+                    if old_nm in self.global_schemas:
+                        moved_dt = self.global_schemas.pop(old_nm)
+                        # Always overwrite the destination slot: a stale pruned schema with
+                        # the compacted name may still exist in the registry, but endpoint
+                        # mappings must resolve to the renamed live DataType content.
+                        moved_dt.name = new_nm
+                        self.global_schemas[new_nm] = moved_dt
                 self.used_names = {rename_map.get(nm, nm) for nm in self.used_names}
                 self.output_names = {
                     key: rename_map.get(out_name, out_name)

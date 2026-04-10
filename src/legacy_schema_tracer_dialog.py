@@ -175,6 +175,15 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
             if self.prefs_manager:
                 include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
                 include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
+                contact_name = str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip()
+                contact_url = str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip()
+                release = str(self.prefs_manager.get("tools_legacy_release", "") or "").strip()
+                filename_pattern = str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip()
+            else:
+                contact_name = ""
+                contact_url = ""
+                release = ""
+                filename_pattern = ""
 
             converter = LegacyConverter(
                 path,
@@ -182,6 +191,10 @@ class LegacySchemaTracerDialog(ctk.CTkToplevel):
                 log_callback=self._log,
                 include_descriptions_in_collision=include_desc,
                 include_examples_in_collision=include_ex,
+                contact_name=contact_name,
+                contact_url=contact_url,
+                release=release,
+                filename_pattern=filename_pattern,
             )
             inject_refs = self.inject_refs_var.get()
             success = converter.run_standalone_check(path, inject_refs=inject_refs)

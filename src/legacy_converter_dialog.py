@@ -362,6 +362,15 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
                 include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
                 capitalize_schemas = bool(self.prefs_manager.get("tools_legacy_capitalize_schema_names", True))
+                contact_name = str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip()
+                contact_url = str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip()
+                release = str(self.prefs_manager.get("tools_legacy_release", "") or "").strip()
+                filename_pattern = str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip()
+            else:
+                contact_name = ""
+                contact_url = ""
+                release = ""
+                filename_pattern = ""
 
             converter = LegacyConverter(
                 src,
@@ -370,6 +379,10 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 include_descriptions_in_collision=include_desc,
                 include_examples_in_collision=include_ex,
                 capitalize_schema_names=capitalize_schemas,
+                contact_name=contact_name,
+                contact_url=contact_url,
+                release=release,
+                filename_pattern=filename_pattern,
             )
             success = converter.convert(tracing_enabled=tracing)
             
