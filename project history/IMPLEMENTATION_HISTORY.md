@@ -16,6 +16,15 @@
 
 ---
 
+## Lessons Learned
+
+### 2026-04-10 - External Files Must Be Backed Up Before Any Edit
+
+- A recovery incident occurred after modifying legacy `.xlsm` templates in an external folder that was not inside the project workspace and not protected by Git history.
+- Even when the intended data changes are correct, direct in-place edits on non-versioned user assets create unacceptable recovery risk and can cost significant time.
+- Project rule reinforced: before any modification of files outside the repository, or any files not covered by Git versioning, create an explicit backup or snapshot first and keep its location known before proceeding with the edit.
+
+---
 
 ## Problem Statement
 Custom OpenAPI extensions (`x-sandbox-*`) in the Excel source use YAML literal block style (`|`) for multiline content. When generating the OAS YAML, these extensions were being:
