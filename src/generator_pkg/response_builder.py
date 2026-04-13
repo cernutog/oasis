@@ -122,81 +122,100 @@ def build_schema_from_flat_table(df, version: str, components_schemas: dict = No
     """
     df.columns = df.columns.str.strip()
 
-    nodes = {}
+    nodes_by_idx = {}
+    ordered_nodes = []
     roots = []
+    last_seen = {}
 
     for idx, row in df.iterrows():
         name = get_name(row)
         if pd.isna(name):
             continue
         name = str(name).strip()
+        if not name:
+            continue
+
+        raw_parent = get_parent(row)
+        parent_name = None
+        if pd.notna(raw_parent):
+            parent_candidate = str(raw_parent).strip()
+            if parent_candidate:
+                parent_name = parent_candidate
+
+        parent_idx = None
+        if parent_name:
+            parent_idx = last_seen.get(parent_name)
+            if parent_idx is None:
+                m = re.match(r"(.+)\[(\d+)\]$", parent_name)
+                if m:
+                    parent_idx = last_seen.get(m.group(1))
 
         node = {
+            "idx": idx,
             "name": name,
             "type": get_type(row),
             "description": get_description(row),
-            "parent": get_parent(row),
+            "parent": parent_name,
+            "parent_idx": parent_idx,
             "mandatory": str(
                 get_col_value(row, ["Mandatory", "Required"]) or ""
             ).lower()
             in ["yes", "y", "true", "m"],
-            "schema_obj": map_type_to_schema(row, version, is_node=True, components_schemas=components_schemas),
+            "schema_obj": map_type_to_schema(
+                row, version, is_node=True, components_schemas=components_schemas
+            ),
         }
 
-        nodes[name] = node
+        nodes_by_idx[idx] = node
+        ordered_nodes.append(node)
+        last_seen[name] = idx
 
-    # Build Tree
-    for name, node in nodes.items():
-        parent_name = node["parent"]
+    # Build Tree using the nearest preceding parent occurrence.
+    for node in ordered_nodes:
+        name = node["name"]
+        parent_idx = node["parent_idx"]
 
-        if pd.isna(parent_name) or str(parent_name).strip() == "":
+        if parent_idx is None:
             roots.append(node)
-        else:
-            parent_name = str(parent_name).strip()
-            if parent_name in nodes:
-                parent = nodes[parent_name]
-                parent_schema = parent["schema_obj"]
+            continue
 
-                if parent_schema.get("type") == "array":
-                    # Handle Array of Objects
-                    items = parent_schema.get("items", {})
-                    is_object_array = isinstance(items, dict) and (
-                        items.get("type") == "object" or "properties" in items
-                    )
+        parent = nodes_by_idx[parent_idx]
+        parent_schema = parent["schema_obj"]
 
-                    if is_object_array:
-                        if "properties" not in items:
-                            items["properties"] = {}
-                        items["properties"][name] = node["schema_obj"]
+        if parent_schema.get("type") == "array":
+            # Arrays in legacy flat sheets describe item properties as siblings under the array name.
+            items = parent_schema.get("items", {})
+            is_object_array = isinstance(items, dict) and (
+                items.get("type") == "object" or "properties" in items
+            )
 
-                        # Handle Required for Items
-                        if node["mandatory"]:
-                            if "required" not in items:
-                                items["required"] = []
-                            if name not in items["required"]:
-                                items["required"].append(name)
+            if is_object_array:
+                if "properties" not in items:
+                    items["properties"] = {}
+                items["properties"][name] = node["schema_obj"]
 
-                        parent_schema["items"] = items
-                    else:
-                        # Overwrite items
-                        parent_schema["items"] = node["schema_obj"]
-                else:
-                    if "properties" not in parent_schema:
-                        parent_schema["properties"] = {}
-                    parent_schema["properties"][name] = node["schema_obj"]
+                if node["mandatory"]:
+                    if "required" not in items:
+                        items["required"] = []
+                    if name not in items["required"]:
+                        items["required"].append(name)
 
-                    # Handle Required
-                    if node["mandatory"]:
-                        if "required" not in parent_schema:
-                            parent_schema["required"] = []
-                        if name not in parent_schema["required"]:
-                            parent_schema["required"].append(name)
+                parent_schema["items"] = items
             else:
-                # Parent not in nodes. Treat as Root.
-                roots.append(node)
+                parent_schema["items"] = node["schema_obj"]
+        else:
+            if "properties" not in parent_schema:
+                parent_schema["properties"] = {}
+            parent_schema["properties"][name] = node["schema_obj"]
+
+            if node["mandatory"]:
+                if "required" not in parent_schema:
+                    parent_schema["required"] = []
+                if name not in parent_schema["required"]:
+                    parent_schema["required"].append(name)
 
     # Re-order 'example' and 'examples' to be the LAST keys
-    for name, node in nodes.items():
+    for node in ordered_nodes:
         schema = node["schema_obj"]
 
         ex = schema.pop("example", None)

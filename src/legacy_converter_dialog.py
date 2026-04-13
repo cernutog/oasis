@@ -82,6 +82,135 @@ class CleanFolderDialog(ctk.CTkToplevel):
         self.choice = choice
         self.destroy()
 
+
+class LegacyConversionMetadataDialog(ctk.CTkToplevel):
+    """Allows per-run override of legacy metadata sourced from preferences."""
+
+    def __init__(self, parent, initial_values=None):
+        super().__init__(parent)
+        self.initial_values = dict(initial_values or {})
+        self.result = None
+        self.var_save_preferences = ctk.BooleanVar(value=False)
+
+        self.title("Conversion Metadata")
+        self.geometry("780x430")
+        self.minsize(720, 380)
+        self.resizable(True, True)
+
+        self.update_idletasks()
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() // 2) - 350
+            y = parent.winfo_y() + (parent.winfo_height() // 2) - 170
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except Exception:
+            pass
+
+        self.transient(parent)
+        self.grab_set()
+
+        icon_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icon.ico")
+        if os.path.exists(icon_path):
+            try:
+                self.after(200, lambda: self.iconbitmap(icon_path))
+            except Exception:
+                pass
+
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+    def _build_ui(self):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        content = ctk.CTkFrame(container, fg_color="transparent")
+        content.pack(fill="both", expand=True)
+
+        container.grid_columnconfigure(0, weight=1)
+        container.grid_rowconfigure(0, weight=1)
+        content.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkLabel(
+            content,
+            text="Legacy Conversion Metadata",
+            text_color="#0A809E",
+            font=ctk.CTkFont(size=22, weight="bold"),
+        ).pack(anchor="w")
+
+        ctk.CTkLabel(
+            content,
+            text="These values come from Preferences. You can keep them or change them just for this conversion.",
+            font=ctk.CTkFont(size=13),
+            justify="left",
+            wraplength=720,
+        ).pack(anchor="w", pady=(6, 16))
+
+        self.entries = {}
+        fields = [
+            ("contact_name", "Contact name:", "entry"),
+            ("contact_url", "Contact URL:", "entry"),
+            ("release", "Release:", "entry"),
+            ("filename_pattern", "Filename pattern:", "entry"),
+        ]
+
+        for key, label, kind in fields:
+            row = ctk.CTkFrame(content, fg_color="transparent")
+            row.pack(fill="x", pady=6)
+            ctk.CTkLabel(row, text=label, width=140, anchor="w").pack(side="left")
+            if kind == "textbox":
+                textbox = ctk.CTkTextbox(row, height=72, wrap="word")
+                textbox.pack(side="left", fill="x", expand=True)
+                textbox.insert("1.0", str(self.initial_values.get(key, "") or ""))
+            else:
+                entry = ctk.CTkEntry(row)
+                entry.pack(side="left", fill="x", expand=True)
+                entry.insert(0, str(self.initial_values.get(key, "") or ""))
+                self.entries[key] = entry
+
+        ctk.CTkCheckBox(
+            content,
+            text="Save in preferences",
+            variable=self.var_save_preferences,
+            fg_color="#0A809E",
+            hover_color="#076075",
+        ).pack(anchor="w", pady=(12, 0))
+
+        buttons = ctk.CTkFrame(container, fg_color="transparent")
+        buttons.pack(fill="x", pady=(20, 0))
+
+        ctk.CTkButton(
+            buttons,
+            text="Cancel",
+            width=110,
+            fg_color="gray50",
+            hover_color="gray40",
+            command=self._on_cancel,
+        ).pack(side="right", padx=(10, 0))
+
+        ctk.CTkButton(
+            buttons,
+            text="Use These Values",
+            width=150,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._on_confirm,
+        ).pack(side="right")
+
+    def _collect_values(self):
+        values = {
+            key: entry.get().strip()
+            for key, entry in self.entries.items()
+        }
+        values["save_in_preferences"] = bool(self.var_save_preferences.get())
+        return values
+
+    def _on_confirm(self):
+        self.result = self._collect_values()
+        self.destroy()
+
+    def _on_cancel(self):
+        self.result = None
+        self.destroy()
+
 class LegacyConverterDialog(ctk.CTkToplevel):
     def __init__(self, parent, master_dir=None, prefs_manager=None):
         super().__init__(parent)
@@ -287,6 +416,31 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         self.log_area.see("end")
         self.log_area.configure(state="disabled")
 
+    def _get_conversion_metadata_defaults(self):
+        if not self.prefs_manager:
+            return {
+                "contact_name": "",
+                "contact_url": "",
+                "release": "",
+                "filename_pattern": "",
+            }
+
+        return {
+            "contact_name": str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip(),
+            "contact_url": str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip(),
+            "release": str(self.prefs_manager.get("tools_legacy_release", "") or "").strip(),
+            "filename_pattern": str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip(),
+        }
+
+    def _prompt_conversion_metadata_overrides(self):
+        defaults = self._get_conversion_metadata_defaults()
+        if not any(defaults.values()):
+            return defaults
+
+        dialog = LegacyConversionMetadataDialog(self, initial_values=defaults)
+        self.wait_window(dialog)
+        return dialog.result
+
     def _start_conversion(self):
         src = self.entry_src.get()
         dst = self.entry_dst.get()
@@ -314,13 +468,22 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             self.prefs_manager.set("last_legacy_dst", dst)
             self.prefs_manager.save()
 
+        metadata_overrides = self._prompt_conversion_metadata_overrides()
+        if metadata_overrides is None:
+            self._log("Conversion cancelled.")
+            return
+
         self.btn_convert.configure(state="disabled")
         self.btn_open_folder.configure(state="disabled")
         self.log_area.configure(state="normal")
         self.log_area.delete("1.0", "end")
         self.log_area.configure(state="disabled")
 
-        threading.Thread(target=self._run_conversion, args=(src, dst), daemon=True).start()
+        threading.Thread(
+            target=self._run_conversion,
+            args=(src, dst, metadata_overrides),
+            daemon=True,
+        ).start()
 
     def _show_clean_folder_dialog(self, folder_path):
         dialog = CleanFolderDialog(self, folder_path)
@@ -351,26 +514,34 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             self._log(f"Error cleaning folder: {e}")
             return False
 
-    def _run_conversion(self, src, dst):
+    def _run_conversion(self, src, dst, metadata_overrides=None):
         try:
             tracing = self.var_tracing.get()
             self._log(f"Starting conversion from {src} to {dst}...")
             include_desc = False
             include_ex = False
             capitalize_schemas = True
+            defaults = self._get_conversion_metadata_defaults()
+            overrides = dict(defaults)
+            if metadata_overrides:
+                overrides.update(metadata_overrides)
             if self.prefs_manager:
                 include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
                 include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
                 capitalize_schemas = bool(self.prefs_manager.get("tools_legacy_capitalize_schema_names", True))
-                contact_name = str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip()
-                contact_url = str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip()
-                release = str(self.prefs_manager.get("tools_legacy_release", "") or "").strip()
-                filename_pattern = str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip()
-            else:
-                contact_name = ""
-                contact_url = ""
-                release = ""
-                filename_pattern = ""
+
+            contact_name = str(overrides.get("contact_name", "") or "").strip()
+            contact_url = str(overrides.get("contact_url", "") or "").strip()
+            release = str(overrides.get("release", "") or "").strip()
+            filename_pattern = str(overrides.get("filename_pattern", "") or "").strip()
+
+            if self.prefs_manager and overrides.get("save_in_preferences"):
+                self.prefs_manager.set("tools_legacy_contact_name", contact_name)
+                self.prefs_manager.set("tools_legacy_contact_url", contact_url)
+                self.prefs_manager.set("tools_legacy_release", release)
+                self.prefs_manager.set("tools_legacy_filename_pattern", filename_pattern)
+                self.prefs_manager.save()
+                self._log("Saved conversion metadata to preferences.")
 
             converter = LegacyConverter(
                 src,

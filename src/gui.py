@@ -1097,6 +1097,8 @@ class OASGenApp(ctk.CTk):
             
         if current_tab == "Validation":
             self.run_validation()
+        elif current_tab == "View":
+            self.after(75, self._focus_yaml_viewer)
 
     def _view_yaml_viewer(self):
         self.tabview.set("View")
@@ -1639,8 +1641,22 @@ class OASGenApp(ctk.CTk):
         # Redirect to global application log via self.log_app to ensure timestamp
         # self.log_app already handles history and window appending
         self.log_app(f"[Validation] {msg}")
-            
+             
         print(f"[Validation] {msg}") # Keep stdout for debugging
+
+    def _focus_yaml_viewer(self):
+        try:
+            self.txt_yaml.configure(takefocus=1)
+        except Exception:
+            pass
+
+        try:
+            self.txt_yaml.focus_force()
+        except Exception:
+            try:
+                self.txt_yaml.focus_set()
+            except Exception:
+                pass
 
     def _get_initial_dir(self, current_path):
         """Helper to determine the best initial directory for file dialogs."""
@@ -2446,9 +2462,11 @@ class OASGenApp(ctk.CTk):
             # READ-ONLY MODE WITH CURSOR
             # To show cursor, state must be normal. We block edits via binding.
             self.txt_yaml.config(state="normal")
-            
+            self.txt_yaml.configure(takefocus=1)
+             
             # Fixed Selection logic: bind read-only handler
             self.txt_yaml.bind("<Key>", self._on_yaml_key_press)
+            self.txt_yaml.bind("<Button-1>", self._on_yaml_mouse_down, add="+")
 
             # Bind Double Click to fix cursor position
             self.txt_yaml.bind("<Double-Button-1>", self._on_yaml_double_click)
@@ -2459,6 +2477,7 @@ class OASGenApp(ctk.CTk):
             self.txt_yaml.bind("<Control-F>", lambda e: self._handle_global_search(e) or "break")
             self.txt_yaml.bind("<Control-Key-f>", lambda e: self._handle_global_search(e) or "break")
             self.txt_yaml.bind("<Control-Key-F>", lambda e: self._handle_global_search(e) or "break")
+            self.after(75, self._focus_yaml_viewer)
 
 
 
@@ -3220,9 +3239,9 @@ class OASGenApp(ctk.CTk):
 
         # Create Search Window if not exists
         if hasattr(self, "search_window") and self.search_window and self.search_window.winfo_exists():
-            self.search_window.attributes("-topmost", True)
+            self.search_window.transient(self)
             self.search_window.lift()
-            self.search_window.focus_force()
+            self.search_window.focus_set()
 
             
             # Dynamic Autofill for existing window
@@ -3241,7 +3260,8 @@ class OASGenApp(ctk.CTk):
             self.search_window.title("Find")
             self.search_window.geometry("450x60")
             self.search_window.resizable(False, False)
-            self.search_window.attributes("-topmost", True) 
+            self.search_window.transient(self)
+            self.search_window.lift()
 
             
             # FIX: Clear highlights when search window is closed
@@ -3266,15 +3286,14 @@ class OASGenApp(ctk.CTk):
 
             # Position logic
             try:
-                print("DEBUG: Calculating geometry")
                 parent_x = self.winfo_x()
                 parent_y = self.winfo_y()
                 parent_w = self.winfo_width()
                 x = parent_x + (parent_w // 2) - 225
                 y = parent_y + 100 
                 self.search_window.geometry(f"+{x}+{y}")
-            except Exception as e:
-                print(f"DEBUG: Geometry error: {e}")
+            except Exception:
+                pass
 
             # UI Container
             frame = ctk.CTkFrame(self.search_window, fg_color="transparent")
@@ -3592,9 +3611,9 @@ class OASGenApp(ctk.CTk):
 
     def _handle_global_search(self, event=None):
         """Handle Ctrl+F globally."""
-        # Removed tab check to maximize reliability during debugging
-        # Search dialog handles its own safety checks
-        self._show_search_dialog()
+        if self.tabview.get() == "View":
+            self._show_search_dialog(event)
+            return "break"
 
 
 
@@ -3621,6 +3640,9 @@ class OASGenApp(ctk.CTk):
              return "break"
              
         return None
+
+    def _on_yaml_mouse_down(self, event=None):
+        self.after(1, self._focus_yaml_viewer)
 
     def _on_yaml_key_press(self, event):
         """Handle key presses in YAML viewer to enforce read-only but allow navigation/copy."""

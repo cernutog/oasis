@@ -782,6 +782,37 @@ class OASGenerator:
         combinator_names_by_block = {}
         df.columns = df.columns.str.strip()
 
+        def resolve_parent_node(block_id, parent_name):
+            if parent_name is None:
+                return None
+
+            parent_str = str(parent_name).strip()
+            if not parent_str:
+                return None
+
+            exact_key = (block_id, parent_str)
+            if exact_key in node_map:
+                return node_map[exact_key]
+
+            # Legacy array/example notation, e.g. errors[0] -> errors
+            m = re.match(r"(.+)\[(\d+)\]$", parent_str)
+            if m:
+                base_key = (block_id, m.group(1).strip())
+                if base_key in node_map:
+                    return node_map[base_key]
+
+            # Legacy schema components sometimes encode the parent as Foo1 while the
+            # actual schema root row is Foo. Only fall back when the exact name is missing.
+            m = re.match(r"^(.*?)(\d+)$", parent_str)
+            if m:
+                base_name = m.group(1).strip()
+                if base_name:
+                    alias_key = (block_id, base_name)
+                    if alias_key in node_map:
+                        return node_map[alias_key]
+
+            return None
+
         # Schemas sheet contains multiple schema blocks separated by blank rows.
         # Without scoping, repeated names (e.g. 'searchCriteria') can collide across blocks and
         # incorrectly merge properties/required arrays between unrelated schemas.
@@ -1030,8 +1061,11 @@ class OASGenerator:
             # FIX: Explicit Root Check (Parent is None)
             if parent_name is None:
                 roots.append(node)
-            elif (b_id, str(parent_name).strip()) in node_map:
-                parent = node_map[(b_id, str(parent_name).strip())]
+            else:
+                parent = resolve_parent_node(b_id, parent_name)
+                if parent is None:
+                    roots.append(node)
+                    continue
                 parent_schema = parent["schema_obj"]
 
                 if parent_schema.get("type") == "array":
