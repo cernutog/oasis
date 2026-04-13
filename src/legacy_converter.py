@@ -7,6 +7,7 @@ Architecture: Simple linear flow with direct sheet transformations.
 import os
 import shutil
 import re
+import copy
 from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -88,6 +89,7 @@ class LegacyConverter:
         self.emitted_wrappers = set()
         self.emitted_inline_components = set()
         self.inline_component_fingerprints: Dict[Tuple, str] = {}
+        self.inline_component_neutral_fingerprints: Dict[Tuple, str] = {}
         self.inline_component_fingerprint_by_name: Dict[str, Tuple] = {}
         self.inline_component_root_desc: Dict[str, str] = {}
         self.inline_component_example_sig: Dict[str, str] = {}
@@ -122,6 +124,18 @@ class LegacyConverter:
             return cand
             
         return None
+
+    def _clone_schema_variant(self, source_dt: Optional[DataType], target_name: str) -> None:
+        """Copy root DataType attributes onto a split variant schema name."""
+        if not source_dt or not target_name:
+            return
+        cloned = copy.deepcopy(source_dt)
+        cloned.name = target_name
+        self.global_schemas[target_name] = cloned
+
+    def _usage_context_kind(self, usage_ctx: Optional[str]) -> str:
+        text = str(usage_ctx or "")
+        return "request" if "(Body)" in text else "response"
 
     def _endpoint_display_name(self, filename_or_stem: str) -> str:
         s = str(filename_or_stem or "").strip()
@@ -645,8 +659,14 @@ class LegacyConverter:
         mismatches_by_group: Dict[str, List[str]] = {}
         # attrs_display: fields shown in DIFFERENCES column (values only, no arrows)
         attrs = ['type', 'format', 'min_val', 'max_val', 'regex', 'allowed_values', 'items_type']
-        # attrs_diff: fields compared when detecting group differences (broader - includes description/example)
-        attrs_diff = attrs + ['description', 'example']
+        # attrs_diff: fields compared when detecting group differences.
+        # Keep this aligned with the collision preferences so the tracer explains
+        # only the attributes that can actually drive a split.
+        attrs_diff = list(attrs)
+        if self.include_descriptions_in_collision:
+            attrs_diff.append('description')
+        if self.include_examples_in_collision:
+            attrs_diff.append('example')
 
         def _short_usage(u: str) -> str:
             if not u:
@@ -837,10 +857,11 @@ class LegacyConverter:
                 o_rules = (o.get("rules", "") or "").strip()
                 if b_rules != o_rules:
                     rules[k] = {"base_val": b_rules or "(empty)", "other_val": o_rules or "(empty)"}
-                b_desc = (b.get("desc", "") or "").strip()
-                o_desc = (o.get("desc", "") or "").strip()
-                if b_desc != o_desc:
-                    descriptions[k] = {"base_val": b_desc or "(empty)", "other_val": o_desc or "(empty)"}
+                if self.include_descriptions_in_collision:
+                    b_desc = (b.get("desc", "") or "").strip()
+                    o_desc = (o.get("desc", "") or "").strip()
+                    if b_desc != o_desc:
+                        descriptions[k] = {"base_val": b_desc or "(empty)", "other_val": o_desc or "(empty)"}
 
             if changed:      result["changed"]      = changed
             if mandatory:    result["mandatory"]    = mandatory
@@ -955,6 +976,98 @@ class LegacyConverter:
                 return f"{m.group(1)}{m.group(3)}"
             return s
 
+        def _merge_inline_diff_dicts(diff_dicts: List[Dict[str, Any]]) -> Dict[str, Any]:
+            merged: Dict[str, Any] = {}
+            for diff_dict in diff_dicts:
+                if not diff_dict:
+                    continue
+                if "structure" in diff_dict:
+                    merged["structure"] = diff_dict["structure"]
+                for list_key in ["added", "removed"]:
+                    if diff_dict.get(list_key):
+                        merged.setdefault(list_key, [])
+                        for item in diff_dict[list_key]:
+                            if item not in merged[list_key]:
+                                merged[list_key].append(item)
+                for dict_key in ["changed", "mandatory", "rules", "descriptions"]:
+                    if diff_dict.get(dict_key):
+                        merged.setdefault(dict_key, {})
+                        merged[dict_key].update(diff_dict[dict_key])
+            return merged
+
+        def _render_inline_diff(diff_dict: Dict[str, Any], is_base: bool) -> str:
+            top_bits: List[str] = []
+            per_prop: Dict[str, List[str]] = {}
+
+            if "structure" in diff_dict:
+                top_bits.append(diff_dict["structure"])
+
+            if ("added" in diff_dict) and (not is_base):
+                added_list = diff_dict["added"]
+                top_bits.append("added:")
+                for a in added_list[:10]:
+                    top_bits.append(f"- {a}")
+                if len(added_list) > 10:
+                    top_bits.append(f"- (+{len(added_list) - 10} more)")
+
+            if ("removed" in diff_dict) and (not is_base):
+                removed_list = diff_dict["removed"]
+                top_bits.append("removed:")
+                for r in removed_list[:10]:
+                    top_bits.append(f"- {r}")
+                if len(removed_list) > 10:
+                    top_bits.append(f"- (+{len(removed_list) - 10} more)")
+
+            if "changed" in diff_dict:
+                _oas_primitives = {
+                    "string", "number", "integer", "boolean",
+                    "array", "object", "schema", "(empty)", "",
+                }
+                for prop, info in list(diff_dict["changed"].items())[:10]:
+                    val = info["base_type"] if is_base else info["other_type"]
+                    delta = info.get("constraint_delta", [])
+                    extra = f" ({', '.join(delta[:4])})" if delta else ""
+                    is_array_suffix = val.endswith("[]")
+                    base_val = val[:-2] if is_array_suffix else val
+                    if base_val.lower() not in _oas_primitives:
+                        display_val = base_val
+                        for gname in self.global_schemas:
+                            if gname.lower() == base_val.lower():
+                                display_val = gname
+                                break
+                        if is_array_suffix:
+                            display_val += "[]"
+                        per_prop.setdefault(prop, []).append(f"- $ref: {display_val}{extra}")
+                    else:
+                        per_prop.setdefault(prop, []).append(f"- Type: {val}{extra}")
+
+            if "mandatory" in diff_dict:
+                for prop, info in list(diff_dict["mandatory"].items())[:20]:
+                    val = info["base_val"] if is_base else info["other_val"]
+                    per_prop.setdefault(prop, []).append(f"- Mandatory: {str(val).upper()}")
+
+            if "rules" in diff_dict:
+                for prop, info in list(diff_dict["rules"].items())[:20]:
+                    raw = info["base_val"] if is_base else info["other_val"]
+                    short = (raw[:120] + "...") if len(raw) > 120 else raw
+                    per_prop.setdefault(prop, []).append(f"- Validation rules: {short}")
+
+            if "descriptions" in diff_dict:
+                for prop, info in list(diff_dict["descriptions"].items())[:20]:
+                    raw = info["base_val"] if is_base else info["other_val"]
+                    short = (raw[:120] + "...") if len(raw) > 120 else raw
+                    per_prop.setdefault(prop, []).append(f"- Description: {short}")
+
+            prop_blocks: List[str] = []
+            for prop in sorted(per_prop.keys()):
+                prop_blocks.append(f"{prop}:")
+                prop_blocks.extend(per_prop[prop])
+                prop_blocks.append("")
+
+            return "\n".join(
+                [x for x in (top_bits + ([""] if top_bits and prop_blocks else []) + prop_blocks) if x is not None]
+            ).rstrip()
+
         for out_name in sorted_names:
             usages = self.schema_usage[out_name]
             
@@ -971,104 +1084,44 @@ class LegacyConverter:
 
             # If no direct entry found, check if this schema is the BASE of an inline_fp_diff group.
             # In that case, fabricate the tuple with is_base=True so the renderer shows this schema's values.
-            if not relevant_fields:
-                for _variant, _entry in mismatches_by_group.items():
-                    if (isinstance(_entry, tuple) and len(_entry) == 3 and
-                            _entry[0] == "inline_fp_diff" and _entry[1] == out_name):
-                        relevant_fields = _entry  # same tuple; renderer uses is_base=(out_name==base_nm_ref)
-                        break
-            
-            diff_str = ""
-            if relevant_fields:
-                dt = self.global_schemas.get(out_name)
+            group_dt_fields = []
+            root_group_fields = mismatches_by_group.get(root_for_mismatch, [])
+            if isinstance(root_group_fields, list):
+                group_dt_fields = [f for f in root_group_fields if f in attrs_diff]
 
-                # Check if this is a structured inline fp diff tuple
-                is_inline_diff = (isinstance(relevant_fields, tuple) and
-                                  len(relevant_fields) == 3 and
-                                  relevant_fields[0] == "inline_fp_diff")
+            direct_inline_entry = None
+            if isinstance(mismatches_by_group.get(out_name), tuple):
+                entry = mismatches_by_group.get(out_name)
+                if len(entry) == 3 and entry[0] == "inline_fp_diff":
+                    direct_inline_entry = entry
 
-                if is_inline_diff:
-                    _, base_nm_ref, diff_dict = relevant_fields
-                    # Determine if this out_name is the base or the variant
-                    is_base = (out_name == base_nm_ref)
-                    top_bits: List[str] = []
-                    per_prop: Dict[str, List[str]] = {}
+            base_inline_entries = []
+            for _variant, _entry in mismatches_by_group.items():
+                if (isinstance(_entry, tuple) and len(_entry) == 3 and
+                        _entry[0] == "inline_fp_diff" and _entry[1] == out_name):
+                    base_inline_entries.append(_entry)
 
-                    if "structure" in diff_dict:
-                        top_bits.append(diff_dict["structure"])
+            diff_parts = []
+            dt = self.global_schemas.get(out_name)
+            if dt and group_dt_fields:
+                body = _schema_attr_display(dt, group_dt_fields)
+                if body:
+                    diff_parts.append(body)
 
-                    if ("added" in diff_dict) and (not is_base):
-                        added_list = diff_dict["added"]
-                        top_bits.append("added:")
-                        for a in added_list[:10]:
-                            top_bits.append(f"- {a}")
-                        if len(added_list) > 10:
-                            top_bits.append(f"- (+{len(added_list) - 10} more)")
+            if direct_inline_entry:
+                _, base_nm_ref, diff_dict = direct_inline_entry
+                diff_body = _render_inline_diff(diff_dict, is_base=(out_name == base_nm_ref))
+                if diff_body:
+                    diff_parts.append(diff_body)
+            elif base_inline_entries:
+                merged_dict = _merge_inline_diff_dicts([entry[2] for entry in base_inline_entries])
+                diff_body = _render_inline_diff(merged_dict, is_base=True)
+                if diff_body:
+                    diff_parts.append(diff_body)
 
-                    if ("removed" in diff_dict) and (not is_base):
-                        removed_list = diff_dict["removed"]
-                        top_bits.append("removed:")
-                        for r in removed_list[:10]:
-                            top_bits.append(f"- {r}")
-                        if len(removed_list) > 10:
-                            top_bits.append(f"- (+{len(removed_list) - 10} more)")
-
-                    if "changed" in diff_dict:
-                        _oas_primitives = {
-                            "string", "number", "integer", "boolean",
-                            "array", "object", "schema", "(empty)", "",
-                        }
-                        for prop, info in list(diff_dict["changed"].items())[:10]:
-                            val = info["base_type"] if is_base else info["other_type"]
-                            delta = info.get("constraint_delta", [])
-                            extra = f" ({', '.join(delta[:4])})" if delta else ""
-                            # Strip trailing [] to test the base type name
-                            is_array_suffix = val.endswith("[]")
-                            base_val = val[:-2] if is_array_suffix else val
-                            if base_val.lower() not in _oas_primitives:
-                                # Schema reference: look up PascalCase name in global_schemas
-                                display_val = base_val
-                                for gname in self.global_schemas:
-                                    if gname.lower() == base_val.lower():
-                                        display_val = gname
-                                        break
-                                if is_array_suffix:
-                                    display_val += "[]"
-                                per_prop.setdefault(prop, []).append(f"- $ref: {display_val}{extra}")
-                            else:
-                                per_prop.setdefault(prop, []).append(f"- Type: {val}{extra}")
-
-                    if "mandatory" in diff_dict:
-                        for prop, info in list(diff_dict["mandatory"].items())[:20]:
-                            val = info["base_val"] if is_base else info["other_val"]
-                            per_prop.setdefault(prop, []).append(f"- Mandatory: {str(val).upper()}")
-
-                    if "rules" in diff_dict:
-                        for prop, info in list(diff_dict["rules"].items())[:20]:
-                            raw = info["base_val"] if is_base else info["other_val"]
-                            short = (raw[:120] + "...") if len(raw) > 120 else raw
-                            per_prop.setdefault(prop, []).append(f"- Validation rules: {short}")
-
-                    if "descriptions" in diff_dict:
-                        for prop, info in list(diff_dict["descriptions"].items())[:20]:
-                            raw = info["base_val"] if is_base else info["other_val"]
-                            short = (raw[:120] + "...") if len(raw) > 120 else raw
-                            per_prop.setdefault(prop, []).append(f"- Description: {short}")
-
-                    prop_blocks: List[str] = []
-                    for prop in sorted(per_prop.keys()):
-                        prop_blocks.append(f"{prop}:")
-                        prop_blocks.extend(per_prop[prop])
-                        prop_blocks.append("")
-
-                    diff_str = "\n".join([x for x in (top_bits + ([""] if top_bits and prop_blocks else []) + prop_blocks) if x is not None]).rstrip()
-
-                elif dt:
-                    # DataType group: show only the values of differing attrs for THIS schema (no arrows).
-                    differing_attrs = [f for f in relevant_fields if f in attrs_diff]
-                    diff_str = _schema_attr_display(dt, differing_attrs)
-                else:
-                    diff_str = "; ".join([str(a) for a in relevant_fields])
+            diff_str = "\n\n".join([part for part in diff_parts if part]).strip()
+            if not diff_str and relevant_fields and not isinstance(relevant_fields, tuple) and not dt:
+                diff_str = "; ".join([str(a) for a in relevant_fields])
 
             # WRAP ALL COLUMNS
             name_lines = wrap_text(_display_schema_name(out_name), col1_w)
@@ -2848,19 +2901,13 @@ class LegacyConverter:
             parts = sorted(set(parts))
             return "; ".join(parts)
 
-        def _fp_inline_subtree(subtree_children: List[Tuple], root_low: str) -> Tuple:
+        def _fp_inline_subtree(subtree_children: List[Tuple], root_low: str, include_rules: bool = True) -> Tuple:
             entries = []
             for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree_children:
                 p_low = _norm(t_parent)
                 p_low = "" if p_low == root_low else p_low
-                # Always include description for rows whose dtype resolves to a DataType ($ref-typed
-                # properties). A different description on such a row produces a structurally different
-                # OAS property (allOf/$ref + description override), so it must drive a schema split
-                # independently of the include_descriptions_in_collision preference.
-                _ref_out, _ref_dt = self._resolve_data_type(str(t_dtype).strip() if t_dtype else "", ep_filename)
-                is_ref_typed = _ref_dt is not None
                 desc_part = ""
-                if self.include_descriptions_in_collision or is_ref_typed:
+                if self.include_descriptions_in_collision:
                     desc_part = str(t_desc).strip() if t_desc is not None else ""
                 ex_part = ""
                 if self.include_examples_in_collision:
@@ -2874,7 +2921,7 @@ class LegacyConverter:
                         _norm(t_dtype),
                         _norm(t_items),
                         _norm(t_mand),
-                        str(t_rules).strip() if t_rules is not None else "",
+                        (str(t_rules).strip() if t_rules is not None else "") if include_rules else "",
                     )
                 )
             return tuple(sorted(entries))
@@ -2930,6 +2977,8 @@ class LegacyConverter:
 
             return result
 
+        current_ctx_kind = self._usage_context_kind(usage_ctx)
+
         # Maps keyed by (name_norm, parent_norm) so parallel same-named subtrees each
         # get their own fingerprint, schema name, and emitted block.
         object_key_map: Dict[Tuple[str, str], str] = {}
@@ -2960,9 +3009,14 @@ class LegacyConverter:
             if descendants:
                 object_key_subtrees[key] = descendants
                 ex_sig = _subtree_example_signature(descendants)
-                fp = _fp_inline_subtree(descendants, name_norm)
-                if fp in self.inline_component_fingerprints:
-                    existing = self.inline_component_fingerprints[fp]
+                fp = _fp_inline_subtree(descendants, name_norm, include_rules=(current_ctx_kind == "request"))
+                neutral_fp = _fp_inline_subtree(descendants, name_norm, include_rules=False)
+                existing = None
+                if current_ctx_kind == "request":
+                    existing = self.inline_component_fingerprints.get(fp)
+                else:
+                    existing = self.inline_component_neutral_fingerprints.get(neutral_fp) or self.inline_component_fingerprints.get(fp)
+                if existing:
                     object_ref_map[name_norm] = existing
                     object_key_map[key] = existing
                     # If descriptions are neutral, record merge provenance when root descriptions differ across endpoints
@@ -2980,6 +3034,7 @@ class LegacyConverter:
                     object_ref_map[name_norm] = comp_name
                     object_key_map[key] = comp_name
                     self.inline_component_fingerprints[fp] = comp_name
+                    self.inline_component_neutral_fingerprints.setdefault(neutral_fp, comp_name)
                     self.inline_component_fingerprint_by_name[comp_name] = fp
                     self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
                     self.inline_component_example_sig[comp_name] = ex_sig
@@ -3023,9 +3078,14 @@ class LegacyConverter:
                 if descendants:
                     named_array_key_subtrees[key] = descendants
                     ex_sig = _subtree_example_signature(descendants)
-                    fp = _fp_inline_subtree(descendants, name_norm)
-                    if fp in self.inline_component_fingerprints:
-                        existing = self.inline_component_fingerprints[fp]
+                    fp = _fp_inline_subtree(descendants, name_norm, include_rules=(current_ctx_kind == "request"))
+                    neutral_fp = _fp_inline_subtree(descendants, name_norm, include_rules=False)
+                    existing = None
+                    if current_ctx_kind == "request":
+                        existing = self.inline_component_fingerprints.get(fp)
+                    else:
+                        existing = self.inline_component_neutral_fingerprints.get(neutral_fp) or self.inline_component_fingerprints.get(fp)
+                    if existing:
                         named_array_items_ref_map[name_norm] = existing
                         named_array_key_map[key] = existing
                         if not self.include_descriptions_in_collision:
@@ -3044,9 +3104,11 @@ class LegacyConverter:
                         named_array_items_ref_map[name_norm] = comp_name
                         named_array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
+                        self.inline_component_neutral_fingerprints.setdefault(neutral_fp, comp_name)
                         self.inline_component_fingerprint_by_name[comp_name] = fp
                         self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
                         self.inline_component_example_sig[comp_name] = ex_sig
+                        self._clone_schema_variant(dt, comp_name)
                 # No-children named-array: not added to named_array_key_map.
                 # The property will fall through to primitive-inline behaviour (type=array,
                 # items=primitive) in the second pass, which is the desired behaviour for
@@ -3058,9 +3120,14 @@ class LegacyConverter:
                 if descendants:
                     array_key_subtrees[key] = descendants
                     ex_sig = _subtree_example_signature(descendants)
-                    fp = _fp_inline_subtree(descendants, name_norm)
-                    if fp in self.inline_component_fingerprints:
-                        existing = self.inline_component_fingerprints[fp]
+                    fp = _fp_inline_subtree(descendants, name_norm, include_rules=(current_ctx_kind == "request"))
+                    neutral_fp = _fp_inline_subtree(descendants, name_norm, include_rules=False)
+                    existing = None
+                    if current_ctx_kind == "request":
+                        existing = self.inline_component_fingerprints.get(fp)
+                    else:
+                        existing = self.inline_component_neutral_fingerprints.get(neutral_fp) or self.inline_component_fingerprints.get(fp)
+                    if existing:
                         array_items_ref_map[name_norm] = existing
                         array_key_map[key] = existing
                         if not self.include_descriptions_in_collision:
@@ -3077,13 +3144,16 @@ class LegacyConverter:
                         array_items_ref_map[name_norm] = comp_name
                         array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
+                        self.inline_component_neutral_fingerprints.setdefault(neutral_fp, comp_name)
                         self.inline_component_fingerprint_by_name[comp_name] = fp
                         self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
                         self.inline_component_example_sig[comp_name] = ex_sig
+                        self._clone_schema_variant(dt, comp_name)
                 else:
                     comp_name = _unique_inline_component_name(self._to_pascal_case(name))
                     array_items_ref_map[name_norm] = comp_name
                     array_key_map[key] = comp_name
+                    self._clone_schema_variant(dt, comp_name)
 
                 _track_inline_component_usage(array_key_map[key])
         
@@ -3276,7 +3346,7 @@ class LegacyConverter:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
                 transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
 
-            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
             extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
@@ -3299,7 +3369,7 @@ class LegacyConverter:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
                 transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
 
-            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
             extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
@@ -3322,7 +3392,7 @@ class LegacyConverter:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
                 transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
 
-            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename)
+            child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
 
             # Determine the primitive items type of the named-array DataType so we

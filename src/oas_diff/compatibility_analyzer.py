@@ -28,9 +28,18 @@ class CompatibilityAnalyzer:
 
     def analyze(self) -> List[CompatibilityIssue]:
         self.issues = []
-        
+
+        old_paths = set(self.spec1.keys())
+        new_paths = set(self.spec2.keys())
+
+        for path in sorted(old_paths - new_paths):
+            self._record_path_removed(path, self.spec1[path])
+
+        for path in sorted(new_paths - old_paths):
+            self._record_path_added(path, self.spec2[path])
+
         # Compare paths present in both specs
-        common_paths = set(self.spec1.keys()) & set(self.spec2.keys())
+        common_paths = old_paths & new_paths
         for path in common_paths:
             self._analyze_path(path, self.spec1[path], self.spec2[path])
             
@@ -42,6 +51,86 @@ class CompatibilityAnalyzer:
         for method in methods:
             if method in path_item1 and method in path_item2:
                 self._analyze_operation(path, method.upper(), path_item1[method], path_item2[method])
+            elif method in path_item1:
+                self._record_method_removed(path, method)
+            elif method in path_item2:
+                self._record_method_added(path, method)
+
+    def _http_methods_in(self, path_item: Dict) -> List[str]:
+        methods = ['get', 'post', 'put', 'delete', 'patch', 'options', 'head', 'trace']
+        return [method for method in methods if method in path_item]
+
+    def _record_path_removed(self, path: str, path_item: Dict):
+        methods = self._http_methods_in(path_item)
+        if methods:
+            for method in methods:
+                self._record_method_removed(path, method, path_level=True)
+        else:
+            self.issues.append(
+                CompatibilityIssue(
+                    path,
+                    "-",
+                    "Endpoint",
+                    path,
+                    "Removed",
+                    "Endpoint path was removed from the new spec.",
+                    severity="CRITICAL",
+                )
+            )
+
+    def _record_path_added(self, path: str, path_item: Dict):
+        methods = self._http_methods_in(path_item)
+        if methods:
+            for method in methods:
+                self._record_method_added(path, method, path_level=True)
+        else:
+            self.issues.append(
+                CompatibilityIssue(
+                    path,
+                    "-",
+                    "Endpoint",
+                    path,
+                    "Added",
+                    "Endpoint path was added in the new spec.",
+                    severity="LOW",
+                )
+            )
+
+    def _record_method_removed(self, path: str, method: str, path_level: bool = False):
+        details = (
+            f"Endpoint '{method.upper()} {path}' was removed from the new spec."
+            if path_level
+            else f"Method '{method.upper()}' was removed from endpoint '{path}'."
+        )
+        self.issues.append(
+            CompatibilityIssue(
+                path,
+                method.upper(),
+                "Endpoint",
+                path,
+                "Removed",
+                details,
+                severity="CRITICAL",
+            )
+        )
+
+    def _record_method_added(self, path: str, method: str, path_level: bool = False):
+        details = (
+            f"Endpoint '{method.upper()} {path}' was added in the new spec."
+            if path_level
+            else f"Method '{method.upper()}' was added to endpoint '{path}'."
+        )
+        self.issues.append(
+            CompatibilityIssue(
+                path,
+                method.upper(),
+                "Endpoint",
+                path,
+                "Added",
+                details,
+                severity="LOW",
+            )
+        )
 
     def _analyze_operation(self, path: str, method: str, op1: Dict, op2: Dict):
         # 1. Compare Parameters

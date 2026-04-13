@@ -188,6 +188,7 @@ class CompatibilityDocxGenerator:
              for j in range(4):
                  self._style_body_cell(row[j])
 
+        self._add_endpoint_changes_summary()
         self.doc.add_heading('Discrepancy Details', 1)
         
         # Group issues by endpoint for better flow
@@ -305,6 +306,40 @@ class CompatibilityDocxGenerator:
 
         self.doc.save(output_path)
 
+    def _add_endpoint_changes_summary(self):
+        added_endpoints = sorted(
+            {
+                f"{issue.method} {issue.path}"
+                for issue in self.issues
+                if issue.location == "Endpoint" and issue.issue_type == "Added"
+            },
+            key=lambda value: (value.split(" ", 1)[1], value.split(" ", 1)[0]),
+        )
+        removed_endpoints = sorted(
+            {
+                f"{issue.method} {issue.path}"
+                for issue in self.issues
+                if issue.location == "Endpoint" and issue.issue_type == "Removed"
+            },
+            key=lambda value: (value.split(" ", 1)[1], value.split(" ", 1)[0]),
+        )
+
+        self.doc.add_heading('Endpoint Changes', 1)
+
+        self.doc.add_heading('Added Endpoints', 2)
+        if added_endpoints:
+            for endpoint in added_endpoints:
+                self.doc.add_paragraph(endpoint, style='List Bullet')
+        else:
+            self.doc.add_paragraph('No added endpoints.')
+
+        self.doc.add_heading('Removed Endpoints', 2)
+        if removed_endpoints:
+            for endpoint in removed_endpoints:
+                self.doc.add_paragraph(endpoint, style='List Bullet')
+        else:
+            self.doc.add_paragraph('No removed endpoints.')
+
     def _add_all_borders(self, table):
         tbl = table._tbl
         tblPr = tbl.tblPr
@@ -402,6 +437,7 @@ class CompatibilityDocxGenerator:
              info = spec.get('info', {}) if isinstance(spec, dict) else {}
              return {
                  'file': os.path.basename(path) if path else "N/A",
+                 'path': path or "N/A",
                  'title': info.get('title', 'N/A'),
                  'version': str(info.get('version', 'N/A'))
              }
@@ -410,6 +446,7 @@ class CompatibilityDocxGenerator:
         new_info = get_info(self.spec2, self.new_path)
 
         rows = [
+             ("File Path", old_info['path'], new_info['path']),
              ("File Name", old_info['file'], new_info['file']),
              ("API Title", old_info['title'], new_info['title']),
              ("Version", old_info['version'], new_info['version'])
