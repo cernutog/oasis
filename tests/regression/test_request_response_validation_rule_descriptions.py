@@ -112,25 +112,27 @@ def test_shared_children_rows_keep_validation_rules_in_request_context():
 def test_request_and_response_subtrees_with_different_validation_rules_split_into_distinct_components():
     converter = LegacyConverter(input_dir=".", output_dir=".")
     request_children = [
-        ("lacDefaultAgenda", "", "", "object", "M", "", ""),
+        ("lacDefaultAgenda", "", "", "object", "M", "", "", ""),
         (
             "lacNumber",
             "lacDefaultAgenda",
             "The relevant LAC",
             "LacNumber",
             "M",
+            "",
             "It must a valid code (errorCode SC01)",
             "",
         ),
     ]
     response_children = [
-        ("lacDefaultAgenda", "", "", "object", "M", "", ""),
+        ("lacDefaultAgenda", "", "", "object", "M", "", "", ""),
         (
             "lacNumber",
             "lacDefaultAgenda",
             "The relevant LAC",
             "LacNumber",
             "M",
+            "",
             "",
             "",
         ),
@@ -151,6 +153,34 @@ def test_request_and_response_subtrees_with_different_validation_rules_split_int
     assert response_rows[0][5] == "LacDefaultAgenda1"
     assert request_extra[1][2].endswith("It must a valid code (errorCode SC01)")
     assert response_extra[1][2] == "The relevant LAC"
+
+
+def test_inline_components_split_when_only_constraint_differs():
+    converter = LegacyConverter(input_dir=".", output_dir=".")
+    first_children = [
+        ("filePCF", "", "The information related to the Payment Cancellation File", "object", "O", "", "", ""),
+        ("fileType", "filePCF", "The file type-PCF", "FileType", "M", "Allowed values: PCF", "", ""),
+        ("receiverBIC", "filePCF", "The BIC of the receiving DP", "Bic8", "M", "Pattern: 4!c2!a2!c", "", ""),
+    ]
+    second_children = [
+        ("filePSR", "", "The information related to the Pre-Settlement Report File", "object", "O", "", "", ""),
+        ("fileType", "filePSR", "The file type-PSR", "FileType", "M", "Allowed values: PSR", "", ""),
+        ("receiverBIC", "filePSR", "The BIC of the receiving DP", "Bic8", "M", "Pattern: 4!c2!a2!c", "", ""),
+    ]
+
+    first_rows, _, _ = converter._build_children_rows(
+        "FileDetailsResponse",
+        first_children,
+        usage_ctx="fileDetails (200)",
+    )
+    second_rows, _, _ = converter._build_children_rows(
+        "FileDetailsResponse",
+        second_children,
+        usage_ctx="fileDetails (200)",
+    )
+
+    assert first_rows[0][5] == "FilePCF"
+    assert second_rows[0][5] == "FilePSR"
 
 
 def test_request_rows_expand_named_array_parent_locally_when_nested_children_need_overrides():

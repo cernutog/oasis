@@ -55,6 +55,9 @@ class PreferencesManager:
         "doc_snap_default_enabled": False,  # Whether doc window snaps to main on open
         
         # Tools Settings
+        "tools_legacy_tracing_enabled": True,
+        "tools_legacy_collision_include_descriptions": False,
+        "tools_legacy_collision_include_examples": False,
         "tools_legacy_capitalize_schema_names": True,
         "tools_legacy_contact_name": "",
         "tools_legacy_contact_url": "",

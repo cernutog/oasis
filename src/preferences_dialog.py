@@ -710,6 +710,9 @@ class PreferencesDialog(ctk.CTkToplevel):
             "spectral_log_theme": self.cbo_spectral_log_theme.get(),
             
             # Tools
+            "tools_legacy_tracing_enabled": self.var_legacy_tracing.get(),
+            "tools_legacy_collision_include_descriptions": self.var_legacy_collision_desc.get(),
+            "tools_legacy_collision_include_examples": self.var_legacy_collision_examples.get(),
             "tools_legacy_capitalize_schema_names": self.var_legacy_capitalize_schemas.get(),
             "tools_legacy_contact_name": self.entry_legacy_contact_name.get().strip(),
             "tools_legacy_contact_url": self.entry_legacy_contact_url.get().strip(),
@@ -776,6 +779,15 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.cbo_import_log_theme.set("Light")
         self.cbo_app_log_theme.set("Dark")
         self.cbo_spectral_log_theme.set("Light")
+
+        self.var_legacy_tracing.set(True)
+        self.var_legacy_collision_desc.set(False)
+        self.var_legacy_collision_examples.set(False)
+        self.var_legacy_capitalize_schemas.set(True)
+        self.entry_legacy_contact_name.delete(0, "end")
+        self.entry_legacy_contact_url.delete(0, "end")
+        self.entry_legacy_release.delete(0, "end")
+        self.entry_legacy_filename_pattern.delete(0, "end")
 
         self.var_legacy_tracing.set(True)
         self.var_legacy_collision_desc.set(False)

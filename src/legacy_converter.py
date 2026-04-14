@@ -2795,6 +2795,7 @@ class LegacyConverter:
         type_idx = find_idx(["type", "data type", "dtype"])
         items_idx = find_idx(["items data type", "items type", "array only"])
         mand_idx = find_idx(["mandatory", "required"])
+        constraint_idx = find_idx(["constraint"])
         v_rules_idx = find_idx(["validation rules", "validation rule", "validation"])
 
         children = []
@@ -2808,9 +2809,10 @@ class LegacyConverter:
             dtype = self._clean_value(row.iloc[type_idx]) if type_idx != -1 else "string"
             items_type = self._clean_value(row.iloc[items_idx]) if items_idx != -1 else ""
             mandatory = self._clean_value(row.iloc[mand_idx]) if mand_idx != -1 else ""
+            constraint = self._clean_value(row.iloc[constraint_idx]) if constraint_idx != -1 else ""
             v_rules = self._clean_value(row.iloc[v_rules_idx]) if v_rules_idx != -1 else ""
             
-            children.append((name, parent, desc, dtype, mandatory, v_rules, items_type))
+            children.append((name, parent, desc, dtype, mandatory, constraint, v_rules, items_type))
         
         return children
     
@@ -2895,7 +2897,7 @@ class LegacyConverter:
 
         def _subtree_example_signature(subtree_children: List[Tuple]) -> str:
             parts = []
-            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree_children:
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items in subtree_children:
                 ex = _row_example(t_dtype, t_items)
                 if not ex:
                     continue
@@ -2905,7 +2907,7 @@ class LegacyConverter:
 
         def _fp_inline_subtree(subtree_children: List[Tuple], root_low: str, include_rules: bool = True) -> Tuple:
             entries = []
-            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree_children:
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items in subtree_children:
                 p_low = _norm(t_parent)
                 p_low = "" if p_low == root_low else p_low
                 desc_part = ""
@@ -2923,6 +2925,7 @@ class LegacyConverter:
                         _norm(t_dtype),
                         _norm(t_items),
                         _norm(t_mand),
+                        _norm(t_constraint),
                         (str(t_rules).strip() if t_rules is not None else "") if include_rules else "",
                     )
                 )
@@ -2997,7 +3000,7 @@ class LegacyConverter:
         object_ref_map: Dict[str, str] = {}
         array_items_ref_map: Dict[str, str] = {}
         named_array_items_ref_map: Dict[str, str] = {}
-        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+        for name, parent, desc, dtype, mandatory, constraint, v_rules, items_type_row in children:
             if _norm(dtype) != "object":
                 continue
             name_norm = _norm(name)
@@ -3042,7 +3045,7 @@ class LegacyConverter:
 
             _track_inline_component_usage(object_key_map[key])
 
-        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+        for name, parent, desc, dtype, mandatory, constraint, v_rules, items_type_row in children:
             low_dtype = _norm(dtype)
             out_name, dt = self._resolve_data_type(str(dtype).strip() if dtype is not None else "", ep_filename)
             is_literal_array = low_dtype == "array"
@@ -3148,7 +3151,7 @@ class LegacyConverter:
         # Children of such nodes should be suppressed (they live in the component schema).
         schema_ref_nodes = set()
         
-        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+        for name, parent, desc, dtype, mandatory, constraint, v_rules, items_type_row in children:
             name_norm = _norm(name)
             if name_norm in object_ref_map:
                 schema_ref_nodes.add(name_norm)
@@ -3169,12 +3172,12 @@ class LegacyConverter:
         
         # Build parent lookup (case-insensitive)
         parent_map = {}
-        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+        for name, parent, desc, dtype, mandatory, constraint, v_rules, items_type_row in children:
             if parent:
                 parent_map[_norm(name)] = _norm(parent)
         
         # Second pass: build rows, skipping children of schema-ref nodes
-        for name, parent, desc, dtype, mandatory, v_rules, items_type_row in children:
+        for name, parent, desc, dtype, mandatory, constraint, v_rules, items_type_row in children:
             # Skip this row if its parent is a node that resolves to a schema $ref:
             # the children are already defined in the referenced component schema.
             parent_norm = _norm(parent)
@@ -3329,9 +3332,9 @@ class LegacyConverter:
                 self.inline_component_children.setdefault(wrapper_name, set()).add(comp_name)
 
             transformed: List[Tuple] = []
-            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items in subtree:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
-                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
+                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items))
 
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
@@ -3352,9 +3355,9 @@ class LegacyConverter:
                 self.inline_component_children.setdefault(wrapper_name, set()).add(comp_name)
 
             transformed: List[Tuple] = []
-            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items in subtree:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
-                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
+                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items))
 
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
@@ -3375,9 +3378,9 @@ class LegacyConverter:
                 self.inline_component_children.setdefault(wrapper_name, set()).add(comp_name)
 
             transformed: List[Tuple] = []
-            for t_name, t_parent, t_desc, t_dtype, t_mand, t_rules, t_items in subtree:
+            for t_name, t_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items in subtree:
                 new_parent = "" if _norm(t_parent) == prop_low else t_parent
-                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_rules, t_items))
+                transformed.append((t_name, new_parent, t_desc, t_dtype, t_mand, t_constraint, t_rules, t_items))
 
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
@@ -3454,7 +3457,7 @@ class LegacyConverter:
         """
         Build a Python dict representing one body example from the legacy structure.
 
-        children  : list of (name, parent, desc, dtype, mandatory, v_rules, items_type)
+        children  : list of (name, parent, desc, dtype, mandatory, constraint, v_rules, items_type)
         omit_field: if set, skip this field name (for Bad Request missing-mandatory)
         override_field / override_value: replace value for one field (other Bad Request violations)
         array_item_index: 0 = first array item, 1 = second array item (shifts rotation)
@@ -3542,7 +3545,7 @@ class LegacyConverter:
         ordered_uids: List[str] = []
 
         name_to_last_uid: Dict[str, str] = {}
-        for i, (name, parent, desc, dtype, mandatory, v_rules, items_type) in enumerate(children):
+        for i, (name, parent, desc, dtype, mandatory, constraint, v_rules, items_type) in enumerate(children):
             uid = f"{name}__{i}"
             node_name[uid] = name
             node_dtype[uid] = dtype or "string"
@@ -3679,7 +3682,7 @@ class LegacyConverter:
         regex_fields = []
         any_field = None
 
-        for name, parent, desc, dtype, mandatory, v_rules, items_type in children:
+        for name, parent, desc, dtype, mandatory, constraint, v_rules, items_type in children:
             dt = self._resolve_leaf_dt(dtype, ep_filename)
             any_field = (name, dtype, dt)
 
