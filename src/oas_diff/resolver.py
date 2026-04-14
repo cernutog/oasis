@@ -52,28 +52,32 @@ class OASResolver:
                         "description": f"[Circular Reference to {ref_path.split('/')[-1]}]"
                     }
 
-                # Check Cache
-                if ref_path in self._resolved_cache:
-                    return copy.deepcopy(self._resolved_cache[ref_path])
+                resolved_target = None
 
-                # Resolve Reference
-                target = self._get_ref_target(ref_path)
-                if target is not None:
-                    # Update ancestors for recursive call
-                    new_ancestors = ancestors | {ref_path}
-                    # Resolve the target itself (target could have nested refs)
-                    resolved_target = self._resolve_node(target, new_ancestors)
-                    
+                # Check Cache: cache only the neutral resolved target, never a node
+                # already polluted by local sibling overrides.
+                if ref_path in self._resolved_cache:
+                    resolved_target = copy.deepcopy(self._resolved_cache[ref_path])
+                else:
+                    # Resolve Reference
+                    target = self._get_ref_target(ref_path)
+                    if target is not None:
+                        # Update ancestors for recursive call
+                        new_ancestors = ancestors | {ref_path}
+                        # Resolve the target itself (target could have nested refs)
+                        resolved_target = self._resolve_node(target, new_ancestors)
+                        self._resolved_cache[ref_path] = copy.deepcopy(resolved_target)
+
+                if resolved_target is not None:
                     # Merge any sibling keys (like description overrides in OAS 3.1)
-                    # Sibling keys take precedence over the resolved target
+                    # Sibling keys take precedence over the resolved target, but only
+                    # for the current node.
                     merged = copy.deepcopy(resolved_target) if isinstance(resolved_target, dict) else resolved_target
                     if isinstance(merged, dict):
                         for k, v in node.items():
                             if k != '$ref':
                                 merged[k] = self._resolve_node(v, ancestors) # Use original ancestors here
-                                
-                    self._resolved_cache[ref_path] = merged
-                    return copy.deepcopy(merged)
+                    return merged
 
         # 3. Regular Dictionary (No $ref or non-string $ref)
         resolved_dict = {}

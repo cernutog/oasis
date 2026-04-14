@@ -89,7 +89,6 @@ class LegacyConverter:
         self.emitted_wrappers = set()
         self.emitted_inline_components = set()
         self.inline_component_fingerprints: Dict[Tuple, str] = {}
-        self.inline_component_neutral_fingerprints: Dict[Tuple, str] = {}
         self.inline_component_fingerprint_by_name: Dict[str, Tuple] = {}
         self.inline_component_root_desc: Dict[str, str] = {}
         self.inline_component_example_sig: Dict[str, str] = {}
@@ -3010,12 +3009,8 @@ class LegacyConverter:
                 object_key_subtrees[key] = descendants
                 ex_sig = _subtree_example_signature(descendants)
                 fp = _fp_inline_subtree(descendants, name_norm, include_rules=(current_ctx_kind == "request"))
-                neutral_fp = _fp_inline_subtree(descendants, name_norm, include_rules=False)
                 existing = None
-                if current_ctx_kind == "request":
-                    existing = self.inline_component_fingerprints.get(fp)
-                else:
-                    existing = self.inline_component_neutral_fingerprints.get(neutral_fp) or self.inline_component_fingerprints.get(fp)
+                existing = self.inline_component_fingerprints.get(fp)
                 if existing:
                     object_ref_map[name_norm] = existing
                     object_key_map[key] = existing
@@ -3034,7 +3029,6 @@ class LegacyConverter:
                     object_ref_map[name_norm] = comp_name
                     object_key_map[key] = comp_name
                     self.inline_component_fingerprints[fp] = comp_name
-                    self.inline_component_neutral_fingerprints.setdefault(neutral_fp, comp_name)
                     self.inline_component_fingerprint_by_name[comp_name] = fp
                     self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
                     self.inline_component_example_sig[comp_name] = ex_sig
@@ -3079,12 +3073,8 @@ class LegacyConverter:
                     named_array_key_subtrees[key] = descendants
                     ex_sig = _subtree_example_signature(descendants)
                     fp = _fp_inline_subtree(descendants, name_norm, include_rules=(current_ctx_kind == "request"))
-                    neutral_fp = _fp_inline_subtree(descendants, name_norm, include_rules=False)
                     existing = None
-                    if current_ctx_kind == "request":
-                        existing = self.inline_component_fingerprints.get(fp)
-                    else:
-                        existing = self.inline_component_neutral_fingerprints.get(neutral_fp) or self.inline_component_fingerprints.get(fp)
+                    existing = self.inline_component_fingerprints.get(fp)
                     if existing:
                         named_array_items_ref_map[name_norm] = existing
                         named_array_key_map[key] = existing
@@ -3104,7 +3094,6 @@ class LegacyConverter:
                         named_array_items_ref_map[name_norm] = comp_name
                         named_array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
-                        self.inline_component_neutral_fingerprints.setdefault(neutral_fp, comp_name)
                         self.inline_component_fingerprint_by_name[comp_name] = fp
                         self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
                         self.inline_component_example_sig[comp_name] = ex_sig
@@ -3121,12 +3110,8 @@ class LegacyConverter:
                     array_key_subtrees[key] = descendants
                     ex_sig = _subtree_example_signature(descendants)
                     fp = _fp_inline_subtree(descendants, name_norm, include_rules=(current_ctx_kind == "request"))
-                    neutral_fp = _fp_inline_subtree(descendants, name_norm, include_rules=False)
                     existing = None
-                    if current_ctx_kind == "request":
-                        existing = self.inline_component_fingerprints.get(fp)
-                    else:
-                        existing = self.inline_component_neutral_fingerprints.get(neutral_fp) or self.inline_component_fingerprints.get(fp)
+                    existing = self.inline_component_fingerprints.get(fp)
                     if existing:
                         array_items_ref_map[name_norm] = existing
                         array_key_map[key] = existing
@@ -3144,7 +3129,6 @@ class LegacyConverter:
                         array_items_ref_map[name_norm] = comp_name
                         array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
-                        self.inline_component_neutral_fingerprints.setdefault(neutral_fp, comp_name)
                         self.inline_component_fingerprint_by_name[comp_name] = fp
                         self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
                         self.inline_component_example_sig[comp_name] = ex_sig

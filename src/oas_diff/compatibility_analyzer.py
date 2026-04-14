@@ -187,10 +187,40 @@ class CompatibilityAnalyzer:
             req2 = p2.get('required', False)
             if req1 != req2:
                  self.issues.append(CompatibilityIssue(path, method, f"Parameter ({location})", name, "Constraint Mismatch", f"Property 'required' changed from {req1} to {req2}", old_value=req1, new_value=req2))
-            
-            # Compare schemas
+
+            def _norm_desc(txt):
+                if txt is None:
+                    return ''
+                return re.sub(r'\s+', ' ', str(txt)).strip()
+
+            desc1 = p1.get('description')
+            desc2 = p2.get('description')
+            if _norm_desc(desc1) != _norm_desc(desc2):
+                self.issues.append(
+                    CompatibilityIssue(
+                        path,
+                        method,
+                        f"Parameter ({location})",
+                        name,
+                        "Description Change",
+                        "Description changed",
+                        old_value=desc1,
+                        new_value=desc2,
+                    )
+                )
+
+            # Compare schemas, but parameter descriptions belong to the parameter
+            # object itself, not to the nested schema.
             if 'schema' in p1 and 'schema' in p2:
-                 self._compare_schemas(path, method, f"Parameter ({location})", p1['schema'], p2['schema'], name)
+                 self._compare_schemas(
+                     path,
+                     method,
+                     f"Parameter ({location})",
+                     p1['schema'],
+                     p2['schema'],
+                     name,
+                     skip_description=True,
+                 )
 
     def _compare_request_body(self, path: str, method: str, rb1: Dict, rb2: Dict):
         # Compare required attribute
