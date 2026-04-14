@@ -49,8 +49,10 @@ class CompatibilityDocxGenerator:
     def _normalize_issue_value(self, value):
         """Keep issue keys stable between summary and detail rendering."""
         if isinstance(value, list):
-            return ", ".join(map(str, value))
-        return str(value) if value is not None else "<None>"
+            value = ", ".join(map(str, value))
+        if value is None:
+            return "<None>"
+        return self._norm_desc(value)
 
     """
     Generates a Word Document (.docx) detailing Interface Compatibility issues.
@@ -194,6 +196,8 @@ class CompatibilityDocxGenerator:
         # Group issues by endpoint for better flow
         grouped_issues = {}
         for issue in self.issues:
+             if issue.location == "Endpoint" and issue.issue_type in {"Added", "Removed"}:
+                  continue
              key = f"{issue.method} {issue.path}"
              if key not in grouped_issues:
                   grouped_issues[key] = []

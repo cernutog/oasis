@@ -343,13 +343,21 @@ class LegacyConverter:
             try:
                 canon = self.global_schemas.get(out_name)
                 if canon:
+                    if not self.include_examples_in_collision:
+                        canon_has_valid_example = self._is_valid_example_set(canon, canon.example)
+                        incoming_has_valid_example = self._is_valid_example_set(dt, dt.example)
+                    else:
+                        canon_has_valid_example = False
+                        incoming_has_valid_example = False
                     if (not self.include_examples_in_collision
-                        and not (canon.example or "").strip()
-                        and self._is_valid_example_set(dt, dt.example)):
+                        and incoming_has_valid_example
+                        and not canon_has_valid_example):
                         # Promote the first valid example set encountered into the canonical
                         # registry entry when examples are excluded from the collision
                         # fingerprint. This keeps the consolidated $index and all downstream
                         # example generation aligned without changing collision grouping.
+                        # If an invalid example was registered first, replace it with the
+                        # first valid set encountered later.
                         canon.example = (dt.example or "").strip()
                     if not self.include_descriptions_in_collision:
                         desc_in = (dt.description or "").strip()

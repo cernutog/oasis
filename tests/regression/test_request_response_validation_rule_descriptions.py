@@ -183,6 +183,36 @@ def test_inline_components_split_when_only_constraint_differs():
     assert second_rows[0][5] == "FilePSR"
 
 
+def test_later_valid_example_replaces_earlier_invalid_canonical_example_when_examples_not_in_fingerprint():
+    converter = LegacyConverter(
+        input_dir=".",
+        output_dir=".",
+        include_examples_in_collision=False,
+    )
+    invalid_dt = DataType(
+        name="SettlementFile",
+        type="integer",
+        min_val="1",
+        max_val="3",
+        example="1;10;100",
+        source_file="rejectParticipantOperation",
+    )
+    valid_dt = DataType(
+        name="SettlementFile",
+        type="integer",
+        min_val="1",
+        max_val="3",
+        example="1;2;3",
+        source_file="operationDetails",
+    )
+
+    out_name = converter._register_data_type("rejectParticipantOperation", "SettlementFile", invalid_dt)
+    converter._register_data_type("operationDetails", "SettlementFile", valid_dt)
+
+    assert out_name == "SettlementFile"
+    assert converter.global_schemas["SettlementFile"].example == "1;2;3"
+
+
 def test_request_rows_expand_named_array_parent_locally_when_nested_children_need_overrides():
     converter = LegacyConverter(input_dir=".", output_dir=".")
     converter.global_schemas["DefaultDailyThresholds"] = DataType(
