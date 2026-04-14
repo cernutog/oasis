@@ -2626,6 +2626,9 @@ class LegacyConverter:
         wrapper_name = f"{op_id}Request"
         if wrapper_name not in self.emitted_wrappers:
             return
+
+        # B1 marks requestBody required in the generated template.
+        ws.cell(row=1, column=2).value = "M"
             
         # Media Type row with schema reference to wrapper
         # Properties are already defined in the component schema - no need to duplicate inline

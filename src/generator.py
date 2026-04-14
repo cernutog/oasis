@@ -172,7 +172,7 @@ class OASGenerator:
                 "delete",
                 "head",
             ]:
-                # Extract Description and Mandatory from Body sheet attrs (B1, C1)
+                # Extract requestBody mandatory flag from Body sheet attrs (B1)
                 body_df = details["body"]
                 body_description = body_df.attrs.get("body_description")
                 body_required_raw = body_df.attrs.get("body_required")

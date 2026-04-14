@@ -63,16 +63,13 @@ def load_excel_sheet(file_path, sheet_name):
                                 df.attrs["response_description"] = str(desc).strip()
                                 break
                     
-                    # NEW: Specific metadata for "Body" sheet (B1=Description, C1=Required)
+                    # Specific metadata for "Body" sheet (B1=Required)
                     if sheet_name == "Body":
                         try:
-                            # Row 0, Col 1 is B1; Col 2 is C1
+                            # Row 0, Col 1 is B1
                             b1_val = df_raw.iloc[0, 1]
-                            c1_val = df_raw.iloc[0, 2]
                             if pd.notna(b1_val):
-                                df.attrs["body_description"] = str(b1_val).strip()
-                            if pd.notna(c1_val):
-                                df.attrs["body_required"] = str(c1_val).strip()
+                                df.attrs["body_required"] = str(b1_val).strip()
                         except Exception:
                             pass
                 except Exception:
