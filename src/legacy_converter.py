@@ -100,6 +100,8 @@ class LegacyConverter:
         self.empty_error_responses: Dict[str, str] = {}  # status_code -> description (for empty 4xx/5xx sheets)
         self.error_response_fingerprints: Dict[Tuple, str] = {}  # fingerprint -> ErrorResponse variant name
         self.filename_to_error_response: Dict[str, str] = {}  # ep_filename -> ErrorResponse variant name
+        self.error_response_variant_rows: Dict[str, List[Tuple[str, str, str, str, str, str, str]]] = {}
+        self.error_response_description_candidates: Dict[str, Dict[Tuple[str, str, str, str, str, str], Dict[str, Dict[str, Any]]]] = {}
 
     def _resolve_internal_master_dir(self):
         """Finds 'Templates Master' folder as an internal resource."""
@@ -321,9 +323,25 @@ class LegacyConverter:
             fp_data['allowed_values'] = normalize_list(fp_data['allowed_values'])
         if 'example' in fp_data:
             fp_data['example'] = normalize_list(fp_data['example'])
-        # Normalize trailing periods in description (e.g. 'BIC searching.' → 'BIC searching')
         if 'description' in fp_data and isinstance(fp_data['description'], str):
-            fp_data['description'] = fp_data['description'].rstrip('.')
+            fp_data['description'] = self._description_collision_key(fp_data['description'])
+
+        # Normalize OAS default-zero values for min/max based on type semantics.
+        # The hybrid "Min Value/Length/Item" column means:
+        #   string → minLength (default 0), array → minItems (default 0).
+        # A value of 0 is the OAS default for these types, so treat it as empty
+        # to avoid spurious collision splits.
+        dt_type_low = (dt.type or "").strip().lower()
+        if dt_type_low not in ("integer", "int", "number", "float", "double", "decimal"):
+            for fld in ('min_val', 'max_val'):
+                if fld in fp_data:
+                    raw = str(fp_data[fld]).strip()
+                    if raw and raw.lower() != "nan":
+                        try:
+                            if float(raw.replace(",", ".")) == 0:
+                                fp_data[fld] = ""
+                        except (ValueError, TypeError):
+                            pass
             
         # Include child property names for object types so that
         # two DataTypes with the same base fields but different children
@@ -359,6 +377,8 @@ class LegacyConverter:
                         # If an invalid example was registered first, replace it with the
                         # first valid set encountered later.
                         canon.example = (dt.example or "").strip()
+                    if self.include_descriptions_in_collision:
+                        canon.description = self._prefer_description_variant(canon.description, dt.description)
                     if not self.include_descriptions_in_collision:
                         desc_in = (dt.description or "").strip()
                         desc_can = (canon.description or "").strip()
@@ -493,6 +513,42 @@ class LegacyConverter:
             self.merge_provenance[out_name][field][key] = set()
         if file_key:
             self.merge_provenance[out_name][field][key].add(str(file_key))
+
+    def _normalize_description_spacing(self, value: Any) -> str:
+        text = self._clean_value(value)
+        if not text:
+            return ""
+        return re.sub(r"\s+", " ", text).strip()
+
+    def _description_collision_key(self, value: Any) -> str:
+        text = self._normalize_description_spacing(value)
+        if not text:
+            return ""
+        text = text.casefold()
+        text = re.sub(r"[^\w\s]", "", text)
+        text = re.sub(r"\s+", " ", text).strip()
+        return text
+
+    def _description_preference_score(self, value: Any) -> Tuple[int, int, int, int, int]:
+        text = self._normalize_description_spacing(value)
+        if not text:
+            return (0, 0, 0, 0, 0)
+        upper_count = sum(1 for ch in text if ch.isalpha() and ch.isupper())
+        punct_count = sum(1 for ch in text if not ch.isalnum() and not ch.isspace())
+        has_upper = 1 if upper_count > 0 else 0
+        has_punct = 1 if punct_count > 0 else 0
+        return (has_upper, has_punct, upper_count, punct_count, len(text))
+
+    def _prefer_description_variant(self, current_value: Any, incoming_value: Any) -> str:
+        current = self._normalize_description_spacing(current_value)
+        incoming = self._normalize_description_spacing(incoming_value)
+        if not current:
+            return incoming
+        if not incoming:
+            return current
+        if self._description_collision_key(current) != self._description_collision_key(incoming):
+            return current
+        return incoming if self._description_preference_score(incoming) > self._description_preference_score(current) else current
 
     def _resolve_data_type(self, name: str, ep_filename: Optional[str] = None) -> Tuple[Optional[str], Optional[DataType]]:
         """Resolves a named data type to its unique global output name and DataType object."""
@@ -750,6 +806,17 @@ class LegacyConverter:
             for a in attrs_diff:
                 v = getattr(dt, a, "")
                 out[a] = _normalize_constraint_value(a, v)
+            # Normalize OAS default-zero: for non-numeric types, min/max = 0
+            # is the OAS default (minLength/minItems) and should be treated as empty.
+            dt_type_low = (dt.type or "").strip().lower()
+            if dt_type_low not in ("integer", "int", "number", "float", "double", "decimal"):
+                for fld in ('min_val', 'max_val'):
+                    if fld in out and out[fld]:
+                        try:
+                            if float(out[fld].replace(",", ".")) == 0:
+                                out[fld] = ""
+                        except (ValueError, TypeError):
+                            pass
             return out
 
         def _constraint_delta(old_dt: Optional[DataType], new_dt: Optional[DataType]) -> List[str]:
@@ -762,6 +829,19 @@ class LegacyConverter:
                     differing.append(k)
             return differing
 
+        def _semantic_label(attr: str, dt: Optional[DataType]) -> str:
+            """Return a type-aware display label for hybrid min/max columns."""
+            if attr in ('min_val', 'max_val') and dt:
+                dt_type_low = (dt.type or "").strip().lower()
+                prefix = "Min" if "min" in attr else "Max"
+                if dt_type_low in ("integer", "int", "number", "float", "double", "decimal"):
+                    return f"{prefix} Val"
+                elif dt_type_low == "array":
+                    return f"{prefix} Items"
+                else:
+                    return f"{prefix} Length"
+            return attr.replace('_', ' ').title()
+
         def _schema_attr_display(dt: Optional[DataType], differing_attrs: List[str]) -> str:
             """Display only the differing attribute values for a given schema (no arrows)."""
             if not dt:
@@ -770,7 +850,7 @@ class LegacyConverter:
             norm = _dt_constraints(dt)
             for k in differing_attrs:
                 if k in attrs_diff:
-                    label = k.replace('_', ' ').title()
+                    label = _semantic_label(k, dt)
                     disp_raw = norm.get(k, "")
                     disp = disp_raw if disp_raw else "(empty)"
                     bits.append(f"- {label}: {disp}")
@@ -876,6 +956,87 @@ class LegacyConverter:
             if descriptions: result["descriptions"] = descriptions
             return result
 
+        def _error_response_propmap(name: str) -> Dict[str, Dict[str, str]]:
+            rows = self.error_response_variant_rows.get(name) or []
+            if not rows:
+                return {}
+
+            children_by_parent: Dict[str, List[Tuple[str, str, str, str, str, str, str]]] = {}
+            wrapper_name = str(name or "").strip()
+            for entry in rows:
+                nm, parent, desc, dtype, items_type, schema_ref, mandatory = entry
+                if not nm:
+                    continue
+                parent_key = "" if parent == wrapper_name else parent
+                children_by_parent.setdefault(parent_key, []).append(entry)
+
+            out: Dict[str, Dict[str, str]] = {}
+
+            def walk(entry: Tuple[str, str, str, str, str, str, str], prefix: str = ""):
+                nm, _parent, desc, dtype, items_type, schema_ref, mandatory = entry
+                path = f"{prefix}.{nm}" if prefix else nm
+                normalized_type = schema_ref if (dtype or "").strip().lower() == "schema" and schema_ref else dtype
+                out[path] = {
+                    "desc": desc or "",
+                    "dtype": normalized_type or "",
+                    "items": items_type or "",
+                    "mandatory": mandatory or "",
+                }
+                for ch in children_by_parent.get(nm, []):
+                    walk(ch, path)
+
+            for root_entry in children_by_parent.get("", []):
+                walk(root_entry, "")
+            return out
+
+        def _error_response_diffs(base_name: str, other_name: str) -> Dict:
+            bmap = _error_response_propmap(base_name)
+            omap = _error_response_propmap(other_name)
+            if not bmap or not omap:
+                return {}
+
+            bkeys = set(bmap.keys())
+            okeys = set(omap.keys())
+            added = sorted(okeys - bkeys)
+            removed = sorted(bkeys - okeys)
+            common = sorted(bkeys & okeys)
+
+            result: Dict[str, Any] = {}
+            if added:
+                result["added"] = added
+            if removed:
+                result["removed"] = removed
+
+            changed: Dict[str, Dict[str, str]] = {}
+            mandatory: Dict[str, Dict[str, str]] = {}
+            descriptions: Dict[str, Dict[str, str]] = {}
+            for key in common:
+                b = bmap[key]
+                o = omap[key]
+                if (b.get("dtype", ""), b.get("items", "")) != (o.get("dtype", ""), o.get("items", "")):
+                    changed[key] = {
+                        "base_type": b.get("dtype", "") or "(empty)",
+                        "other_type": o.get("dtype", "") or "(empty)",
+                        "constraint_delta": [],
+                    }
+                b_mand = (b.get("mandatory", "") or "").strip()
+                o_mand = (o.get("mandatory", "") or "").strip()
+                if b_mand != o_mand:
+                    mandatory[key] = {"base_val": b_mand or "(empty)", "other_val": o_mand or "(empty)"}
+                if self.include_descriptions_in_collision:
+                    b_desc = (b.get("desc", "") or "").strip()
+                    o_desc = (o.get("desc", "") or "").strip()
+                    if b_desc != o_desc:
+                        descriptions[key] = {"base_val": b_desc or "(empty)", "other_val": o_desc or "(empty)"}
+
+            if changed:
+                result["changed"] = changed
+            if mandatory:
+                result["mandatory"] = mandatory
+            if descriptions:
+                result["descriptions"] = descriptions
+            return result
+
         for root_name, members in final_groups.items():
             if len(members) <= 1:
                 continue
@@ -921,6 +1082,14 @@ class LegacyConverter:
                         if promoted_dict:
                             # Store as ("inline_fp_diff", base_nm, promoted_dict) so renderer can access per-schema values
                             mismatches_by_group[other_nm] = ("inline_fp_diff", base_nm, promoted_dict)
+
+            error_members = [m for m in members if m in self.error_response_variant_rows]
+            if len(error_members) > 1:
+                base_nm = error_members[0]
+                for other_nm in error_members[1:]:
+                    diff_dict = _error_response_diffs(base_nm, other_nm)
+                    if diff_dict:
+                        mismatches_by_group[other_nm] = ("inline_fp_diff", base_nm, diff_dict)
 
             # Flag missing base schema when root is a numbered variant and stem base is absent.
             if root_name and re.search(r'(\d+)$', root_name):
@@ -2100,16 +2269,26 @@ class LegacyConverter:
                             # differ only in their DataType variant would share the same ErrorResponse, causing
                             # BFS to attribute all error usages to whichever variant the first-processed file
                             # happened to resolve — producing misleading tracer output.
-                            fp_rows = []
-                            for r in candidate_rows:
-                                par = r[1] if r[1] != placeholder else "__W__"
-                                schema_ref = r[5] if len(r) > 5 else ""
-                                fp_rows.append((r[0], par, r[3], r[4], schema_ref, r[7]))
-                            fp = tuple(fp_rows)
+                            fp = self._build_error_response_fingerprint(candidate_rows)
 
                             if fp in self.error_response_fingerprints:
                                 # Existing variant — reuse
                                 wrapper = self.error_response_fingerprints[fp]
+                                merged_rows = self._merge_error_response_variant_rows(wrapper, candidate_rows, placeholder)
+                                for final_row in final_rows:
+                                    if len(final_row) < 3:
+                                        continue
+                                    if self._clean_value(final_row[1]) != wrapper:
+                                        continue
+                                    for nm, _parent, desc, dtype, items_type, schema_ref, mandatory in merged_rows:
+                                        key_match = self._clean_value(final_row[0]) == nm
+                                        type_match = self._clean_value(final_row[3] if len(final_row) > 3 else "") == dtype
+                                        items_match = self._clean_value(final_row[4] if len(final_row) > 4 else "") == items_type
+                                        schema_match = self._clean_value(final_row[5] if len(final_row) > 5 else "") == schema_ref
+                                        mandatory_match = self._clean_value(final_row[7] if len(final_row) > 7 else "") == mandatory
+                                        if key_match and type_match and items_match and schema_match and mandatory_match:
+                                            final_row[2] = desc
+                                            break
                                 final_rows.extend(extra_blocks)
                                 referenced_data_types.update(_collect_refs_from_rows(extra_blocks))
 
@@ -2127,6 +2306,7 @@ class LegacyConverter:
                                     for r in candidate_rows:
                                         if r[1] == placeholder:
                                             r[1] = wrapper
+                                self._capture_error_response_variant_rows(wrapper, candidate_rows, placeholder)
                                 final_rows.append([wrapper, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
                                 final_rows.extend(candidate_rows)
                                 final_rows.extend(extra_blocks)
@@ -2769,6 +2949,147 @@ class LegacyConverter:
         finally:
             self._close_workbook(wb)
 
+    def _build_error_response_fingerprint(self, candidate_rows: List[List[Any]]) -> Tuple:
+        """Build a stable fingerprint for ErrorResponse wrapper variants.
+
+        ErrorResponse variants must split only on structural / constraint
+        differences, never on description wording.
+        """
+        fp_rows = []
+        for row in candidate_rows:
+            parent = row[1] if row[1] != "ErrorResponse" else "__W__"
+            schema_ref = row[5] if len(row) > 5 else ""
+            mandatory = row[7] if len(row) > 7 else ""
+            fp_rows.append((row[0], parent, row[3], row[4], schema_ref, mandatory))
+        return tuple(fp_rows)
+
+    def _capture_error_response_variant_rows(
+        self,
+        wrapper_name: str,
+        candidate_rows: List[List[Any]],
+        placeholder: str = "ErrorResponse",
+    ) -> None:
+        """Persist a normalized snapshot of ErrorResponse child rows for tracer diffs."""
+        normalized_rows: List[Tuple[str, str, str, str, str, str, str]] = []
+        for row in candidate_rows:
+            parent = row[1] if len(row) > 1 else ""
+            if parent == placeholder:
+                parent = wrapper_name
+            normalized_rows.append(
+                (
+                    self._clean_value(row[0] if len(row) > 0 else ""),
+                    self._clean_value(parent),
+                    self._normalize_description_spacing(row[2] if len(row) > 2 else ""),
+                    self._clean_value(row[3] if len(row) > 3 else ""),
+                    self._clean_value(row[4] if len(row) > 4 else ""),
+                    self._clean_value(row[5] if len(row) > 5 else ""),
+                    self._clean_value(row[7] if len(row) > 7 else ""),
+                )
+            )
+        self.error_response_variant_rows[wrapper_name] = normalized_rows
+        self._accumulate_error_response_descriptions(wrapper_name, normalized_rows)
+        self.error_response_variant_rows[wrapper_name] = self._apply_canonical_error_response_descriptions(
+            wrapper_name,
+            normalized_rows,
+        )
+
+    def _merge_error_response_variant_rows(
+        self,
+        wrapper_name: str,
+        candidate_rows: List[List[Any]],
+        placeholder: str = "ErrorResponse",
+    ) -> List[Tuple[str, str, str, str, str, str, str]]:
+        incoming_rows: List[Tuple[str, str, str, str, str, str, str]] = []
+        for row in candidate_rows:
+            parent = row[1] if len(row) > 1 else ""
+            if parent == placeholder:
+                parent = wrapper_name
+            incoming_rows.append(
+                (
+                    self._clean_value(row[0] if len(row) > 0 else ""),
+                    self._clean_value(parent),
+                    self._normalize_description_spacing(row[2] if len(row) > 2 else ""),
+                    self._clean_value(row[3] if len(row) > 3 else ""),
+                    self._clean_value(row[4] if len(row) > 4 else ""),
+                    self._clean_value(row[5] if len(row) > 5 else ""),
+                    self._clean_value(row[7] if len(row) > 7 else ""),
+                )
+            )
+
+        existing_rows = self.error_response_variant_rows.get(wrapper_name) or []
+        if not existing_rows:
+            existing_rows = incoming_rows
+
+        self._accumulate_error_response_descriptions(wrapper_name, incoming_rows)
+        canonical_rows = self._apply_canonical_error_response_descriptions(wrapper_name, existing_rows)
+        self.error_response_variant_rows[wrapper_name] = canonical_rows
+        return canonical_rows
+
+    def _accumulate_error_response_descriptions(
+        self,
+        wrapper_name: str,
+        rows: List[Tuple[str, str, str, str, str, str, str]],
+    ) -> None:
+        if wrapper_name not in self.error_response_description_candidates:
+            self.error_response_description_candidates[wrapper_name] = {}
+
+        wrapper_candidates = self.error_response_description_candidates[wrapper_name]
+        for nm, parent, desc, dtype, items_type, schema_ref, mandatory in rows:
+            structural_key = (nm, parent, dtype, items_type, schema_ref, mandatory)
+            desc_key = self._description_collision_key(desc)
+            if structural_key not in wrapper_candidates:
+                wrapper_candidates[structural_key] = {}
+            if desc_key not in wrapper_candidates[structural_key]:
+                wrapper_candidates[structural_key][desc_key] = {
+                    "count": 0,
+                    "best": "",
+                }
+            bucket = wrapper_candidates[structural_key][desc_key]
+            bucket["count"] += 1
+            bucket["best"] = self._prefer_description_variant(bucket.get("best", ""), desc)
+
+    def _select_canonical_error_response_description(
+        self,
+        wrapper_name: str,
+        structural_key: Tuple[str, str, str, str, str, str],
+        fallback_desc: str,
+    ) -> str:
+        wrapper_candidates = self.error_response_description_candidates.get(wrapper_name, {})
+        options = wrapper_candidates.get(structural_key, {})
+        if not options:
+            return self._normalize_description_spacing(fallback_desc)
+
+        best_desc = self._normalize_description_spacing(fallback_desc)
+        best_rank: Optional[Tuple[Tuple[int, int, int, int, int], int]] = None
+        for desc_key, payload in options.items():
+            candidate = self._normalize_description_spacing(payload.get("best", ""))
+            if not candidate and desc_key:
+                candidate = desc_key
+            rank = (
+                self._description_preference_score(candidate),
+                int(payload.get("count", 0)),
+            )
+            if best_rank is None or rank > best_rank:
+                best_rank = rank
+                best_desc = candidate
+        return best_desc
+
+    def _apply_canonical_error_response_descriptions(
+        self,
+        wrapper_name: str,
+        rows: List[Tuple[str, str, str, str, str, str, str]],
+    ) -> List[Tuple[str, str, str, str, str, str, str]]:
+        canonical_rows: List[Tuple[str, str, str, str, str, str, str]] = []
+        for nm, parent, desc, dtype, items_type, schema_ref, mandatory in rows:
+            structural_key = (nm, parent, dtype, items_type, schema_ref, mandatory)
+            canonical_desc = self._select_canonical_error_response_description(
+                wrapper_name,
+                structural_key,
+                desc,
+            )
+            canonical_rows.append((nm, parent, canonical_desc, dtype, items_type, schema_ref, mandatory))
+        return canonical_rows
+
     # === Helper Methods ===
     
     def _read_legacy_structure(self, xl, sheet_name: str) -> List[Tuple]:
@@ -2920,7 +3241,7 @@ class LegacyConverter:
                 p_low = "" if p_low == root_low else p_low
                 desc_part = ""
                 if self.include_descriptions_in_collision:
-                    desc_part = str(t_desc).strip() if t_desc is not None else ""
+                    desc_part = self._description_collision_key(t_desc)
                 ex_part = ""
                 if self.include_examples_in_collision:
                     ex_part = _row_example(t_dtype, t_items)
@@ -3034,6 +3355,11 @@ class LegacyConverter:
                         canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
                         if root_desc and root_desc != canon_desc:
                             self._record_merge_provenance(existing, f"description:{name_norm}", root_desc, ep_filename or "")
+                    else:
+                        self.inline_component_root_desc[existing] = self._prefer_description_variant(
+                            self.inline_component_root_desc.get(existing, ""),
+                            desc,
+                        )
                     if not self.include_examples_in_collision:
                         canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
                         if ex_sig and ex_sig != canon_ex:
@@ -3044,7 +3370,7 @@ class LegacyConverter:
                     object_key_map[key] = comp_name
                     self.inline_component_fingerprints[fp] = comp_name
                     self.inline_component_fingerprint_by_name[comp_name] = fp
-                    self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
+                    self.inline_component_root_desc[comp_name] = self._normalize_description_spacing(desc)
                     self.inline_component_example_sig[comp_name] = ex_sig
             else:
                 comp_name = _unique_inline_component_name(self._to_pascal_case(name))
@@ -3097,6 +3423,11 @@ class LegacyConverter:
                             canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
                             if root_desc and root_desc != canon_desc:
                                 self._record_merge_provenance(existing, "description", root_desc, ep_filename or "")
+                        else:
+                            self.inline_component_root_desc[existing] = self._prefer_description_variant(
+                                self.inline_component_root_desc.get(existing, ""),
+                                desc,
+                            )
                         if not self.include_examples_in_collision:
                             canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
                             if ex_sig and ex_sig != canon_ex:
@@ -3109,7 +3440,7 @@ class LegacyConverter:
                         named_array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
                         self.inline_component_fingerprint_by_name[comp_name] = fp
-                        self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
+                        self.inline_component_root_desc[comp_name] = self._normalize_description_spacing(desc)
                         self.inline_component_example_sig[comp_name] = ex_sig
                         self._clone_schema_variant(dt, comp_name)
                 # No-children named-array: not added to named_array_key_map.
@@ -3134,6 +3465,11 @@ class LegacyConverter:
                             canon_desc = (self.inline_component_root_desc.get(existing) or "").strip()
                             if root_desc and root_desc != canon_desc:
                                 self._record_merge_provenance(existing, "description", root_desc, ep_filename or "")
+                        else:
+                            self.inline_component_root_desc[existing] = self._prefer_description_variant(
+                                self.inline_component_root_desc.get(existing, ""),
+                                desc,
+                            )
                         if not self.include_examples_in_collision:
                             canon_ex = (self.inline_component_example_sig.get(existing) or "").strip()
                             if ex_sig and ex_sig != canon_ex:
@@ -3144,7 +3480,7 @@ class LegacyConverter:
                         array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
                         self.inline_component_fingerprint_by_name[comp_name] = fp
-                        self.inline_component_root_desc[comp_name] = (str(desc).strip() if desc is not None else "")
+                        self.inline_component_root_desc[comp_name] = self._normalize_description_spacing(desc)
                         self.inline_component_example_sig[comp_name] = ex_sig
                         self._clone_schema_variant(dt, comp_name)
                 else:
@@ -3830,19 +4166,19 @@ class LegacyConverter:
         if header_row_idx == -1:
             return []
         
-        df.columns = df.iloc[header_row_idx]
+        df.columns = [str(c).strip().lower() for c in df.iloc[header_row_idx]]
         df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
         
         params = []
         for _, row in df.iterrows():
-            name = self._clean_value(row.get("Element", row.get("Request Header", row.get("Name", ""))))
+            name = self._clean_value(row.get("element", row.get("request header", row.get("name", ""))))
             if not name or name.lower() in ["nan", "element", "name"]:
                 continue
             
-            desc = self._clean_value(row.get("Description ", row.get("Description", "")))
-            dtype = self._clean_value(row.get("Type", "string"))
-            mandatory = self._clean_value(row.get("Mandatory", ""))
-            v_rules = self._clean_value(row.get("Validation Rules", ""))
+            desc = self._clean_value(row.get("description", ""))
+            dtype = self._clean_value(row.get("type", "string"))
+            mandatory = self._clean_value(row.get("mandatory", ""))
+            v_rules = self._clean_value(row.get("validation rules", ""))
             
             mand_value = "M" if mandatory in ["M", "m", "Yes", "yes"] else "O"
             

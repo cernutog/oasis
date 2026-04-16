@@ -125,6 +125,8 @@ class CompatibilityDocxGenerator:
         # Calculate frequency and collect for summary
         freq = {}
         for issue in self.issues:
+            if issue.location == "Endpoint" and issue.issue_type in {"Added", "Removed"}:
+                continue
             v1 = self._normalize_issue_value(issue.old_value)
             v2 = self._normalize_issue_value(issue.new_value)
             key = (issue.issue_type, issue.details, v1, v2)
