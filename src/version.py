@@ -3,7 +3,7 @@ OASIS Version Information.
 This is the single source of truth for the application version.
 """
 
-__version__ = "3.0.0"
-BUILD_NUMBER = 0  # 0 = Stable Release. Auto-incremented by build_exe.bat for dev builds.
+__version__ = "3.0"
+BUILD_NUMBER = 1  # 0 = Stable Release. Auto-incremented by build_exe.bat for dev builds.
 VERSION = __version__
 FULL_VERSION = f"{__version__}.{BUILD_NUMBER}" if BUILD_NUMBER > 0 else __version__

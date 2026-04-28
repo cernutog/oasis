@@ -18,6 +18,15 @@
 
 ## Lessons Learned
 
+### 2026-04-28 - Build v3.0.1: API Designer Major Release Baseline
+
+- Added the initial API Designer implementation as the baseline for the new 3.0 major line.
+- Introduced the `src/api_designer` module set covering designer models, OAS import, local persistence, and workspace/session restore behavior.
+- Hardened the Designer Model tree refresh path and batch expansion/collapse behavior to prevent stale-node crashes and long UI freezes on large imported specifications.
+- Added regression coverage and example/manual assets for the new Designer workflow.
+- Updated `OASIS.spec` to collect documentation through a filtered file list, excluding `docs/presentations` artifacts and Office temp lock files so the standard PyInstaller build completes reliably.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.1`.
+
 ### 2026-04-10 - Legacy Converter: Preference Injection and Collision-Safe Example Promotion
 
 - Added `Templates > Legacy Tools` preferences for injecting missing `$index.xlsx` `General Description` values generated from legacy templates:

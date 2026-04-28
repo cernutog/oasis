@@ -1,6 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import os
 import sys
+from pathlib import Path
 from PyInstaller.utils.hooks import collect_all
 
 # Dynamic paths for Tcl/Tk - uses Python's base prefix
@@ -8,6 +9,21 @@ PYTHON_HOME = sys.base_prefix
 TCL_ROOT = os.path.join(PYTHON_HOME, "tcl")
 DLLS_ROOT = os.path.join(PYTHON_HOME, "DLLs")
 TKINTER_LIB = os.path.join(PYTHON_HOME, "Lib", "tkinter")
+
+
+def _collect_docs_datas():
+    docs_root = Path("docs")
+    excluded_root = docs_root / "presentations"
+    datas = []
+    for path in docs_root.rglob("*"):
+        if not path.is_file():
+            continue
+        if path.name.startswith("~$"):
+            continue
+        if excluded_root in path.parents:
+            continue
+        datas.append((str(path), str(path.parent.relative_to(docs_root.parent))))
+    return datas
 
 datas = [
     ('src/resources/redoc.standalone.js', 'src/resources'),
@@ -19,11 +35,11 @@ datas = [
     (os.path.join(TCL_ROOT, "tk8.6"), "tcl/tk8.6"),
     ('bin/spectral.exe', 'bin'),
     ('bin/vacuum.exe', 'bin'),
-    ('docs', 'docs'), # Asset migration for GitHub Pages & Local Fallback
+    *_collect_docs_datas(),  # Asset migration for GitHub Pages & Local Fallback
     # Bundle Templates (exclude Excel temp lock files ~$*)
     *[
         (str(f), 'Templates Master')
-        for f in __import__('pathlib').Path('Templates Master').iterdir()
+        for f in Path('Templates Master').iterdir()
         if not f.name.startswith('~$')
     ],
     # Explicitly include tkinter Python module
