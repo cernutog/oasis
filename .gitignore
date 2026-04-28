@@ -67,6 +67,9 @@ repro_*.py
 reproduce_*.py
 verify_*.py
 test_*.py
+!tests/regression/test_api_designer_foundation.py
+!tests/regression/test_api_designer_example_workspace.py
+!tests/regression/test_api_designer_oas_import.py
 
 # Local test/debug helpers (do not commit)
 tests/_check*.py
@@ -90,6 +93,7 @@ temp_*/
 tmp/
 tmp/**
 .claude/
+.oasis_state/
 Output_Test_Reports/
 .agent/skills/build_oasis/image.png
 

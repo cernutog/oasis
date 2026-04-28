@@ -114,7 +114,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         ("Newest First", "newest_first"),
         ("Oldest First", "oldest_first"),
     ]
-    TAB_OPTIONS = ["OAS Generation", "Validation", "View"]
+    TAB_OPTIONS = ["Designer", "OAS Generation", "Validation", "View"]
 
     def __init__(self, parent, prefs_manager, on_save_callback=None):
         super().__init__(parent)
@@ -503,7 +503,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         prefs = self.prefs_manager.get_all()
 
         # General
-        default_tab = prefs.get("default_tab", "OAS to Excel") # Typo in defaults? No, stored as label
+        default_tab = prefs.get("default_tab", "Designer")
         if default_tab in self.TAB_OPTIONS: self.cbo_tab.set(default_tab)
         
         sort_order = prefs.get("file_sort_order", "alphabetical")
@@ -752,7 +752,7 @@ class PreferencesDialog(ctk.CTkToplevel):
 
     def _on_reset(self):
         """Reset UI to default values."""
-        self.cbo_tab.set("OAS Generation")
+        self.cbo_tab.set("Designer")
         self.cbo_sort.set("Alphabetical")
         self.var_remember.set(False)
         self.chk_window_pos.select()

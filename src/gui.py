@@ -35,6 +35,7 @@ try:
     from .legacy_converter_dialog import LegacyConverterDialog
     from .legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from .oas_diff_dialog import OASDiffDialog
+    from .api_designer.designer_tab import ApiDesignerTab
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
     import main as main_script
@@ -52,6 +53,7 @@ except ImportError:
     from legacy_converter_dialog import LegacyConverterDialog
     from legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from oas_diff_dialog import OASDiffDialog
+    from api_designer.designer_tab import ApiDesignerTab
 
 from chlorophyll import CodeView
 import pygments.lexers
@@ -324,11 +326,17 @@ class OASGenApp(ctk.CTk):
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
 
         # Define Tabs Order
+        self.tab_designer = self.tabview.add("Designer")
         self.tab_gen = self.tabview.add("OAS Generation")
         self.tab_val = self.tabview.add("Validation")
         
         # Import dialog reference (opened from Tools menu)
         self.import_dialog = None
+        self.designer_tab = ApiDesignerTab(
+            self.tab_designer,
+            self.prefs_manager,
+            status_callback=self.log_app,
+        )
         
         # Global search binding - bind_all to be robust regardless of focus
         self.bind_all("<Control-f>", self._handle_global_search)
@@ -1044,8 +1052,9 @@ class OASGenApp(ctk.CTk):
         tools_menu.add_command(label="Template Schema Tracer", command=self.open_legacy_schema_tracer)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
-        # View Menu (Generation, Validation, YAML Viewer)
+        # View Menu (Designer, Generation, Validation, YAML Viewer)
         self.view_menu = tk.Menu(menubar, tearoff=0)
+        self.view_menu.add_command(label="Designer", command=self._view_designer)
         self.view_menu.add_command(label="OAS Generation", command=self._view_generation)
         self.view_menu.add_command(label="Validation", command=self._view_validation)
         self.view_menu.add_command(label="YAML Viewer", command=self._view_yaml_viewer)
@@ -1103,6 +1112,9 @@ class OASGenApp(ctk.CTk):
     def _view_yaml_viewer(self):
         self.tabview.set("View")
 
+    def _view_designer(self):
+        self.tabview.set("Designer")
+
     def _smart_select_template(self):
         """Switch to Generation tab and open template selector."""
         self.tabview.set("OAS Generation")
@@ -1120,6 +1132,17 @@ class OASGenApp(ctk.CTk):
 
     def _view_validation(self):
         self.tabview.set("Validation")
+
+    def _apply_default_tab(self):
+        default_tab = self.prefs_manager.get("default_tab", "Designer")
+        valid_tabs = {"Designer", "OAS Generation", "Validation", "View"}
+        if default_tab not in valid_tabs:
+            default_tab = "Designer"
+        try:
+            self.tabview.set(default_tab)
+            self._on_tab_change()
+        except Exception:
+            pass
         
     def _load_files_on_startup(self):
         """Load file lists in Validation and View tabs on startup."""
@@ -1134,6 +1157,7 @@ class OASGenApp(ctk.CTk):
         
         # Apply all preferences (themes, fonts, etc.) on startup
         self._apply_preferences(self.prefs_manager.get_all())
+        self._apply_default_tab()
 
 
     def _load_custom_theme(self, theme_name):

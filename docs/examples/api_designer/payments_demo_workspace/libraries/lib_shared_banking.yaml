@@ -1,0 +1,48 @@
+id: lib_shared_banking
+name: Shared Banking Components
+components:
+  - id: cmp_trace_headers
+    name: TraceHeaders
+    component_kind: headers
+    current_revision_id: rev_trace_headers_v1
+    payload:
+      X-Request-ID:
+        schema:
+          type: string
+      X-Correlation-ID:
+        schema:
+          type: string
+    usages:
+      - api_id: api_payments
+        adopted_revision_id: rev_trace_headers_v1
+        location: operations[*].responses[*].headers
+    extensions: {}
+    custom_metadata: {}
+  - id: cmp_problem_details
+    name: ProblemDetails
+    component_kind: schema
+    current_revision_id: rev_problem_details_v2
+    payload:
+      type: object
+      required:
+        - type
+        - title
+        - status
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+    usages:
+      - api_id: api_payments
+        adopted_revision_id: rev_problem_details_v2
+        location: components.schemas.ErrorResponse
+    extensions: {}
+    custom_metadata: {}
+extensions: {}
+custom_metadata:
+  owner_team: API Guild

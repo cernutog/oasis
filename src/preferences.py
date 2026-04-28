@@ -22,9 +22,11 @@ class PreferencesManager:
         "last_excel_input": "",
         "last_excel_output": "",
         "last_oas_folder": "",
+        "last_designer_oas_import_folder": "",
         "last_legacy_src": "",
         "last_legacy_dst": "",
         "last_legacy_master": "",
+        "last_api_model_workspace": "",
         # Generation Options
         "gen_oas_30": True,
         "gen_oas_31": True,
@@ -45,7 +47,7 @@ class PreferencesManager:
         "analysis_log_theme": "Light",
         "spectral_log_theme": "Dark",
         # Interface
-        "default_tab": "OAS Generation",  # OAS Generation, Validation, View
+        "default_tab": "Designer",  # Designer, OAS Generation, Validation, View
         "linter_engine": "spectral",  # spectral or vacuum
         "ignore_bad_request": True,
         "validation_font_size": 11,
