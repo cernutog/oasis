@@ -258,9 +258,9 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
             last_src = self.prefs_manager.get("last_legacy_src", "")
             last_dst = self.prefs_manager.get("last_legacy_dst", "")
-            if last_src and os.path.exists(last_src):
+            if last_src:
                 self.entry_src.insert(0, last_src)
-            if last_dst and os.path.exists(last_dst):
+            if last_dst:
                 self.entry_dst.insert(0, last_dst)
         else:
             print("DEBUG: remember_paths is False or prefs_manager is None")
@@ -361,15 +361,34 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                                       state="disabled")
         self.log_area.pack(fill="both", expand=True, pady=(10, 0))
 
-    def _get_initial_dir(self, entry_widget):
-        """Returns the folder from entry if it exists, otherwise cwd."""
-        p = entry_widget.get()
-        if p and os.path.exists(p):
-            return p if os.path.isdir(p) else os.path.dirname(p)
-        return os.getcwd()
+    def _get_initial_dir(self, entry_widget, pref_key=None):
+        """Return the best existing folder for a browse dialog."""
+        candidates = [entry_widget.get()]
+        if pref_key and self.prefs_manager and self.prefs_manager.get("remember_paths", True):
+            candidates.append(self.prefs_manager.get(pref_key, ""))
+
+        for candidate in candidates:
+            initial = self._nearest_existing_dir(candidate)
+            if initial:
+                return initial
+
+        return os.path.expanduser("~")
+
+    def _nearest_existing_dir(self, value):
+        if not value:
+            return ""
+        path = os.path.abspath(os.path.expanduser(str(value).strip().strip('"')))
+        if os.path.isfile(path):
+            path = os.path.dirname(path)
+        while path and not os.path.isdir(path):
+            parent = os.path.dirname(path)
+            if parent == path:
+                return ""
+            path = parent
+        return path
 
     def _browse_src(self):
-        initial = self._get_initial_dir(self.entry_src)
+        initial = self._get_initial_dir(self.entry_src, "last_legacy_src")
         p = filedialog.askdirectory(parent=self, initialdir=initial, title="Select Legacy Templates Folder")
         if p:
             self.lift()
@@ -389,7 +408,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 print(f"DEBUG: Saved src='{p}', dst='{self.entry_dst.get()}'")
 
     def _browse_dst(self):
-        initial = self._get_initial_dir(self.entry_dst)
+        initial = self._get_initial_dir(self.entry_dst, "last_legacy_dst")
         p = filedialog.askdirectory(parent=self, initialdir=initial, title="Select Destination Folder")
         if p:
             self.lift()

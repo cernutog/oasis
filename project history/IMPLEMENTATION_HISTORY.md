@@ -18,6 +18,14 @@
 
 ## Lessons Learned
 
+### 2026-05-04 - Build v3.0.2: Restore Legacy Converter Browse Paths
+
+- Fixed Legacy Template Converter browse dialogs so they open from the entry path, the saved preference, or the nearest existing parent folder instead of falling back to the executable working directory.
+- Removed the custom API Designer `.oasis_state` session snapshot mechanism and returned Designer restore behavior to the existing preferences-based path memory.
+- Removed stale `.oasis_state` output from `dist` and kept `docs/presentations` out of application builds and commits.
+- Added regression coverage for browse initial directory selection when the remembered leaf folder no longer exists.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.2`.
+
 ### 2026-04-28 - Build v3.0.1: API Designer Major Release Baseline
 
 - Added the initial API Designer implementation as the baseline for the new 3.0 major line.

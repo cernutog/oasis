@@ -27,6 +27,7 @@ class PreferencesManager:
         "last_legacy_dst": "",
         "last_legacy_master": "",
         "last_api_model_workspace": "",
+        "last_designer_oas_import_file": "",
         # Generation Options
         "gen_oas_30": True,
         "gen_oas_31": True,

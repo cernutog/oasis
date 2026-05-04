@@ -832,13 +832,6 @@ class ApiDesignerTab:
         self._dynamic_working_copy: Any = None
 
     def _load_last_workspace_or_default(self) -> None:
-        snapshot_root = self.prefs_manager.get("last_api_model_session_snapshot", "")
-        if snapshot_root and (Path(snapshot_root) / "workspace.yaml").exists():
-            try:
-                self._load_designer_session_snapshot(Path(snapshot_root))
-                return
-            except (DesignerPersistenceError, OasImportError, ValueError) as exc:
-                self._set_status(f"Restore failed: {exc}")
         last = self.prefs_manager.get("last_api_model_workspace", "")
         if last and Path(last).exists():
             try:
@@ -905,7 +898,6 @@ class ApiDesignerTab:
             self._dirty = False
             self._remember_workspace_path()
             self._refresh_path()
-            self._persist_designer_session_snapshot()
             self._set_status("Saved")
         except DesignerPersistenceError as exc:
             messagebox.showerror("Save Workspace", str(exc), parent=self.master.winfo_toplevel())
@@ -1155,7 +1147,6 @@ class ApiDesignerTab:
             self._restore_selection(selected)
         else:
             self._select_default_designer_focus()
-        self._persist_designer_session_snapshot()
 
     def _refresh_path(self) -> None:
         if self.workspace_path:
@@ -4299,36 +4290,6 @@ class ApiDesignerTab:
         self.status_label.configure(text=text)
         if self.status_callback:
             self.status_callback(f"[Designer] {text}")
-
-    def _session_snapshot_root(self) -> Path:
-        return Path.cwd() / ".oasis_state" / "api_designer_last_session"
-
-    def _persist_designer_session_snapshot(self) -> None:
-        if not hasattr(self, "prefs_manager") or self.prefs_manager is None:
-            return
-        try:
-            snapshot_root = self._session_snapshot_root()
-            FileSystemDesignerRepository(snapshot_root).save_workspace(self.workspace)
-            self.prefs_manager.set("last_api_model_session_snapshot", str(snapshot_root))
-            self.prefs_manager.set(
-                "last_api_model_session_workspace_path",
-                str(self.workspace_path) if self.workspace_path else "",
-            )
-            self.prefs_manager.set("last_api_model_session_dirty", bool(self._dirty))
-            self.prefs_manager.save()
-        except Exception:
-            pass
-
-    def _load_designer_session_snapshot(self, root_path: Path) -> None:
-        workspace = FileSystemDesignerRepository(root_path).load_workspace()
-        workspace.validate()
-        self.workspace = workspace
-        stored_path = self.prefs_manager.get("last_api_model_session_workspace_path", "")
-        self.workspace_path = Path(stored_path) if stored_path else None
-        self._dirty = bool(self.prefs_manager.get("last_api_model_session_dirty", False))
-        if self.workspace_path:
-            self._remember_workspace_path()
-        self._refresh_all()
 
     def _remember_workspace_path(self) -> None:
         if not self.workspace_path:

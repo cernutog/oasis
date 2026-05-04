@@ -93,7 +93,6 @@ temp_*/
 tmp/
 tmp/**
 .claude/
-.oasis_state/
 Output_Test_Reports/
 .agent/skills/build_oasis/image.png
 

@@ -16,7 +16,7 @@ When starting a new chat to continue work on this project, share these files:
 
 ## Current Status (as of 2026-02-26)
 
-- **Current Version**: `v3.0.1`
+- **Current Version**: `v3.0.2`
 - **Recent focus area**: Legacy Tools schema tracing correctness + readability
 
 ### Recent work summary (v2.1.70 - v2.1.71)

@@ -5,6 +5,7 @@ import yaml
 
 from src.api_designer.models import Change, ChangeStep, create_empty_workspace
 from src.api_designer.persistence import FileSystemDesignerRepository
+from src.legacy_converter_dialog import LegacyConverterDialog
 
 
 TEST_TEMP_ROOT = Path(__file__).resolve().parents[1] / "_tmp_api_designer_foundation"
@@ -98,5 +99,40 @@ def test_api_designer_file_package_shape():
             }
         ]
         assert "root_surface" not in manifest["apis"][0]
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+class _DummyEntry:
+    def __init__(self, value: str):
+        self._value = value
+
+    def get(self) -> str:
+        return self._value
+
+
+class _DummyPrefs:
+    def __init__(self, values: dict[str, str]):
+        self._values = values
+
+    def get(self, key: str, default=None):
+        if key == "remember_paths":
+            return True
+        return self._values.get(key, default)
+
+
+def test_legacy_converter_browse_initial_dir_uses_nearest_existing_path():
+    temp_root = _clean_test_temp()
+    missing_leaf = temp_root / "Templates" / "CGS API OPS" / "2026Q4"
+    expected = missing_leaf.parent
+    expected.mkdir(parents=True)
+
+    try:
+        dialog = object.__new__(LegacyConverterDialog)
+        dialog.prefs_manager = _DummyPrefs({"last_legacy_src": str(temp_root)})
+
+        initial = dialog._get_initial_dir(_DummyEntry(str(missing_leaf)), "last_legacy_src")
+
+        assert Path(initial) == expected
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
