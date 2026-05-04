@@ -8,6 +8,7 @@ import os
 import shutil
 import re
 import copy
+import textwrap
 from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -37,6 +38,146 @@ class DataType:
     source_file: str = "" # Track origin for collision resolution
 
 
+DEFAULT_LEGACY_EXAMPLE_SEED_VALUES = {
+    "bic": ["IPSDITM1", "DEUTDEFF", "BNPAFRPP", "IPSDITM1XXX", "DEUTDEFFXXX", "BNPAFRPPXXX"],
+    "bic8": ["IPSDITM1", "DEUTDEFF", "BNPAFRPP"],
+    "bic11": ["IPSDITM1XXX", "DEUTDEFFXXX", "BNPAFRPPXXX"],
+    "iban": ["IT60X0542811101000000123456", "DE89370400440532013000", "FR1420041010050500013M02606"],
+    "currency": ["EUR", "USD", "GBP"],
+    "country": ["IT", "DE", "FR"],
+    "email": ["operations@example.com", "support@example.com", "api.owner@example.com"],
+    "url": ["https://api.example.com/resource", "https://docs.example.com/api", "https://portal.example.com/callback"],
+    "filename": ["banking-data.xml", "banking-report.csv", "banking-document.txt"],
+    "uuid": ["550e8400-e29b-41d4-a716-446655440000", "6f9619ff-8b86-d011-b42d-00cf4fc964ff", "123e4567-e89b-12d3-a456-426614174000"],
+    "date": ["2026-01-31", "2026-06-30", "2026-12-31"],
+    "datetime": ["2026-01-31T10:15:30Z", "2026-06-30T12:00:00Z", "2026-12-31T23:59:59Z"],
+    "amount": ["100.00", "250.50", "1000.00"],
+    "integer": ["1", "2", "3"],
+    "number": ["1.0", "2.5", "3.75"],
+    "boolean": ["true", "false"],
+    "description": ["Lorem ipsum dolor sit amet", "Banking service description", "Operational service description"],
+    "reference": ["REF2026001", "REF2026002", "REF2026003"],
+    "request_id": ["REQ2026000001", "REQ2026000002", "REQ2026000003"],
+    "message_id": ["MSG2026000001", "MSG2026000002", "MSG2026000003"],
+    "transaction_id": ["TRX2026000001", "TRX2026000002", "TRX2026000003"],
+    "instruction_id": ["INS2026000001", "INS2026000002", "INS2026000003"],
+    "operation_id": ["OP2026000001", "OP2026000002", "OP2026000003"],
+    "identifier": ["ID2026000001", "ID2026000002", "ID2026000003"],
+    "user_id": ["USR00001", "USR00002", "USR00003"],
+    "account": ["IT60X0542811101000000123456", "DE89370400440532013000", "BE68539007547034"],
+    "dca": ["IPSDITM1DCA0001", "DEUTDEFFDCA0001", "BNPAFRPPDCA0001"],
+    "status": ["ACCP", "PDNG", "RJCT"],
+    "type": ["BANKING", "REPORT", "MESSAGE"],
+    "network": ["PRIMARY", "SECONDARY", "BACKUP"],
+    "product": ["SCT", "RT1", "STEP2"],
+    "cycle": ["01", "02", "03"],
+    "offset": ["0", "100", "200"],
+    "sequence": ["1", "2", "3"],
+    "time": ["10:15:30", "12:00:00", "23:59:59"],
+    "period": ["2026Q1", "2026Q2", "2026Q3"],
+    "xml": ["<Document/>", "<Message/>", "<Report/>"],
+    "aos": ["A01", "A02", "A03"],
+    "flag": ["Y", "N"],
+    "profile": ["STANDARD", "ADVANCED", "DEFAULT"],
+    "role": ["REQUESTOR", "AUTHORIZER", "CONFIRMER"],
+    "service": ["SCT", "RT1", "STEP2"],
+    "module": ["MODULE01", "MODULE02", "MODULE03"],
+    "channel": ["PRIMARY", "SECONDARY", "BACKUP"],
+    "duration": ["01d 11h 21m 05s", "00d 02h 30m 00s", "02d 00h 00m 00s"],
+    "lac": ["LAC001", "LAC002", "LAC003"],
+    "sign": ["POS", "NEG"],
+    "direction": ["SNT", "RCV", "IN"],
+    "settlement_method": ["LQPS", "RT1A", "TDCA"],
+    "csm": ["RT1", "TIPS", "RT1-TIPS"],
+    "pointer": ["001C", "002L", "003C"],
+    "field_name": ["Fieldname01", "Fieldname02", "Fieldname03"],
+    "field_value": ["Fieldvalue01", "Fieldvalue02", "Fieldvalue03"],
+    "validation_detail": ["must match pattern", "invalid value", "missing required field"],
+    "network_address": ["cn=bank01,cn=sag2,cn=memb,o=itsimitt,o=swift", "cn=bank02,cn=sag2,cn=memb,o=deutdeff,o=swift", "cn=bank03,cn=sag2,cn=memb,o=bnpafrpp,o=swift"],
+    "count": ["1", "5", "12"],
+    "routing_table": ["P", "RE"],
+    "operation": ["FREEZE", "UNFREEZE", "UPDATE"],
+    "reason": ["VALIDATION", "TECHNICAL", "BUSINESS"],
+    "endpoint": ["https://api.example.com/service", "https://api.example.com/status", "https://api.example.com/messages"],
+    "file_size": ["1024", "2048", "4096"],
+    "certificate": ["CERTIFICATE01", "CERTIFICATE02", "CERTIFICATE03"],
+    "code": ["CODE001", "CODE002", "CODE003"],
+    "error_code": ["ERR001", "ERR002", "ERR003"],
+    "name": ["Banking Service", "Operational Service", "Reference Service"],
+    "generic": ["Banking value", "Operational value", "Reference value"],
+}
+
+LEGACY_GENERATED_EXAMPLE_SEED_VALUES = {
+    "filename": ["payment-instructions.xml", "settlement-report.csv", "reconciliation-data.json"],
+    "generic": ["sampleValue", "exampleValue", "testValue"],
+}
+
+DEFAULT_LEGACY_EXAMPLE_SEMANTIC_RULES = {
+    "overrides": {
+        "exact": {},
+        "compact_exact": {},
+    },
+    "exclusions": {
+        "filename": {
+            "exact": ["FileStatus", "FileReference"],
+        },
+    },
+    "rules": [
+        {"category": "request_id", "compact_contains": ["requestid"]},
+        {"category": "message_id", "compact_contains": ["messageid", "msgid"]},
+        {"category": "transaction_id", "compact_contains": ["transactionid", "endtoendid", "txid"]},
+        {"category": "instruction_id", "compact_contains": ["instructionid"]},
+        {"category": "operation_id", "compact_contains": ["operationid"]},
+        {"category": "user_id", "compact_exact": ["user"], "compact_contains": ["userid", "userissr", "userissuer", "usersprvr", "supervisor"]},
+        {"category": "identifier", "compact_suffix": ["id"], "compact_contains": ["identifier"]},
+        {"category": "field_name", "compact_exact": ["field", "fieldname"]},
+        {"category": "field_value", "compact_exact": ["value", "fieldvalue"]},
+        {"category": "validation_detail", "compact_contains": ["errordetails"]},
+        {"category": "filename", "contains": ["filename", "file name"]},
+        {"category": "xml", "compact_contains": ["originalxml"], "compact_suffix": ["xml", "data"]},
+        {"category": "datetime", "format": ["date-time", "datetime"], "contains": ["datetime", "timestamp", "yyyy-mm-ddthh"], "compact_suffix": ["dttm", "datetime"]},
+        {"category": "date", "format": ["date"], "contains": ["date", "yyyy-mm-dd"], "compact_suffix": ["dt", "date"]},
+        {"category": "time", "format": ["time"], "compact_regex": [".*time$"]},
+        {"category": "period", "contains": ["period", "quarter"], "compact_exact": ["year", "month", "day"]},
+        {"category": "description", "contains": ["description"]},
+        {"category": "error_code", "contains": ["errorcode", "error code"]},
+        {"category": "reference", "contains": ["reference"], "compact_suffix": ["ref"], "compact_contains": ["rfrnc"]},
+        {"category": "amount", "contains": ["amount"]},
+        {"category": "endpoint", "compact_suffix": ["endpoint"], "compact_contains": ["apiendpoint"]},
+        {"category": "file_size", "compact_contains": ["filesize"]},
+        {"category": "reason", "contains": ["reason"], "compact_contains": ["rsn"]},
+        {"category": "direction", "compact_exact": ["sentreceived", "trxdirection"], "contains": ["direction"]},
+        {"category": "settlement_method", "compact_contains": ["settmethod", "settlementmethod"]},
+        {"category": "csm", "compact_exact": ["csm"]},
+        {"category": "pointer", "compact_exact": ["pointer"]},
+        {"category": "count", "compact_prefix": ["num", "totnum"], "compact_suffix": ["count"]},
+        {"category": "network_address", "compact_suffix": ["netad"]},
+        {"category": "status", "contains": ["status", "state"], "compact_suffix": ["sts"], "compact_contains": ["msgsts"]},
+        {"category": "type", "compact_contains": ["type"], "compact_suffix": ["tp"]},
+        {"category": "aos", "compact_exact": ["ao"], "compact_contains": ["aos"]},
+        {"category": "network", "contains": ["network"], "compact_contains": ["netwopt", "outputnet"]},
+        {"category": "product", "contains": ["product"]},
+        {"category": "channel", "contains": ["channel"], "compact_exact": ["requestedthrough"]},
+        {"category": "cycle", "contains": ["cycle"]},
+        {"category": "offset", "compact_exact": ["offset"]},
+        {"category": "sequence", "contains": ["sequence"]},
+        {"category": "flag", "contains": ["flag", "indicator"], "compact_suffix": ["indic", "req", "rqst"], "compact_exact": ["bool", "booleanvalue"], "allowed_values_subset": ["0", "1", "Y", "N", "YES", "NO", "TRUE", "FALSE"]},
+        {"category": "profile", "contains": ["profile"]},
+        {"category": "role", "contains": ["role"], "compact_exact": ["requestor", "authorizer", "confirmer"]},
+        {"category": "service", "compact_exact": ["service"], "compact_suffix": ["service"]},
+        {"category": "module", "contains": ["module"]},
+        {"category": "duration", "contains": ["duration"]},
+        {"category": "lac", "compact_exact": ["lac"], "compact_prefix": ["lac"]},
+        {"category": "sign", "compact_exact": ["sign"]},
+        {"category": "routing_table", "compact_contains": ["routingtable"]},
+        {"category": "operation", "compact_exact": ["freezeunfreeze"], "compact_contains": ["operation"]},
+        {"category": "certificate", "compact_contains": ["authenticationca"]},
+        {"category": "code", "contains": ["code"]},
+        {"category": "name", "contains": ["name"], "compact_suffix": ["name"]},
+    ],
+}
+
+
 class LegacyConverter:
     """Converts legacy Excel templates to modern OAS format."""
     
@@ -54,6 +195,10 @@ class LegacyConverter:
         contact_url: str = "",
         release: str = "",
         filename_pattern: str = "",
+        fill_fix_examples: bool = True,
+        example_seed_values_path: Optional[Any] = None,
+        example_semantic_rules_path: Optional[Any] = None,
+        example_tracing_enabled: bool = True,
     ):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
@@ -71,6 +216,14 @@ class LegacyConverter:
         self.contact_url = str(contact_url or "").strip()
         self.release = str(release or "").strip()
         self.filename_pattern = str(filename_pattern or "").strip()
+        self.fill_fix_examples = bool(fill_fix_examples)
+        self.example_seed_values_path = Path(example_seed_values_path) if example_seed_values_path else None
+        self.example_semantic_rules_path = Path(example_semantic_rules_path) if example_semantic_rules_path else None
+        self.example_seed_values: Dict[str, List[str]] = {}
+        self.example_semantic_rules: Dict[str, Any] = {}
+        self._example_semantic_rule_warnings = set()
+        self.example_schema_fields: Dict[str, set] = {}
+        self.example_tracing_enabled = bool(example_tracing_enabled)
         
         # Internal registry
         self.global_schemas: Dict[str, DataType] = {} # out_name -> DataType
@@ -102,6 +255,8 @@ class LegacyConverter:
         self.filename_to_error_response: Dict[str, str] = {}  # ep_filename -> ErrorResponse variant name
         self.error_response_variant_rows: Dict[str, List[Tuple[str, str, str, str, str, str, str]]] = {}
         self.error_response_description_candidates: Dict[str, Dict[Tuple[str, str, str, str, str, str], Dict[str, Dict[str, Any]]]] = {}
+        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0}
+        self._example_trace_rows: List[Dict[str, str]] = []
 
     def _resolve_internal_master_dir(self):
         """Finds 'Templates Master' folder as an internal resource."""
@@ -186,6 +341,9 @@ class LegacyConverter:
         self._perform_naming_and_usage_pass()
         self.log(f"  Loaded {len(self.global_schemas)} unique global schemas.")
 
+        if self.fill_fix_examples:
+            self._fill_and_fix_consolidated_examples()
+
         # 2. Index Phase
         if index_path.exists():
             self._convert_index(index_path)
@@ -213,6 +371,8 @@ class LegacyConverter:
         # 11. Final Summary
         if self.tracing_enabled:
             self.run_standalone_check(str(self.output_dir))
+        if self.fill_fix_examples:
+            self._log_example_repair_report()
         self.log(f"Conversion complete. Output: {self.output_dir.as_posix()}")
         return True
 
@@ -431,8 +591,7 @@ class LegacyConverter:
             if allowed and val not in allowed:
                 return False
 
-        regex_raw = str(dt.regex or "").strip()
-        if regex_raw and regex_raw.lower() != "nan":
+        for regex_raw in self._example_constraint_patterns(dt):
             try:
                 if re.fullmatch(regex_raw, val) is None:
                     return False
@@ -500,6 +659,958 @@ class LegacyConverter:
             except Exception:
                 pass
         return True
+
+    def _example_constraint_patterns(self, dt: DataType) -> List[str]:
+        patterns: List[str] = []
+        regex_text = self._normalize_regex_pattern(dt.regex)
+        if regex_text:
+            patterns.append(regex_text)
+
+        pattern_eba = str(dt.pattern_eba or "").strip()
+        if pattern_eba and pattern_eba.lower() != "nan":
+            converted = self._eba_pattern_to_regex(pattern_eba)
+            if converted:
+                pattern_text = converted
+            elif self._looks_like_regex_pattern(pattern_eba):
+                pattern_text = self._normalize_regex_pattern(pattern_eba)
+            else:
+                pattern_text = ""
+            if pattern_text and pattern_text not in patterns:
+                patterns.append(pattern_text)
+        return patterns
+
+    def _normalize_regex_pattern(self, raw: Any) -> str:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return ""
+        if text.startswith("/") and text.endswith("/") and len(text) > 1:
+            text = text[1:-1]
+        return text
+
+    def _looks_like_regex_pattern(self, raw: Any) -> bool:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return False
+        upper = text.upper()
+        if "!" in text or "YYYY" in upper or "HH" in upper:
+            return False
+        return any(token in text for token in ("[", "]", "\\", "^", "$", "(", ")", "{", "}"))
+
+    def _eba_pattern_to_regex(self, raw: Any) -> str:
+        text = str(raw or "").strip()
+        if "!" not in text:
+            return ""
+
+        char_classes = {
+            "a": "[A-Z]",
+            "c": "[A-Z0-9]",
+            "d": "[0-9]",
+            "n": "[0-9]",
+            "x": r"[A-Za-z0-9 /?:().,'+\-]",
+        }
+
+        def parse_segment(segment: str) -> str:
+            out = []
+            i = 0
+            while i < len(segment):
+                ch = segment[i]
+                if ch.isspace():
+                    i += 1
+                    continue
+                if ch == "[":
+                    end = segment.find("]", i + 1)
+                    if end == -1:
+                        return ""
+                    inner = parse_segment(segment[i + 1:end])
+                    if not inner:
+                        return ""
+                    out.append(f"(?:{inner})?")
+                    i = end + 1
+                    continue
+
+                fixed = re.match(r"(\d+)!\s*([A-Za-z])", segment[i:])
+                if fixed:
+                    count = fixed.group(1)
+                    kind = fixed.group(2).lower()
+                    cls = char_classes.get(kind)
+                    if not cls:
+                        return ""
+                    out.append(f"{cls}{{{count}}}")
+                    i += fixed.end()
+                    continue
+
+                ranged = re.match(r"(\d+)\*(\d+)\s*([A-Za-z])", segment[i:])
+                if ranged:
+                    min_count = ranged.group(1)
+                    max_count = ranged.group(2)
+                    kind = ranged.group(3).lower()
+                    cls = char_classes.get(kind)
+                    if not cls:
+                        return ""
+                    out.append(f"{cls}{{{min_count},{max_count}}}")
+                    i += ranged.end()
+                    continue
+
+                if ch in "-./:":
+                    out.append(re.escape(ch))
+                    i += 1
+                    continue
+                return ""
+            return "".join(out)
+
+        return parse_segment(text)
+
+    def _load_example_seed_values(self) -> Dict[str, List[str]]:
+        seeds = {key: list(values) for key, values in DEFAULT_LEGACY_EXAMPLE_SEED_VALUES.items()}
+        path = self.example_seed_values_path
+        if path:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    with open(path, "w", encoding="utf-8") as f:
+                        yaml.safe_dump(seeds, f, sort_keys=True, allow_unicode=True)
+                    self.log(f"Created legacy example seed values config: {path}")
+                else:
+                    should_rewrite_config = False
+                    with open(path, "r", encoding="utf-8") as f:
+                        loaded = yaml.safe_load(f) or {}
+                    if isinstance(loaded, dict):
+                        for key, values in loaded.items():
+                            if isinstance(values, list):
+                                clean = [str(v).strip() for v in values if str(v).strip()]
+                                if clean:
+                                    clean_key = str(key).strip().lower()
+                                    legacy_default = LEGACY_GENERATED_EXAMPLE_SEED_VALUES.get(clean_key)
+                                    if legacy_default and clean == legacy_default:
+                                        should_rewrite_config = True
+                                    else:
+                                        seeds[clean_key] = clean
+                        missing_keys = set(DEFAULT_LEGACY_EXAMPLE_SEED_VALUES) - set(str(k).strip().lower() for k in loaded)
+                        if missing_keys:
+                            should_rewrite_config = True
+                    if should_rewrite_config:
+                        with open(path, "w", encoding="utf-8") as f:
+                            yaml.safe_dump(seeds, f, sort_keys=True, allow_unicode=True)
+                        self.log(f"Updated legacy example seed values config: {path}")
+            except Exception as exc:
+                self.log(f"Warning: Could not load legacy example seed values config: {exc}")
+        return seeds
+
+    def _load_example_semantic_rules(self) -> Dict[str, Any]:
+        rules_config = copy.deepcopy(DEFAULT_LEGACY_EXAMPLE_SEMANTIC_RULES)
+        path = self.example_semantic_rules_path
+        if not path:
+            return rules_config
+
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                with open(path, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(rules_config, f, sort_keys=False, allow_unicode=True)
+                self.log(f"Created legacy example semantic rules config: {path}")
+                return rules_config
+
+            with open(path, "r", encoding="utf-8") as f:
+                loaded = yaml.safe_load(f) or {}
+            if not isinstance(loaded, dict):
+                self._warn_example_semantic_rule("semantic rules config root is not a mapping; using defaults")
+                return rules_config
+
+            loaded_overrides = loaded.get("overrides")
+            if isinstance(loaded_overrides, dict):
+                for section in ("exact", "compact_exact"):
+                    values = loaded_overrides.get(section)
+                    if isinstance(values, dict):
+                        rules_config.setdefault("overrides", {}).setdefault(section, {})
+                        rules_config["overrides"][section].update(values)
+
+            loaded_exclusions = loaded.get("exclusions")
+            if isinstance(loaded_exclusions, dict):
+                for category, matchers in loaded_exclusions.items():
+                    if not isinstance(matchers, dict):
+                        continue
+                    target = rules_config.setdefault("exclusions", {}).setdefault(str(category), {})
+                    for matcher, values in matchers.items():
+                        merged = list(target.get(matcher, []))
+                        for value in self._semantic_values(values):
+                            if value not in merged:
+                                merged.append(value)
+                        target[matcher] = merged
+
+            loaded_rules = loaded.get("rules")
+            if isinstance(loaded_rules, list):
+                rules_config["rules"] = [rule for rule in loaded_rules if isinstance(rule, dict)]
+        except Exception as exc:
+            self.log(f"Warning: Could not load legacy example semantic rules config: {exc}")
+
+        return rules_config
+
+    def _get_example_semantic_rules(self) -> Dict[str, Any]:
+        if not self.example_semantic_rules:
+            self.example_semantic_rules = self._load_example_semantic_rules()
+        return self.example_semantic_rules
+
+    def _known_example_categories(self) -> set:
+        return set(DEFAULT_LEGACY_EXAMPLE_SEED_VALUES) | {"generic"}
+
+    def _warn_example_semantic_rule(self, message: str) -> None:
+        if message in self._example_semantic_rule_warnings:
+            return
+        self._example_semantic_rule_warnings.add(message)
+        self.log(f"Warning: Legacy example semantic rule ignored: {message}")
+
+    def _semantic_values(self, values: Any) -> List[str]:
+        if values is None:
+            return []
+        if isinstance(values, (list, tuple, set)):
+            return [str(value).strip() for value in values if str(value).strip()]
+        text = str(values).strip()
+        return [text] if text else []
+
+    def _compact_semantic_name(self, value: Any) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+    def _semantic_rule_category(self, raw_category: Any) -> str:
+        category = str(raw_category or "").strip().lower()
+        if category in self._known_example_categories():
+            return category
+        if category:
+            self._warn_example_semantic_rule(f"unknown category '{category}'")
+        return ""
+
+    def _configured_exact_category(self, dt: DataType, compact_name: str) -> str:
+        rules_config = self._get_example_semantic_rules()
+        overrides = rules_config.get("overrides", {})
+        if not isinstance(overrides, dict):
+            return ""
+
+        name_key = str(dt.name or "").strip().lower()
+        exact = overrides.get("exact", {})
+        if isinstance(exact, dict):
+            normalized_exact = {str(key).strip().lower(): value for key, value in exact.items()}
+            if name_key in normalized_exact:
+                return self._semantic_rule_category(normalized_exact[name_key])
+
+        compact_exact = overrides.get("compact_exact", {})
+        if isinstance(compact_exact, dict):
+            normalized_compact = {self._compact_semantic_name(key): value for key, value in compact_exact.items()}
+            if compact_name in normalized_compact:
+                return self._semantic_rule_category(normalized_compact[compact_name])
+        return ""
+
+    def _configured_semantic_category(
+        self,
+        dt: DataType,
+        text: str,
+        compact_name: str,
+        allowed_tokens: set,
+        dtype: str,
+        fmt: str,
+    ) -> str:
+        rules_config = self._get_example_semantic_rules()
+        rules = rules_config.get("rules", [])
+        if not isinstance(rules, list):
+            return ""
+
+        name_lower = str(dt.name or "").strip().lower()
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            category = self._semantic_rule_category(rule.get("category"))
+            if not category:
+                continue
+            if self._semantic_rule_excludes(category, name_lower, text, compact_name):
+                continue
+            if self._semantic_rule_matches(rule, name_lower, text, compact_name, allowed_tokens, dtype, fmt):
+                return category
+        return ""
+
+    def _semantic_rule_excludes(self, category: str, name_lower: str, text: str, compact_name: str) -> bool:
+        rules_config = self._get_example_semantic_rules()
+        exclusions = rules_config.get("exclusions", {})
+        if not isinstance(exclusions, dict):
+            return False
+        matchers = exclusions.get(category, {})
+        if not isinstance(matchers, dict):
+            return False
+        return self._semantic_rule_matches(matchers, name_lower, text, compact_name, set(), "", "")
+
+    def _semantic_rule_matches(
+        self,
+        rule: Dict[str, Any],
+        name_lower: str,
+        text: str,
+        compact_name: str,
+        allowed_tokens: set,
+        dtype: str,
+        fmt: str,
+    ) -> bool:
+        if self._semantic_list_contains(rule.get("type"), dtype):
+            return True
+        if self._semantic_list_contains(rule.get("format"), fmt):
+            return True
+        if self._semantic_list_contains(rule.get("exact"), name_lower):
+            return True
+        if self._semantic_list_contains(rule.get("compact_exact"), compact_name, compact=True):
+            return True
+        if self._semantic_text_contains(rule.get("contains"), text):
+            return True
+        if self._semantic_text_contains(rule.get("compact_contains"), compact_name, compact=True):
+            return True
+        if self._semantic_text_prefix(rule.get("prefix"), name_lower):
+            return True
+        if self._semantic_text_suffix(rule.get("suffix"), name_lower):
+            return True
+        if self._semantic_text_prefix(rule.get("compact_prefix"), compact_name, compact=True):
+            return True
+        if self._semantic_text_suffix(rule.get("compact_suffix"), compact_name, compact=True):
+            return True
+
+        subset_values = {value.upper() for value in self._semantic_values(rule.get("allowed_values_subset"))}
+        if subset_values and allowed_tokens and allowed_tokens.issubset(subset_values):
+            return True
+
+        any_values = {value.upper() for value in self._semantic_values(rule.get("allowed_values_any"))}
+        if any_values and allowed_tokens and allowed_tokens.intersection(any_values):
+            return True
+
+        for pattern in self._semantic_values(rule.get("compact_regex")):
+            try:
+                if re.fullmatch(pattern, compact_name):
+                    return True
+            except re.error as exc:
+                self._warn_example_semantic_rule(f"invalid compact_regex '{pattern}': {exc}")
+        return False
+
+    def _semantic_list_contains(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        needles = self._semantic_values(values)
+        if compact:
+            needles = [self._compact_semantic_name(value) for value in needles]
+        else:
+            needles = [value.lower() for value in needles]
+        return target in needles
+
+    def _semantic_text_contains(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        for value in self._semantic_values(values):
+            needle = self._compact_semantic_name(value) if compact else value.lower()
+            if needle and needle in target:
+                return True
+        return False
+
+    def _semantic_text_prefix(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        for value in self._semantic_values(values):
+            needle = self._compact_semantic_name(value) if compact else value.lower()
+            if needle and target.startswith(needle):
+                return True
+        return False
+
+    def _semantic_text_suffix(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        for value in self._semantic_values(values):
+            needle = self._compact_semantic_name(value) if compact else value.lower()
+            if needle and target.endswith(needle):
+                return True
+        return False
+
+    def _fill_and_fix_consolidated_examples(self, trace_kept: bool = False) -> None:
+        self.example_seed_values = self._load_example_seed_values()
+        self.example_semantic_rules = self._load_example_semantic_rules()
+        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0}
+        self._example_trace_rows = []
+
+        for schema_name, dt in sorted(self.global_schemas.items(), key=lambda item: item[0].lower()):
+            self._fill_and_fix_examples_for_data_type(dt, schema_name=schema_name, trace_kept=trace_kept)
+
+    def _log_example_repair_report(self) -> None:
+        stats = self._example_fix_stats
+        if stats["kept"] or stats["completed"] or stats["repaired"] or stats["best_effort"]:
+            self.log(
+                "Repair and complete examples: "
+                f"kept {stats['kept']}, completed {stats['completed']}, "
+                f"repaired {stats['repaired']}, best-effort {stats['best_effort']}."
+            )
+        if self.example_tracing_enabled:
+            self._log_example_trace_summary()
+
+    def _fill_and_fix_examples_for_data_type(self, dt: DataType, schema_name: str = "", trace_kept: bool = False) -> None:
+        if not self.example_seed_values:
+            self.example_seed_values = self._load_example_seed_values()
+        dtype = str(dt.type or "string").strip().lower()
+        if dtype in ("object", "array"):
+            return
+
+        original = str(dt.example or "").strip()
+        existing = [p.strip() for p in re.split(r"[;\n]", original) if p and p.strip()]
+        valid_existing = [v for v in existing if self._is_valid_example_token(dt, v)]
+        examples, reason = self._build_example_candidates(dt, valid_existing)
+        used_best_effort = False
+
+        if not examples:
+            fallback = self._best_effort_example(dt)
+            examples = [fallback]
+            reason = "best-effort fallback"
+            used_best_effort = True
+        elif any(not self._is_valid_example_token(dt, value) for value in examples):
+            used_best_effort = True
+
+        new_value = "; ".join(str(value) for value in examples[:3])
+        if not new_value:
+            return
+
+        if not original or original.lower() == "nan":
+            action = "COMPLETED"
+            self._example_fix_stats["completed"] += 1
+        elif new_value != original:
+            action = "REPAIRED"
+            self._example_fix_stats["repaired"] += 1
+        else:
+            action = "KEPT"
+            self._example_fix_stats["kept"] += 1
+
+        if used_best_effort:
+            self._example_fix_stats["best_effort"] += 1
+            if action == "KEPT":
+                action = "BEST EFFORT"
+
+        dt.example = new_value
+
+        if action != "KEPT" or trace_kept:
+            self._record_example_trace(schema_name or dt.name, dt, action, original, new_value, reason)
+
+    def _build_example_candidates(self, dt: DataType, valid_existing: List[str]) -> Tuple[List[str], str]:
+        allowed = self._split_example_values(dt.allowed_values)
+        if allowed:
+            return (
+                self._unique_valid_examples(dt, valid_existing + allowed, limit=min(3, len(allowed))),
+                "allowed values",
+            )
+
+        category = self._classify_example_category(dt)
+        valid_existing = [
+            value for value in valid_existing
+            if self._is_semantically_plausible_example(category, value)
+        ]
+        candidates: List[str] = []
+        candidates.extend(valid_existing)
+        candidates.extend(self.example_seed_values.get(category, []))
+        reason = f"semantic category: {category}" if category != "generic" else "generic seed values"
+
+        dtype = str(dt.type or "string").strip().lower()
+        if dtype in ("integer", "int"):
+            candidates.extend(self.example_seed_values.get("integer", []))
+            candidates.extend(["1", "2", "3"])
+            reason = "numeric type: integer"
+        elif dtype in ("number", "float", "double", "decimal"):
+            candidates.extend(self.example_seed_values.get("number", []))
+            candidates.extend(["1.0", "2.5", "3.75"])
+            reason = "numeric type: number"
+        elif dtype == "boolean":
+            candidates.extend(self.example_seed_values.get("boolean", []))
+            reason = "boolean type"
+        else:
+            had_semantic_candidates = bool(candidates)
+            for pattern in self._example_constraint_patterns(dt):
+                generated = self._generate_from_simple_regex(pattern)
+                if generated:
+                    candidates.append(generated)
+                    if not had_semantic_candidates and category == "generic":
+                        reason = "regex fallback"
+            candidates.extend(self.example_seed_values.get("generic", []))
+
+        examples = self._unique_valid_examples(dt, candidates, limit=3)
+        examples = [
+            value for value in examples
+            if self._is_semantically_plausible_example(category, value)
+        ]
+        return examples, reason
+
+    def _is_semantically_plausible_example(self, category: str, value: str) -> bool:
+        text = str(value or "").strip()
+        if not text:
+            return False
+        if category in ("bic", "bic8", "bic11"):
+            compact = text.upper()
+            if re.fullmatch(r"([A-Z0-9])\1+", compact):
+                return False
+            if compact.startswith("AAAA"):
+                return False
+        return True
+
+    def _record_example_trace(self, schema_name: str, dt: DataType, action: str, before: str, after: str, reason: str) -> None:
+        self._example_trace_rows.append(
+            {
+                "schema": schema_name or dt.name,
+                "type": str(dt.type or "string"),
+                "action": action,
+                "before": before if before and before.lower() != "nan" else "<empty>",
+                "after": after,
+                "reason": reason,
+            }
+        )
+
+    def _record_example_schema_field(self, schema_name: str, field_context: str) -> None:
+        schema = str(schema_name or "").strip()
+        field = str(field_context or "").strip()
+        if not schema or not field:
+            return
+        self.example_schema_fields.setdefault(schema, set()).add(field)
+
+    def _example_trace_fields(self, schema_name: str) -> List[str]:
+        fields = sorted(self.example_schema_fields.get(str(schema_name or "").strip(), []), key=lambda value: value.lower())
+        return fields or [""]
+
+    def _wrap_example_trace_cell(self, value: Any, width: int) -> List[str]:
+        text = str(value or "")
+        if not text:
+            return [""]
+        return textwrap.wrap(text, width=width, break_long_words=False, break_on_hyphens=False) or [text]
+
+    def _log_example_trace_summary(self) -> None:
+        if not self._example_trace_rows:
+            return
+
+        columns = [
+            ("schema", "SCHEMA/FIELD"),
+            ("field", "FIELD/USAGE"),
+            ("type", "TYPE"),
+            ("action", "ACTION"),
+            ("before", "BEFORE"),
+            ("after", "AFTER"),
+            ("reason", "REASON"),
+        ]
+
+        display_rows: List[Dict[str, str]] = []
+        for row in self._example_trace_rows:
+            fields = self._example_trace_fields(row.get("schema", ""))
+            for idx, field in enumerate(fields):
+                display_rows.append(
+                    {
+                        "schema": str(row.get("schema", "")) if idx == 0 else "",
+                        "field": field,
+                        "type": str(row.get("type", "")) if idx == 0 else "",
+                        "action": str(row.get("action", "")) if idx == 0 else "",
+                        "before": str(row.get("before", "")) if idx == 0 else "",
+                        "after": str(row.get("after", "")) if idx == 0 else "",
+                        "reason": str(row.get("reason", "")) if idx == 0 else "",
+                    }
+                )
+
+        def col_width(key: str, label: str, max_width: Optional[int] = None) -> int:
+            value_width = max((len(str(row.get(key, ""))) for row in display_rows), default=0)
+            if max_width:
+                value_width = min(max_width, value_width)
+            return max(len(label), value_width)
+
+        widths = {
+            "schema": col_width("schema", "SCHEMA/FIELD"),
+            "field": col_width("field", "FIELD/USAGE", 72),
+            "type": col_width("type", "TYPE"),
+            "action": col_width("action", "ACTION"),
+            "before": col_width("before", "BEFORE", 32),
+            "after": col_width("after", "AFTER", 48),
+            "reason": col_width("reason", "REASON", 40),
+        }
+        header = (
+            f"| {'SCHEMA/FIELD':<{widths['schema']}} | {'FIELD/USAGE':<{widths['field']}} | {'TYPE':<{widths['type']}} | "
+            f"{'ACTION':<{widths['action']}} | {'BEFORE':<{widths['before']}} | "
+            f"{'AFTER':<{widths['after']}} | {'REASON':<{widths['reason']}} |"
+        )
+        sep = "-" * len(header)
+        self.detail_log("\n" + "=" * len(header))
+        self.detail_log("EXAMPLE TRACER")
+        self.detail_log("=" * len(header))
+        self.detail_log(header)
+        self.detail_log(sep)
+        for record_idx, trace_row in enumerate(self._example_trace_rows):
+            fields = self._example_trace_fields(trace_row.get("schema", ""))
+            for field_idx, field in enumerate(fields):
+                row = {
+                    "schema": str(trace_row.get("schema", "")) if field_idx == 0 else "",
+                    "field": field,
+                    "type": str(trace_row.get("type", "")) if field_idx == 0 else "",
+                    "action": str(trace_row.get("action", "")) if field_idx == 0 else "",
+                    "before": str(trace_row.get("before", "")) if field_idx == 0 else "",
+                    "after": str(trace_row.get("after", "")) if field_idx == 0 else "",
+                    "reason": str(trace_row.get("reason", "")) if field_idx == 0 else "",
+                }
+                wrapped = {
+                    key: self._wrap_example_trace_cell(row.get(key, ""), widths[key])
+                    for key, _label in columns
+                }
+                line_count = max(len(parts) for parts in wrapped.values())
+                for line_idx in range(line_count):
+                    values = {
+                        key: wrapped[key][line_idx] if line_idx < len(wrapped[key]) else ""
+                        for key, _label in columns
+                    }
+                    self.detail_log(
+                        f"| {values['schema']:<{widths['schema']}} | "
+                        f"{values['field']:<{widths['field']}} | "
+                        f"{values['type']:<{widths['type']}} | "
+                        f"{values['action']:<{widths['action']}} | "
+                        f"{values['before']:<{widths['before']}} | "
+                        f"{values['after']:<{widths['after']}} | "
+                        f"{values['reason']:<{widths['reason']}} |"
+                    )
+            if record_idx < len(self._example_trace_rows) - 1:
+                self.detail_log(sep)
+        self.detail_log("=" * len(header) + "\n")
+
+    def _split_example_values(self, raw: Any) -> List[str]:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return []
+        return [part.strip() for part in re.split(r"[;,]", text) if part and part.strip()]
+
+    def _unique_valid_examples(self, dt: DataType, candidates: List[Any], limit: int = 3) -> List[str]:
+        out: List[str] = []
+        seen = set()
+        for candidate in candidates:
+            value = str(candidate or "").strip()
+            if not value or value in seen:
+                continue
+            if self._is_valid_example_token(dt, value):
+                out.append(value)
+                seen.add(value)
+            if len(out) >= limit:
+                break
+        return out
+
+    def _classify_example_category(self, dt: DataType) -> str:
+        dtype = str(dt.type or "").strip().lower()
+        fmt = str(dt.format or "").strip().lower()
+        text = " ".join(
+            [
+                str(dt.name or ""),
+                str(dt.description or ""),
+                str(dt.pattern_eba or ""),
+                str(dt.regex or ""),
+                fmt,
+            ]
+        ).lower()
+        compact_name = self._compact_semantic_name(dt.name)
+        allowed_tokens = {value.upper() for value in self._split_example_values(dt.allowed_values)}
+
+        configured_exact = self._configured_exact_category(dt, compact_name)
+        if configured_exact:
+            return configured_exact
+
+        if dtype == "boolean":
+            return "boolean"
+        if dtype in ("integer", "int"):
+            return "integer"
+        if dtype in ("number", "float", "double", "decimal"):
+            if any(word in text for word in ("amount", "amt", "price", "balance", "fee", "total")):
+                return "amount"
+            return "number"
+        if allowed_tokens and allowed_tokens.issubset({"0", "1", "Y", "N", "YES", "NO", "TRUE", "FALSE"}):
+            return "flag"
+        if "iban" in text:
+            return "iban"
+        if "bic" in text or "swift" in text or "[a-z0-9]{4,4}[a-z]{2,2}[a-z0-9]{2,2}" in text:
+            bic_category = self._classify_bic_variant(dt, text)
+            if bic_category:
+                return bic_category
+            return "bic"
+        if "dca" in compact_name or "dedicatedcashaccount" in compact_name:
+            return "dca"
+        if "account" in text:
+            return "account"
+        if "currency" in text or "ccy" in text:
+            return "currency"
+        if "country" in text or "countrycode" in text:
+            return "country"
+        if "email" in text or fmt == "email":
+            return "email"
+        if "url" in text or "uri" in text or fmt in ("uri", "url"):
+            return "url"
+        if "uuid" in text or fmt == "uuid" or compact_name == "uetr":
+            return "uuid"
+
+        configured = self._configured_semantic_category(dt, text, compact_name, allowed_tokens, dtype, fmt)
+        if configured:
+            return configured
+
+        if compact_name in ("field", "fieldname"):
+            return "field_name"
+        if compact_name in ("value", "fieldvalue"):
+            return "field_value"
+        if "errordetails" in compact_name:
+            return "validation_detail"
+        if "filename" in text or "file name" in text:
+            return "filename"
+        if "originalxml" in compact_name or compact_name.endswith("xml") or compact_name.endswith("data"):
+            return "xml"
+        if (
+            fmt in ("date-time", "datetime")
+            or "datetime" in text
+            or "timestamp" in text
+            or "yyyy-mm-ddthh" in text
+            or compact_name.endswith("dttm")
+            or compact_name.endswith("datetime")
+        ):
+            return "datetime"
+        if (
+            fmt == "date"
+            or re.search(r"\bdate\b", text)
+            or "yyyy-mm-dd" in text
+            or compact_name.endswith("dt")
+            or compact_name.endswith("date")
+        ):
+            return "date"
+        if fmt == "time" or re.fullmatch(r".*time", compact_name):
+            return "time"
+        if "period" in text or "quarter" in text or compact_name in ("year", "month", "day"):
+            return "period"
+        if "description" in text:
+            return "description"
+        if "errorcode" in text or "error code" in text:
+            return "error_code"
+        if "requestid" in compact_name:
+            return "request_id"
+        if "messageid" in compact_name or "msgid" in compact_name:
+            return "message_id"
+        if "transactionid" in compact_name or "txid" in compact_name or "endtoendid" in compact_name:
+            return "transaction_id"
+        if "instructionid" in compact_name:
+            return "instruction_id"
+        if "operationid" in compact_name:
+            return "operation_id"
+        if "userid" in compact_name or compact_name == "user":
+            return "user_id"
+        if compact_name.endswith("id") or "identifier" in compact_name:
+            return "identifier"
+        if "reference" in text or compact_name.endswith("ref") or re.search(r"\bref(erence)?\b", text):
+            return "reference"
+        if "rfrnc" in compact_name:
+            return "reference"
+        if "amount" in text:
+            return "amount"
+        if compact_name.endswith("endpoint") or "apiendpoint" in compact_name:
+            return "endpoint"
+        if "filesize" in compact_name:
+            return "file_size"
+        if "reason" in text or "rsn" in compact_name:
+            return "reason"
+        if compact_name in ("sentreceived", "trxdirection") or "direction" in text:
+            return "direction"
+        if "settmethod" in compact_name or "settlementmethod" in compact_name:
+            return "settlement_method"
+        if compact_name == "csm":
+            return "csm"
+        if compact_name == "pointer":
+            return "pointer"
+        if compact_name.startswith("num") or compact_name.startswith("totnum") or compact_name.endswith("count"):
+            return "count"
+        if compact_name.endswith("netad"):
+            return "network_address"
+        if "status" in text or "state" in text:
+            return "status"
+        if compact_name.endswith("sts") or "msgsts" in compact_name:
+            return "status"
+        if "type" in compact_name or compact_name.endswith("tp"):
+            return "type"
+        if "aos" in compact_name:
+            return "aos"
+        if compact_name == "ao":
+            return "aos"
+        if "network" in text:
+            return "network"
+        if "netwopt" in compact_name or "outputnet" in compact_name:
+            return "network"
+        if "product" in text:
+            return "product"
+        if "channel" in text:
+            return "channel"
+        if compact_name == "requestedthrough":
+            return "channel"
+        if "cycle" in text:
+            return "cycle"
+        if compact_name == "offset":
+            return "offset"
+        if "sequence" in text:
+            return "sequence"
+        if "flag" in text or "indicator" in text or compact_name.endswith("indic"):
+            return "flag"
+        if "profile" in text:
+            return "profile"
+        if "role" in text:
+            return "role"
+        if compact_name == "service" or compact_name.endswith("service"):
+            return "service"
+        if "module" in text:
+            return "module"
+        if "duration" in text:
+            return "duration"
+        if compact_name.startswith("lac") or compact_name == "lac":
+            return "lac"
+        if compact_name == "sign":
+            return "sign"
+        if compact_name in ("bool", "booleanvalue") or compact_name.endswith("req") or compact_name.endswith("rqst"):
+            return "flag"
+        if compact_name in ("requestor", "authorizer", "confirmer"):
+            return "role"
+        if compact_name in ("userissr", "userissuer", "usersprvr", "supervisor"):
+            return "user_id"
+        if "routingtable" in compact_name:
+            return "routing_table"
+        if "operation" in compact_name or compact_name == "freezeunfreeze":
+            return "operation"
+        if "authenticationca" in compact_name:
+            return "certificate"
+        if "code" in text:
+            return "code"
+        if re.search(r"\bname\b", text) or compact_name.endswith("name"):
+            return "name"
+        return "generic"
+
+    def _classify_bic_variant(self, dt: DataType, text: str) -> str:
+        compact = re.sub(r"[^a-z0-9]", "", text.lower())
+        if "bic11" in compact or "bic11only" in compact:
+            return "bic11"
+        if "bic8" in compact:
+            return "bic8"
+
+        patterns = " ".join(self._example_constraint_patterns(dt)).lower().replace(" ", "")
+        if not patterns:
+            return ""
+        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}\[a-z0-9\]\{3,3\}", patterns):
+            return "bic11"
+        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}(?!\[a-z0-9\]\{3,3\})", patterns):
+            return "bic8"
+        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}\[a-z0-9\]\{3\}", patterns):
+            return "bic11"
+        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}(?!\[a-z0-9\]\{3\})", patterns):
+            return "bic8"
+        return ""
+
+    def _best_effort_example(self, dt: DataType) -> str:
+        dtype = str(dt.type or "string").strip().lower()
+        if dtype in ("integer", "int"):
+            return str(self._numeric_midpoint(dt, integer=True))
+        if dtype in ("number", "float", "double", "decimal"):
+            return str(self._numeric_midpoint(dt, integer=False))
+        if dtype == "boolean":
+            return "true"
+        category = self._classify_example_category(dt)
+        for value in self.example_seed_values.get(category, []):
+            if self._is_valid_example_token(dt, value):
+                return value
+        for pattern in self._example_constraint_patterns(dt):
+            generated = self._generate_from_simple_regex(pattern)
+            if generated:
+                return generated
+        generic = self.example_seed_values.get("generic", ["Banking value"])[0]
+        return self._fit_string_bounds(dt, generic)
+
+    def _numeric_midpoint(self, dt: DataType, integer: bool) -> Any:
+        min_val = self._parse_float(dt.min_val)
+        max_val = self._parse_float(dt.max_val)
+        if min_val is not None and max_val is not None:
+            value = (min_val + max_val) / 2
+        elif min_val is not None:
+            value = min_val
+        elif max_val is not None:
+            value = max_val
+        else:
+            value = 1
+        return int(round(value)) if integer else value
+
+    def _parse_float(self, raw: Any) -> Optional[float]:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return None
+        try:
+            return float(text.replace(",", "."))
+        except Exception:
+            return None
+
+    def _fit_string_bounds(self, dt: DataType, value: str) -> str:
+        text = value or "Banking value"
+        min_len = self._parse_float(dt.min_val)
+        max_len = self._parse_float(dt.max_val)
+        if max_len is not None and max_len >= 1 and len(text) > int(max_len):
+            text = text[: int(max_len)]
+        if min_len is not None and len(text) < int(min_len):
+            text = text + ("X" * (int(min_len) - len(text)))
+        return text
+
+    def _generate_from_simple_regex(self, pattern: str) -> Optional[str]:
+        text = str(pattern or "").strip()
+        if not text:
+            return None
+        text = text.lstrip("^").rstrip("$")
+        if any(marker in text for marker in ("(?", "\\p", "\\P", "\\1", "\\2")):
+            return None
+
+        out = ""
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            token = ""
+            if ch == "[":
+                end = text.find("]", i + 1)
+                if end == -1:
+                    return None
+                token = self._sample_char_from_class(text[i + 1:end])
+                i = end + 1
+            elif ch == "\\" and i + 1 < len(text):
+                nxt = text[i + 1]
+                token = {"d": "1", "w": "A", "s": " "}.get(nxt, nxt)
+                i += 2
+            elif ch == "(":
+                end = text.find(")", i + 1)
+                if end == -1:
+                    return None
+                alternatives = text[i + 1:end].split("|")
+                token = alternatives[0] if alternatives and alternatives[0] else ""
+                i = end + 1
+            elif ch in ".+*":
+                token = "A"
+                i += 1
+            elif ch == "?":
+                i += 1
+                continue
+            else:
+                token = ch
+                i += 1
+
+            repeat = 1
+            if i < len(text) and text[i] == "{":
+                end = text.find("}", i + 1)
+                if end == -1:
+                    return None
+                repeat_text = text[i + 1:end].split(",", 1)[0].strip()
+                try:
+                    repeat = max(0, int(repeat_text))
+                except ValueError:
+                    repeat = 1
+                i = end + 1
+            elif i < len(text) and text[i] == "?":
+                repeat = 1
+                i += 1
+            out += token * repeat
+
+        return out or None
+
+    def _sample_char_from_class(self, cls: str) -> str:
+        if "A-Z" in cls:
+            return "A"
+        if "a-z" in cls:
+            return "a"
+        if "0-9" in cls or "\\d" in cls:
+            return "1"
+        for ch in cls:
+            if ch not in "^-":
+                return ch
+        return "A"
 
     def _record_merge_provenance(self, out_name: str, field: str, value: str, file_key: str) -> None:
         if not out_name or not field or value is None:
@@ -1685,6 +2796,163 @@ class LegacyConverter:
             return False
         finally:
             self._close_excel_file(xl_idx)
+
+    def run_standalone_example_trace(self, folder_path, repair_files: bool = False) -> bool:
+        """Analyze or repair schema examples in already-converted template workbooks."""
+        p = Path(folder_path)
+        if not p.exists() or not p.is_dir():
+            self.log(f"Error: Invalid template folder: {folder_path}")
+            return False
+
+        workbooks = [
+            path for path in sorted(list(p.glob("*.xlsx")) + list(p.glob("*.xlsm")))
+            if not path.name.startswith("~")
+        ]
+        if not workbooks:
+            self.log(f"Error: No template workbooks found in {folder_path}")
+            return False
+
+        self.log(f"Analyzing examples in: {p.name}")
+        self.global_schemas = {}
+        self.example_schema_fields = {}
+
+        for workbook_path in workbooks:
+            for schema_name, dt in self._read_workbook_schema_examples(workbook_path).items():
+                if schema_name not in self.global_schemas:
+                    self.global_schemas[schema_name] = dt
+
+        if not self.global_schemas:
+            self.log("Error: No Schemas sheets with schema definitions found.")
+            return False
+
+        self.log(f"  Loaded {len(self.global_schemas)} consolidated schemas.")
+        self._fill_and_fix_consolidated_examples(trace_kept=True)
+        self._log_example_repair_report()
+
+        if repair_files:
+            updated = self._write_repaired_examples_to_workbooks(workbooks)
+            self.log(f"  Repaired examples written to {updated} workbook(s).")
+        return True
+
+    def _read_workbook_schema_examples(self, workbook_path: Path) -> Dict[str, DataType]:
+        xl = None
+        out: Dict[str, DataType] = {}
+        try:
+            xl = pd.ExcelFile(workbook_path)
+            if "Schemas" not in xl.sheet_names:
+                return out
+
+            df = pd.read_excel(xl, sheet_name="Schemas", dtype=str, header=None)
+            header_idx = self._find_header_row(df, ["name", "type"])
+            if header_idx == -1:
+                return out
+
+            headers = [str(c).strip().lower() for c in df.iloc[header_idx]]
+            df.columns = headers
+            df = df.iloc[header_idx + 1:].reset_index(drop=True)
+
+            def get_col(row, exact_kws, partial_kws=None):
+                for c in df.columns:
+                    if str(c) in exact_kws:
+                        return self._clean_value(row.get(c))
+                if partial_kws:
+                    for c in df.columns:
+                        if any(kw in str(c) for kw in partial_kws):
+                            return self._clean_value(row.get(c))
+                return ""
+
+            primitives = {"string", "number", "integer", "boolean", "array", "object", "schema"}
+            for _, row in df.iterrows():
+                name = get_col(row, ["name"])
+                parent = get_col(row, ["parent"])
+                raw_type = (get_col(row, ["type"]) or "string").lower()
+                schema_ref = get_col(row, ["schema name"], ["schema name"])
+                if parent and schema_ref:
+                    self._record_example_schema_field(schema_ref, f"{parent}.{name}" if name else parent)
+                if not name or parent or raw_type in ("object", "array", "schema"):
+                    continue
+                if name.lower() in primitives:
+                    continue
+
+                out[name] = DataType(
+                    name=name,
+                    type=raw_type,
+                    format=get_col(row, ["format"]),
+                    min_val=get_col(row, ["minimum"], ["min "]),
+                    max_val=get_col(row, ["maximum"], ["max "]),
+                    description=get_col(row, ["description"], ["desc"]),
+                    pattern_eba=get_col(row, ["pattern eba"], ["pattern"]),
+                    regex=get_col(row, ["regex"]),
+                    allowed_values=get_col(row, ["enum", "allowed value"]),
+                    example=get_col(row, ["example"], ["examp"]),
+                    items_type=get_col(row, ["items type"], ["items data type"]),
+                    source_file=workbook_path.name,
+                )
+        except Exception as exc:
+            self.log(f"Warning: Could not read schemas from {workbook_path.name}: {exc}")
+        finally:
+            self._close_excel_file(xl)
+        return out
+
+    def _write_repaired_examples_to_workbooks(self, workbooks: List[Path]) -> int:
+        updated_count = 0
+        for workbook_path in workbooks:
+            wb = None
+            try:
+                wb = load_workbook(workbook_path)
+                if "Schemas" not in wb.sheetnames:
+                    continue
+                ws = wb["Schemas"]
+                header_row = None
+                name_col = None
+                example_col = None
+                parent_col = None
+
+                for row_idx in range(1, min(ws.max_row, 15) + 1):
+                    values = [
+                        str(ws.cell(row=row_idx, column=col).value or "").strip().lower()
+                        for col in range(1, ws.max_column + 1)
+                    ]
+                    if "name" in values and "type" in values:
+                        header_row = row_idx
+                        for col_idx, value in enumerate(values, start=1):
+                            if value == "name":
+                                name_col = col_idx
+                            elif "example" in value:
+                                example_col = col_idx
+                            elif value == "parent":
+                                parent_col = col_idx
+                        break
+
+                if not header_row or not name_col:
+                    continue
+                if not example_col:
+                    example_col = ws.max_column + 1
+                    ws.cell(row=header_row, column=example_col, value="Example")
+
+                changed = False
+                for row_idx in range(header_row + 1, ws.max_row + 1):
+                    raw_name = ws.cell(row=row_idx, column=name_col).value
+                    raw_parent = ws.cell(row=row_idx, column=parent_col).value if parent_col else None
+                    raw_example = ws.cell(row=row_idx, column=example_col).value
+                    name = "" if raw_name is None else self._clean_value(raw_name)
+                    parent = "" if raw_parent is None else self._clean_value(raw_parent)
+                    if not name or parent or name not in self.global_schemas:
+                        continue
+                    repaired = self.global_schemas[name].example
+                    current_example = "" if raw_example is None else self._clean_value(raw_example)
+                    if repaired and current_example != repaired:
+                        ws.cell(row=row_idx, column=example_col, value=repaired)
+                        changed = True
+
+                if changed:
+                    wb.save(workbook_path)
+                    updated_count += 1
+            except Exception as exc:
+                self.log(f"Warning: Could not write repaired examples to {workbook_path.name}: {exc}")
+            finally:
+                self._close_workbook(wb)
+        return updated_count
     
     def _inject_schema_references(self, folder: Path, index_file: Path, ep_files: list):
         """Create a 'Schema References' sheet in $index.xlsx with merged cells and hyperlinks."""
@@ -3652,6 +4920,12 @@ class LegacyConverter:
                 _it_low = items_type.lower()
                 if _it_low not in ("string", "number", "integer", "boolean", "object", "array"):
                     referenced_data_types.add(items_type)
+
+            if resolved_type == "schema" and schema_name:
+                field_context = f"{actual_parent}.{name_out}" if actual_parent and name_out else name_out
+                if usage_ctx and field_context:
+                    field_context = f"{usage_ctx}: {field_context}"
+                self._record_example_schema_field(schema_name, field_context)
 
             # Convert mandatory
             mand_value = "M" if mandatory in ["M", "m", "Yes", "yes", "Y", "y"] else \

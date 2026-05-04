@@ -335,6 +335,20 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                                            font=ctk.CTkFont(size=12))
         self.chk_tracing.pack(side="left", padx=15)
 
+        self.var_example_tracing = ctk.BooleanVar(value=True)
+        if self.prefs_manager:
+            self.var_example_tracing.set(self.prefs_manager.get("tools_legacy_example_tracing_enabled", True))
+
+        self.chk_example_tracing = ctk.CTkCheckBox(
+            opts_frame,
+            text="Enable Example Tracing (Repair details in log)",
+            variable=self.var_example_tracing,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            font=ctk.CTkFont(size=12),
+        )
+        self.chk_example_tracing.pack(side="left", padx=15)
+
         # Action Buttons Frame
         btn_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         btn_frame.pack(pady=10)
@@ -536,10 +550,14 @@ class LegacyConverterDialog(ctk.CTkToplevel):
     def _run_conversion(self, src, dst, metadata_overrides=None):
         try:
             tracing = self.var_tracing.get()
+            example_tracing = self.var_example_tracing.get()
             self._log(f"Starting conversion from {src} to {dst}...")
             include_desc = False
             include_ex = False
             capitalize_schemas = True
+            fill_fix_examples = True
+            example_seed_values_path = None
+            example_semantic_rules_path = None
             defaults = self._get_conversion_metadata_defaults()
             overrides = dict(defaults)
             if metadata_overrides:
@@ -548,6 +566,14 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
                 include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
                 capitalize_schemas = bool(self.prefs_manager.get("tools_legacy_capitalize_schema_names", True))
+                fill_fix_examples = bool(self.prefs_manager.get("tools_legacy_fill_fix_examples", True))
+                if hasattr(self.prefs_manager, "get_legacy_example_seed_values_path"):
+                    example_seed_values_path = self.prefs_manager.get_legacy_example_seed_values_path()
+                if hasattr(self.prefs_manager, "get_legacy_example_semantic_rules_path"):
+                    example_semantic_rules_path = self.prefs_manager.get_legacy_example_semantic_rules_path()
+                self.prefs_manager.set("tools_legacy_tracing_enabled", bool(tracing))
+                self.prefs_manager.set("tools_legacy_example_tracing_enabled", bool(example_tracing))
+                self.prefs_manager.save()
 
             contact_name = str(overrides.get("contact_name", "") or "").strip()
             contact_url = str(overrides.get("contact_url", "") or "").strip()
@@ -573,6 +599,10 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 contact_url=contact_url,
                 release=release,
                 filename_pattern=filename_pattern,
+                fill_fix_examples=fill_fix_examples,
+                example_seed_values_path=example_seed_values_path,
+                example_semantic_rules_path=example_semantic_rules_path,
+                example_tracing_enabled=example_tracing,
             )
             success = converter.convert(tracing_enabled=tracing)
             

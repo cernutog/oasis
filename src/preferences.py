@@ -8,6 +8,26 @@ import json
 from pathlib import Path
 
 
+GENERATION_MODE_MINIMAL = "Minimal"
+GENERATION_MODE_STANDARD = "Standard"
+GENERATION_MODE_API_PORTAL_READY = "API Portal-ready"
+GENERATION_MODES = (
+    GENERATION_MODE_MINIMAL,
+    GENERATION_MODE_STANDARD,
+    GENERATION_MODE_API_PORTAL_READY,
+)
+DEFAULT_GENERATION_MODE = GENERATION_MODE_API_PORTAL_READY
+
+
+def normalize_generation_mode(value) -> str:
+    """Return a supported generation mode, preserving the API Portal-ready default."""
+    text = str(value or "").strip()
+    for mode in GENERATION_MODES:
+        if text.lower() == mode.lower():
+            return mode
+    return DEFAULT_GENERATION_MODE
+
+
 class PreferencesManager:
     """Manages user preferences with JSON persistence."""
 
@@ -32,6 +52,7 @@ class PreferencesManager:
         "gen_oas_30": True,
         "gen_oas_31": True,
         "gen_oas_swift": False,
+        "generation_mode": DEFAULT_GENERATION_MODE,
         "excel_gen_attr_diff": True,
         "excel_gen_line_diff": False,
         # File Display
@@ -59,9 +80,11 @@ class PreferencesManager:
         
         # Tools Settings
         "tools_legacy_tracing_enabled": True,
+        "tools_legacy_example_tracing_enabled": True,
         "tools_legacy_collision_include_descriptions": False,
         "tools_legacy_collision_include_examples": False,
         "tools_legacy_capitalize_schema_names": True,
+        "tools_legacy_fill_fix_examples": True,
         "tools_legacy_contact_name": "",
         "tools_legacy_contact_url": "",
         "tools_legacy_release": "",
@@ -108,6 +131,18 @@ class PreferencesManager:
 
         config_dir.mkdir(parents=True, exist_ok=True)
         return config_dir / "preferences.json"
+
+    def get_config_dir(self) -> Path:
+        """Return the user configuration directory used by OASIS."""
+        return self._config_path.parent
+
+    def get_legacy_example_seed_values_path(self) -> Path:
+        """Return the editable seed-values file used by the legacy converter."""
+        return self.get_config_dir() / "legacy_example_seed_values.yaml"
+
+    def get_legacy_example_semantic_rules_path(self) -> Path:
+        """Return the editable semantic-rules file used by the legacy converter."""
+        return self.get_config_dir() / "legacy_example_semantic_rules.yaml"
 
     def load(self):
         """Load preferences from JSON file."""

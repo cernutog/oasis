@@ -8,6 +8,7 @@ from pathlib import Path
 # Standard relative imports for package structure
 from . import excel_parser as parser
 from .generator import OASGenerator
+from .preferences import DEFAULT_GENERATION_MODE, normalize_generation_mode
 
 
 def find_best_match_file(target, directory, files_list):
@@ -20,6 +21,7 @@ def generate_oas(
     gen_30=True,
     gen_31=True,
     gen_swift=False,
+    generation_mode=DEFAULT_GENERATION_MODE,
     output_dir=None,
     log_callback=print,
 ):
@@ -32,7 +34,9 @@ def generate_oas(
         log_callback(f"Error: Directory not found: {base_dir}")
         return
 
+    generation_mode = normalize_generation_mode(generation_mode)
     log_callback(f"Starting generation in: {base_dir}")
+    log_callback(f"Generation mode: {generation_mode}")
 
     # 1. Setup Paths
     files_in_dir = os.listdir(base_dir)
@@ -162,7 +166,7 @@ def generate_oas(
     # 4. Generate OAS 3.0
     if gen_30:
         log_callback("Generating OAS 3.0...")
-        generator_30 = OASGenerator(version="3.0.0")
+        generator_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode)
         generator_30.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_30._record_source("tags", "$index.xlsx", "Tags")
@@ -203,7 +207,7 @@ def generate_oas(
     # 5. Generate OAS 3.1
     if gen_31:
         log_callback("Generating OAS 3.1...")
-        generator_31 = OASGenerator(version="3.1.0")
+        generator_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode)
         generator_31.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_31._record_source("tags", "$index.xlsx", "Tags")
@@ -235,7 +239,7 @@ def generate_oas(
     if gen_swift:
         # SWIFT OAS 3.0
         log_callback("Generating SWIFT OAS 3.0...")
-        sw_gen_30 = OASGenerator(version="3.0.0")
+        sw_gen_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode)
         sw_gen_30.build_info(clean_info)
         if tags_data:
             sw_gen_30.oas["tags"] = tags_data
@@ -272,7 +276,7 @@ def generate_oas(
 
         # SWIFT OAS 3.1
         log_callback("Generating SWIFT OAS 3.1...")
-        sw_gen_31 = OASGenerator(version="3.1.0")
+        sw_gen_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode)
         sw_gen_31.build_info(clean_info)
         if tags_data:
             sw_gen_31.oas["tags"] = tags_data

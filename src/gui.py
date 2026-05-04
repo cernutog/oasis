@@ -24,7 +24,7 @@ try:
     from .linter import SpectralRunner
     from .charts import SemanticPieChart
     from .redoc_gen import RedocGenerator
-    from .preferences import PreferencesManager
+    from .preferences import DEFAULT_GENERATION_MODE, PreferencesManager, normalize_generation_mode
     from .preferences_dialog import PreferencesDialog
     from .doc_viewer import DockedDocViewer
     from .version import VERSION, FULL_VERSION
@@ -33,6 +33,7 @@ try:
     from .oas_importer.oas_comparator import OASComparator
     from .legacy_converter import LegacyConverter
     from .legacy_converter_dialog import LegacyConverterDialog
+    from .legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from .legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from .oas_diff_dialog import OASDiffDialog
     from .api_designer.designer_tab import ApiDesignerTab
@@ -42,7 +43,7 @@ except ImportError:
     from linter import SpectralRunner
     from charts import SemanticPieChart
     from redoc_gen import RedocGenerator
-    from preferences import PreferencesManager
+    from preferences import DEFAULT_GENERATION_MODE, PreferencesManager, normalize_generation_mode
     from preferences_dialog import PreferencesDialog
     from doc_viewer import DockedDocViewer
     from version import VERSION, FULL_VERSION
@@ -51,6 +52,7 @@ except ImportError:
     from oas_importer.oas_comparator import OASComparator
     from legacy_converter import LegacyConverter
     from legacy_converter_dialog import LegacyConverterDialog
+    from legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from oas_diff_dialog import OASDiffDialog
     from api_designer.designer_tab import ApiDesignerTab
@@ -1050,6 +1052,7 @@ class OASGenApp(ctk.CTk):
         tools_menu.add_separator()
         tools_menu.add_command(label="Legacy Template Converter", command=self.open_legacy_converter)
         tools_menu.add_command(label="Template Schema Tracer", command=self.open_legacy_schema_tracer)
+        tools_menu.add_command(label="Template Example Tracer", command=self.open_legacy_example_tracer)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         # View Menu (Designer, Generation, Validation, YAML Viewer)
@@ -1443,6 +1446,10 @@ class OASGenApp(ctk.CTk):
         """Open the Template Schema Tracer standalone tool."""
         LegacySchemaTracerDialog(self, prefs_manager=self.prefs_manager)
 
+    def open_legacy_example_tracer(self):
+        """Open the Template Example Tracer standalone tool."""
+        LegacyExampleTracerDialog(self, prefs_manager=self.prefs_manager)
+
     def show_about_dialog(self):
         """Show About dialog using SplashScreen."""
         try:
@@ -1832,6 +1839,9 @@ class OASGenApp(ctk.CTk):
         gen_30 = self.var_30.get()
         gen_31 = self.var_31.get()
         gen_swift = self.var_swift.get()
+        generation_mode = normalize_generation_mode(
+            self.prefs_manager.get("generation_mode", DEFAULT_GENERATION_MODE)
+        )
 
         if not base_dir:
             self.log_gen("ERROR: Please select a directory.")
@@ -1841,11 +1851,11 @@ class OASGenApp(ctk.CTk):
         self.log_gen("Starting generation process...")
 
         t = threading.Thread(
-            target=self.run_process, args=(base_dir, gen_30, gen_31, gen_swift)
+            target=self.run_process, args=(base_dir, gen_30, gen_31, gen_swift, generation_mode)
         )
         t.start()
 
-    def run_process(self, base_dir, gen_30, gen_31, gen_swift):
+    def run_process(self, base_dir, gen_30, gen_31, gen_swift, generation_mode=None):
         try:
             self.last_generated_files = []
             output_dir = self.entry_oas_folder.get()  # Get OAS output folder
@@ -1863,6 +1873,7 @@ class OASGenApp(ctk.CTk):
                 gen_30=gen_30,
                 gen_31=gen_31,
                 gen_swift=gen_swift,
+                generation_mode=generation_mode,
                 output_dir=output_dir,
                 log_callback=gui_logger,
             )

@@ -18,6 +18,16 @@
 
 ## Lessons Learned
 
+### 2026-05-04 - Build v3.0.3: Generation Modes and Example Repair Tracing
+
+- Added OAS Generation mode preferences for Minimal, Standard, and API Portal-ready output, controlling request/response examples and `x-sandbox-*` custom extensions at generation time.
+- Kept legacy template conversion independent from generation mode so converted templates retain body examples, response examples, and sandbox extensions when legacy data provides them.
+- Added deterministic Repair and complete examples support for converted templates, including configurable seed values and semantic rules stored under the existing OASIS preferences folder.
+- Added Template Example Tracer tooling with optional repair mode, field usage context, readable multi-row tracing output, and support for already repaired `KEPT` examples.
+- Improved semantic classification and example validation for BIC8/BIC11, EBA pattern syntax, filenames, statuses, descriptions, references, and other recurring legacy fields.
+- Added user documentation for semantic classification and semantic-rules configuration, plus regression coverage for generation modes, example repair, tracing, and browse path behavior.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.3`.
+
 ### 2026-05-04 - Build v3.0.2: Restore Legacy Converter Browse Paths
 
 - Fixed Legacy Template Converter browse dialogs so they open from the entry path, the saved preference, or the nearest existing parent folder instead of falling back to the executable working directory.

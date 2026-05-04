@@ -1,6 +1,7 @@
 import pandas as pd
 import os
 import difflib
+import re
 
 
 def load_excel_sheet(file_path, sheet_name):
@@ -205,6 +206,22 @@ def parse_paths_index(df_paths):
             if "Method" in col or "Unnamed: 3" == col:
                 method_col = col
 
+        def _looks_like_custom_extension(value):
+            if not isinstance(value, str):
+                return False
+            for line in value.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                return bool(re.match(r"^x-[A-Za-z0-9_.-]+\s*:", stripped))
+            return False
+
+        extension_col = None
+        for col in df_paths.columns:
+            if str(col).strip().lower() in {"custom extensions", "custom extension"}:
+                extension_col = col
+                break
+
         # If still None, assume standard layout
         file_col = file_col or df_paths.columns[0]
         path_col = path_col or df_paths.columns[1]
@@ -215,6 +232,14 @@ def parse_paths_index(df_paths):
             if not isinstance(path_val, str) or not path_val.startswith("/"):
                 continue
 
+            extensions = None
+            if extension_col:
+                extensions = row.get(extension_col)
+            else:
+                unnamed_ext = row.get("Unnamed: 8")
+                if _looks_like_custom_extension(unnamed_ext):
+                    extensions = unnamed_ext
+
             op = {
                 "file": row.get(file_col),
                 "path": path_val,
@@ -223,7 +248,7 @@ def parse_paths_index(df_paths):
                 "description": row.get("Description") or row.get("Unnamed: 4"),
                 "operationId": row.get("OperationId") or row.get("Unnamed: 7"),
                 "tags": row.get("Tag") or row.get("Unnamed: 5"),
-                "extensions": row.get("Custom Extensions") or row.get("Unnamed: 8"),
+                "extensions": extensions,
             }
             operations.append(op)
     return operations

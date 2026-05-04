@@ -36,11 +36,19 @@ from src.generator_pkg.response_builder import (
     process_response_content as _process_response_content_fn,
     coerce_example_types as _coerce_example_types_fn,
 )
+from src.preferences import (
+    DEFAULT_GENERATION_MODE,
+    GENERATION_MODE_API_PORTAL_READY,
+    GENERATION_MODE_MINIMAL,
+    GENERATION_MODE_STANDARD,
+    normalize_generation_mode,
+)
 
 
 class OASGenerator:
-    def __init__(self, version="3.0.0"):
+    def __init__(self, version="3.0.0", generation_mode=DEFAULT_GENERATION_MODE):
         self.version = version
+        self.generation_mode = normalize_generation_mode(generation_mode)
         self.oas = {
             "openapi": version,
             "info": {},
@@ -57,6 +65,136 @@ class OASGenerator:
         self.oneof_refs = set()
         self.allof_refs = set()
         self.inlined_components = set() # Track components inlined for OAS 3.0 cleanup
+
+    def _is_api_portal_ready_mode(self) -> bool:
+        return self.generation_mode == GENERATION_MODE_API_PORTAL_READY
+
+    def _filter_request_body_examples(self, body_examples):
+        if not body_examples or self.generation_mode == GENERATION_MODE_MINIMAL:
+            return {}
+        if self.generation_mode == GENERATION_MODE_STANDARD:
+            return {
+                k: v
+                for k, v in body_examples.items()
+                if str(k).strip().lower() == "ok"
+            }
+        return body_examples
+
+    def _apply_example_mode(self, examples):
+        if not examples or self.generation_mode == GENERATION_MODE_MINIMAL:
+            return {}
+        if self.generation_mode == GENERATION_MODE_STANDARD:
+            return {
+                k: v
+                for k, v in examples.items()
+                if str(k).strip().lower() == "ok"
+            }
+        return examples
+
+    def _filter_raw_extensions(self, raw_text: str) -> str:
+        if not raw_text:
+            return raw_text
+
+        kept_lines = []
+        keep_block = False
+        for line in raw_text.splitlines():
+            stripped = line.strip()
+            indent = len(line) - len(line.lstrip())
+            if indent == 0 and stripped:
+                key = stripped.split(":", 1)[0].strip()
+                is_extension_key = bool(re.match(r"^x-[A-Za-z0-9_.-]+$", key)) and ":" in stripped
+                keep_block = is_extension_key and (
+                    self._is_api_portal_ready_mode() or not key.startswith("x-sandbox-")
+                )
+            if keep_block:
+                kept_lines.append(line)
+        return "\n".join(kept_lines).strip()
+
+    def _remove_sandbox_extensions(self, obj):
+        if self._is_api_portal_ready_mode():
+            return
+        if isinstance(obj, dict):
+            for key in list(obj.keys()):
+                if isinstance(key, str) and key.startswith("x-sandbox-"):
+                    del obj[key]
+                    continue
+                self._remove_sandbox_extensions(obj[key])
+        elif isinstance(obj, list):
+            for item in obj:
+                self._remove_sandbox_extensions(item)
+
+    def _resolve_schema_ref(self, schema, components_schemas, seen=None):
+        if not isinstance(schema, dict):
+            return schema
+        if seen is None:
+            seen = set()
+        ref = schema.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/components/schemas/"):
+            name = ref.rsplit("/", 1)[-1]
+            if name in seen:
+                return schema
+            target = components_schemas.get(name)
+            if isinstance(target, dict):
+                seen.add(name)
+                return self._resolve_schema_ref(target, components_schemas, seen)
+        return schema
+
+    def _is_synthetic_example_value(self, value, schema, components_schemas) -> bool:
+        schema = self._resolve_schema_ref(schema, components_schemas)
+        if not isinstance(schema, dict):
+            return False
+
+        schema_type = str(schema.get("type") or "").lower()
+        if not schema_type:
+            if "properties" in schema:
+                schema_type = "object"
+            elif "items" in schema:
+                schema_type = "array"
+
+        if schema_type == "string":
+            return value == "string"
+        if schema_type in ("integer", "int"):
+            return value == 0
+        if schema_type in ("number", "float", "double", "decimal"):
+            return value == 0 or value == 0.0
+        if schema_type == "boolean":
+            return value is True
+        if schema_type == "array":
+            item_schema = schema.get("items", {})
+            return (
+                isinstance(value, list)
+                and bool(value)
+                and all(self._is_synthetic_example_value(v, item_schema, components_schemas) for v in value)
+            )
+        return False
+
+    def _prune_optional_synthetic_examples(self, value, schema, components_schemas):
+        schema = self._resolve_schema_ref(schema, components_schemas)
+        if isinstance(value, dict) and isinstance(schema, dict):
+            properties = schema.get("properties", {})
+            required = set(schema.get("required") or [])
+            pruned = {}
+            for key, child_value in value.items():
+                child_schema = properties.get(key, {})
+                next_value = self._prune_optional_synthetic_examples(
+                    child_value, child_schema, components_schemas
+                )
+                if key not in required:
+                    if next_value in ({}, []):
+                        continue
+                    if self._is_synthetic_example_value(next_value, child_schema, components_schemas):
+                        continue
+                pruned[key] = next_value
+            return pruned
+
+        if isinstance(value, list) and isinstance(schema, dict):
+            item_schema = self._resolve_schema_ref(schema.get("items", {}), components_schemas)
+            return [
+                self._prune_optional_synthetic_examples(item, item_schema, components_schemas)
+                for item in value
+            ]
+
+        return value
 
     def _record_source(self, json_path, filename, sheet_name=None):
         """Records the source file and sheet for a given OAS path."""
@@ -140,7 +278,9 @@ class OASGenerator:
                 # Trim common indentation - normalize to column 0
                 # This ensures consistent handling regardless of Excel formatting
                 trimmed_ext = self._trim_extension_indent(extensions_yaml)
-                op_obj["__RAW_EXTENSIONS__"] = trimmed_ext
+                trimmed_ext = self._filter_raw_extensions(trimmed_ext)
+                if trimmed_ext:
+                    op_obj["__RAW_EXTENSIONS__"] = trimmed_ext
 
             # Populate details from Operation File
             details = {}
@@ -160,6 +300,7 @@ class OASGenerator:
                         # Detect if body is typical "request" example?
                         # For now just store by name
                         body_examples[ex_name] = ex_body
+                body_examples = self._filter_request_body_examples(body_examples)
 
             # Parameters
             if details.get("parameters") is not None:
@@ -387,6 +528,7 @@ class OASGenerator:
 
         if df is None or df.empty:
             return None
+        body_examples = self._filter_request_body_examples(body_examples or {})
 
         # The structure usually has the content-type as a root or row 0
         # Let's find the content type.
@@ -537,6 +679,8 @@ class OASGenerator:
             elif section == "content":
                 content_nodes.append(child)
             elif c_name.startswith("x-"):
+                if not self._is_api_portal_ready_mode() and c_name.startswith("x-sandbox-"):
+                    continue
                 # Extension on Response Object (Direct child of Synthetic Root)
                 # Check if this extension has children (like x-sandbox-request-headers)
                 if child.get("children"):
@@ -1256,6 +1400,8 @@ class OASGenerator:
             if k not in ordered_oas:
                 ordered_oas[k] = self.oas[k]
 
+        self._remove_sandbox_extensions(ordered_oas)
+
         # FINAL FIX: Recursively enforce 'example'/'examples' at the bottom of every object
         self._recursive_schema_fix(ordered_oas)
         
@@ -1446,6 +1592,14 @@ class OASGenerator:
                 
             schema = media_def.get("schema", {})
             examples = media_def.get("examples", {})
+
+            filtered_examples = self._apply_example_mode(examples)
+            if filtered_examples:
+                media_def["examples"] = filtered_examples
+                examples = filtered_examples
+            elif "examples" in media_def:
+                media_def.pop("examples", None)
+                continue
             
             if examples and schema:
                 for example_name, example_def in examples.items():
@@ -1455,7 +1609,9 @@ class OASGenerator:
                             schema, 
                             components_schemas
                         )
-                        example_def["value"] = coerced_value
+                        example_def["value"] = self._prune_optional_synthetic_examples(
+                            coerced_value, schema, components_schemas
+                        )
 
     def _trim_extension_indent(self, text: str) -> str:
         """

@@ -8,6 +8,11 @@ from tkinter import filedialog
 import os
 import sys
 
+try:
+    from .preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, normalize_generation_mode
+except ImportError:
+    from preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, normalize_generation_mode
+
 
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
@@ -229,6 +234,17 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_swift = ctk.CTkSwitch(self.tab_output, text="OAS SWIFT", progress_color="#0A809E")
         self.chk_swift.pack(anchor="w", padx=20, pady=10)
 
+        self.frame_generation_mode = ctk.CTkFrame(self.tab_output, fg_color="transparent")
+        self.frame_generation_mode.pack(fill="x", padx=20, pady=(18, 10))
+        ctk.CTkLabel(self.frame_generation_mode, text="Mode:", width=38, anchor="w").pack(side="left")
+        self.cbo_generation_mode = ctk.CTkComboBox(
+            self.frame_generation_mode,
+            values=list(GENERATION_MODES),
+            width=190,
+            button_color="#0A809E",
+        )
+        self.cbo_generation_mode.pack(side="left", fill="x", expand=False)
+
 
         # === 3. TEMPLATES TAB (merged Excel Generation + Tools) ===
         # --- Section: Create Template from OAS ---
@@ -242,42 +258,68 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # --- Section: Legacy Tools ---
         self._add_section_separator(self.tab_templates, "Legacy Tools")
+        self.frame_legacy_switches = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_switches.pack(fill="x", padx=20, pady=(0, 4))
+        self.frame_legacy_switches.grid_columnconfigure(0, weight=1)
+        self.frame_legacy_switches.grid_columnconfigure(1, weight=1)
+        self.frame_legacy_switches_left = ctk.CTkFrame(self.frame_legacy_switches, fg_color="transparent")
+        self.frame_legacy_switches_left.grid(row=0, column=0, sticky="nw")
+        self.frame_legacy_switches_right = ctk.CTkFrame(self.frame_legacy_switches, fg_color="transparent")
+        self.frame_legacy_switches_right.grid(row=0, column=1, sticky="nw", padx=(35, 0))
 
         self.var_legacy_tracing = ctk.BooleanVar(value=True)
         self.chk_legacy_tracing = ctk.CTkSwitch(
-            self.tab_templates, 
+            self.frame_legacy_switches_left,
             text="Enable Schema Tracing by default",
             variable=self.var_legacy_tracing,
             progress_color="#0A809E"
         )
-        self.chk_legacy_tracing.pack(anchor="w", padx=20, pady=(3, 6))
+        self.chk_legacy_tracing.pack(anchor="w", pady=(3, 6))
 
         self.var_legacy_collision_desc = ctk.BooleanVar(value=False)
         self.chk_legacy_collision_desc = ctk.CTkSwitch(
-            self.tab_templates,
+            self.frame_legacy_switches_left,
             text="Include descriptions in collision detection",
             variable=self.var_legacy_collision_desc,
             progress_color="#0A809E",
         )
-        self.chk_legacy_collision_desc.pack(anchor="w", padx=20, pady=(3, 6))
+        self.chk_legacy_collision_desc.pack(anchor="w", pady=(3, 6))
 
         self.var_legacy_collision_examples = ctk.BooleanVar(value=False)
         self.chk_legacy_collision_examples = ctk.CTkSwitch(
-            self.tab_templates,
+            self.frame_legacy_switches_left,
             text="Include examples in collision detection",
             variable=self.var_legacy_collision_examples,
             progress_color="#0A809E",
         )
-        self.chk_legacy_collision_examples.pack(anchor="w", padx=20, pady=(3, 6))
+        self.chk_legacy_collision_examples.pack(anchor="w", pady=(3, 6))
 
         self.var_legacy_capitalize_schemas = ctk.BooleanVar(value=True)
         self.chk_legacy_capitalize_schemas = ctk.CTkSwitch(
-            self.tab_templates,
+            self.frame_legacy_switches_left,
             text="Capitalize wrapper names (PascalCase)",
             variable=self.var_legacy_capitalize_schemas,
             progress_color="#0A809E",
         )
-        self.chk_legacy_capitalize_schemas.pack(anchor="w", padx=20, pady=(3, 6))
+        self.chk_legacy_capitalize_schemas.pack(anchor="w", pady=(3, 6))
+
+        self.var_legacy_fill_fix_examples = ctk.BooleanVar(value=True)
+        self.chk_legacy_fill_fix_examples = ctk.CTkSwitch(
+            self.frame_legacy_switches_right,
+            text="Repair and complete examples",
+            variable=self.var_legacy_fill_fix_examples,
+            progress_color="#0A809E",
+        )
+        self.chk_legacy_fill_fix_examples.pack(anchor="w", pady=(3, 6))
+
+        self.var_legacy_example_tracing = ctk.BooleanVar(value=True)
+        self.chk_legacy_example_tracing = ctk.CTkSwitch(
+            self.frame_legacy_switches_right,
+            text="Enable Example Tracing",
+            variable=self.var_legacy_example_tracing,
+            progress_color="#0A809E",
+        )
+        self.chk_legacy_example_tracing.pack(anchor="w", pady=(3, 6))
 
         self.frame_legacy_contact_name = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
         self.frame_legacy_contact_name.pack(fill="x", padx=20, pady=(8, 4))
@@ -519,6 +561,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         if prefs.get("gen_oas_30", True): self.chk_oas30.select()
         if prefs.get("gen_oas_31", True): self.chk_oas31.select()
         if prefs.get("gen_oas_swift", False): self.chk_swift.select()
+        self.cbo_generation_mode.set(normalize_generation_mode(prefs.get("generation_mode", DEFAULT_GENERATION_MODE)))
 
         # Excel Generation
         if prefs.get("excel_gen_attr_diff", True): self.chk_excel_attr_diff.select()
@@ -557,6 +600,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_collision_desc.set(prefs.get("tools_legacy_collision_include_descriptions", False))
         self.var_legacy_collision_examples.set(prefs.get("tools_legacy_collision_include_examples", False))
         self.var_legacy_capitalize_schemas.set(prefs.get("tools_legacy_capitalize_schema_names", True))
+        self.var_legacy_fill_fix_examples.set(prefs.get("tools_legacy_fill_fix_examples", True))
+        self.var_legacy_example_tracing.set(prefs.get("tools_legacy_example_tracing_enabled", True))
         self.entry_legacy_contact_name.delete(0, "end")
         self.entry_legacy_contact_name.insert(0, prefs.get("tools_legacy_contact_name", ""))
         self.entry_legacy_contact_url.delete(0, "end")
@@ -686,6 +731,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             "gen_oas_30": bool(self.chk_oas30.get()),
             "gen_oas_31": bool(self.chk_oas31.get()),
             "gen_oas_swift": bool(self.chk_swift.get()),
+            "generation_mode": normalize_generation_mode(self.cbo_generation_mode.get()),
             
             # Excel Generation
             "excel_gen_attr_diff": bool(self.chk_excel_attr_diff.get()),
@@ -711,9 +757,11 @@ class PreferencesDialog(ctk.CTkToplevel):
             
             # Tools
             "tools_legacy_tracing_enabled": self.var_legacy_tracing.get(),
+            "tools_legacy_example_tracing_enabled": self.var_legacy_example_tracing.get(),
             "tools_legacy_collision_include_descriptions": self.var_legacy_collision_desc.get(),
             "tools_legacy_collision_include_examples": self.var_legacy_collision_examples.get(),
             "tools_legacy_capitalize_schema_names": self.var_legacy_capitalize_schemas.get(),
+            "tools_legacy_fill_fix_examples": self.var_legacy_fill_fix_examples.get(),
             "tools_legacy_contact_name": self.entry_legacy_contact_name.get().strip(),
             "tools_legacy_contact_url": self.entry_legacy_contact_url.get().strip(),
             "tools_legacy_release": self.entry_legacy_release.get().strip(),
@@ -760,6 +808,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_oas30.select()
         self.chk_oas31.select()
         self.chk_swift.deselect()
+        self.cbo_generation_mode.set(DEFAULT_GENERATION_MODE)
 
         self.chk_excel_attr_diff.select()
         self.chk_excel_line_diff.deselect()
@@ -784,6 +833,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_collision_desc.set(False)
         self.var_legacy_collision_examples.set(False)
         self.var_legacy_capitalize_schemas.set(True)
+        self.var_legacy_fill_fix_examples.set(True)
+        self.var_legacy_example_tracing.set(True)
         self.entry_legacy_contact_name.delete(0, "end")
         self.entry_legacy_contact_url.delete(0, "end")
         self.entry_legacy_release.delete(0, "end")
@@ -793,6 +844,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_collision_desc.set(False)
         self.var_legacy_collision_examples.set(False)
         self.var_legacy_capitalize_schemas.set(True)
+        self.var_legacy_fill_fix_examples.set(True)
+        self.var_legacy_example_tracing.set(True)
         self.entry_legacy_contact_name.delete(0, "end")
         self.entry_legacy_contact_url.delete(0, "end")
         self.entry_legacy_release.delete(0, "end")
