@@ -119,7 +119,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         ("Newest First", "newest_first"),
         ("Oldest First", "oldest_first"),
     ]
-    TAB_OPTIONS = ["Designer", "OAS Generation", "Validation", "View"]
+    TAB_OPTIONS = ["OAS Generation", "Validation", "View"]
+    DESIGNER_TAB_OPTION = "Designer"
 
     def __init__(self, parent, prefs_manager, on_save_callback=None):
         super().__init__(parent)
@@ -222,6 +223,16 @@ class PreferencesDialog(ctk.CTkToplevel):
             self.tab_gen, text="Remember window size and position", progress_color="#0A809E"
         )
         self.chk_window_pos.grid(row=3, column=0, columnspan=2, sticky="w", padx=10, pady=10)
+
+        self.var_enable_designer = ctk.BooleanVar(value=False)
+        self.chk_enable_designer = ctk.CTkSwitch(
+            self.tab_gen,
+            text="Enable API Designer (experimental)",
+            variable=self.var_enable_designer,
+            progress_color="#0A809E",
+            command=self._on_enable_designer_toggle,
+        )
+        self.chk_enable_designer.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=10)
 
 
         # === 2. OAS GENERATION TAB ===
@@ -545,8 +556,13 @@ class PreferencesDialog(ctk.CTkToplevel):
         prefs = self.prefs_manager.get_all()
 
         # General
-        default_tab = prefs.get("default_tab", "Designer")
-        if default_tab in self.TAB_OPTIONS: self.cbo_tab.set(default_tab)
+        self.var_enable_designer.set(bool(prefs.get("enable_api_designer", False)))
+        self._refresh_default_tab_options()
+        default_tab = prefs.get("default_tab", "OAS Generation")
+        if default_tab in self._current_tab_options():
+            self.cbo_tab.set(default_tab)
+        else:
+            self.cbo_tab.set("OAS Generation")
         
         sort_order = prefs.get("file_sort_order", "alphabetical")
         for display, value in self.SORT_OPTIONS:
@@ -720,9 +736,15 @@ class PreferencesDialog(ctk.CTkToplevel):
                 sort_value = value
                 break
 
+        enable_designer = bool(self.var_enable_designer.get())
+        default_tab = self.cbo_tab.get()
+        if default_tab == self.DESIGNER_TAB_OPTION and not enable_designer:
+            default_tab = "OAS Generation"
+
         new_prefs = {
             # General
-            "default_tab": self.cbo_tab.get(),
+            "default_tab": default_tab,
+            "enable_api_designer": enable_designer,
             "file_sort_order": sort_value,
             "remember_paths": self.var_remember.get(),
             "remember_window_pos": bool(self.chk_window_pos.get()),
@@ -798,9 +820,25 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.result = False
         self.destroy()
 
+    def _current_tab_options(self):
+        if bool(self.var_enable_designer.get()):
+            return [self.DESIGNER_TAB_OPTION] + self.TAB_OPTIONS
+        return list(self.TAB_OPTIONS)
+
+    def _refresh_default_tab_options(self):
+        values = self._current_tab_options()
+        self.cbo_tab.configure(values=values)
+        if self.cbo_tab.get() not in values:
+            self.cbo_tab.set("OAS Generation")
+
+    def _on_enable_designer_toggle(self):
+        self._refresh_default_tab_options()
+
     def _on_reset(self):
         """Reset UI to default values."""
-        self.cbo_tab.set("Designer")
+        self.var_enable_designer.set(False)
+        self._refresh_default_tab_options()
+        self.cbo_tab.set("OAS Generation")
         self.cbo_sort.set("Alphabetical")
         self.var_remember.set(False)
         self.chk_window_pos.select()

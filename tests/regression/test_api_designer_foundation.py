@@ -15,6 +15,7 @@ from src.legacy_converter_dialog import LegacyConverterDialog
 from src.preferences import (
     GENERATION_MODE_MINIMAL,
     GENERATION_MODE_STANDARD,
+    PreferencesManager,
 )
 
 
@@ -33,6 +34,12 @@ def _clean_test_temp() -> Path:
         shutil.rmtree(TEST_TEMP_ROOT)
     TEST_TEMP_ROOT.mkdir(parents=True)
     return TEST_TEMP_ROOT
+
+
+def test_designer_is_hidden_by_default_for_intermediate_releases():
+    defaults = PreferencesManager.DEFAULT_PREFERENCES
+    assert defaults["enable_api_designer"] is False
+    assert defaults["default_tab"] == "OAS Generation"
 
 
 def test_api_designer_workspace_roundtrip_is_deterministic():

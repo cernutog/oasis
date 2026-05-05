@@ -69,7 +69,8 @@ class PreferencesManager:
         "analysis_log_theme": "Light",
         "spectral_log_theme": "Dark",
         # Interface
-        "default_tab": "Designer",  # Designer, OAS Generation, Validation, View
+        "default_tab": "OAS Generation",  # OAS Generation, Validation, View, Designer when enabled
+        "enable_api_designer": False,
         "linter_engine": "spectral",  # spectral or vacuum
         "ignore_bad_request": True,
         "validation_font_size": 11,

@@ -18,6 +18,15 @@
 
 ## Lessons Learned
 
+### 2026-05-05 - Build v3.0.4: Intermediate Release with Designer Feature Flag
+
+- Added an `Enable API Designer (experimental)` preference so intermediate colleague builds can hide the unfinished Designer by default without removing the implementation.
+- Changed the default startup tab to `OAS Generation` and omitted the Designer tab/menu entry unless the experimental preference is enabled.
+- Kept the Designer first in the workflow when enabled, including when toggled on from Preferences during the same session.
+- Added the generation mode selector directly to the OAS Generation interface next to the OAS version selectors.
+- Added regression coverage for the hidden-by-default Designer release behavior.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.4`.
+
 ### 2026-05-04 - Build v3.0.3: Generation Modes and Example Repair Tracing
 
 - Added OAS Generation mode preferences for Minimal, Standard, and API Portal-ready output, controlling request/response examples and `x-sandbox-*` custom extensions at generation time.

@@ -24,7 +24,7 @@ try:
     from .linter import SpectralRunner
     from .charts import SemanticPieChart
     from .redoc_gen import RedocGenerator
-    from .preferences import DEFAULT_GENERATION_MODE, PreferencesManager, normalize_generation_mode
+    from .preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
     from .preferences_dialog import PreferencesDialog
     from .doc_viewer import DockedDocViewer
     from .version import VERSION, FULL_VERSION
@@ -43,7 +43,7 @@ except ImportError:
     from linter import SpectralRunner
     from charts import SemanticPieChart
     from redoc_gen import RedocGenerator
-    from preferences import DEFAULT_GENERATION_MODE, PreferencesManager, normalize_generation_mode
+    from preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
     from preferences_dialog import PreferencesDialog
     from doc_viewer import DockedDocViewer
     from version import VERSION, FULL_VERSION
@@ -291,6 +291,7 @@ class OASGenApp(ctk.CTk):
 
         # Initialize Preferences Manager
         self.prefs_manager = PreferencesManager()
+        self._designer_enabled = bool(self.prefs_manager.get("enable_api_designer", False))
         self.log_window = None # Init before logging
         self.log_history = []
         
@@ -328,17 +329,20 @@ class OASGenApp(ctk.CTk):
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
 
         # Define Tabs Order
-        self.tab_designer = self.tabview.add("Designer")
+        self.tab_designer = None
+        self.designer_tab = None
+        if self._designer_enabled:
+            self.tab_designer = self.tabview.add("Designer")
+            self.designer_tab = ApiDesignerTab(
+                self.tab_designer,
+                self.prefs_manager,
+                status_callback=self.log_app,
+            )
         self.tab_gen = self.tabview.add("OAS Generation")
         self.tab_val = self.tabview.add("Validation")
         
         # Import dialog reference (opened from Tools menu)
         self.import_dialog = None
-        self.designer_tab = ApiDesignerTab(
-            self.tab_designer,
-            self.prefs_manager,
-            status_callback=self.log_app,
-        )
         
         # Global search binding - bind_all to be robust regardless of focus
         self.bind_all("<Control-f>", self._handle_global_search)
@@ -418,6 +422,9 @@ class OASGenApp(ctk.CTk):
         self.var_31 = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_31", True))
         self.var_30 = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_30", True))
         self.var_swift = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_swift", False))
+        self.var_generation_mode = ctk.StringVar(
+            value=normalize_generation_mode(self.prefs_manager.get("generation_mode", DEFAULT_GENERATION_MODE))
+        )
 
         # Actions Frame (Row 1 - previously Row 2) - Unified Toolbar with Options
         self.frame_gen_act = ctk.CTkFrame(self.tab_gen, fg_color="transparent")
@@ -437,7 +444,20 @@ class OASGenApp(ctk.CTk):
         self.chk_swift = ctk.CTkCheckBox(
             self.frame_gen_act, text="OAS SWIFT", variable=self.var_swift
         )
-        self.chk_swift.pack(side="left", padx=(0, 20))
+        self.chk_swift.pack(side="left", padx=(0, 16))
+
+        self.frame_generation_mode = ctk.CTkFrame(self.frame_gen_act, fg_color="transparent")
+        self.frame_generation_mode.pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(self.frame_generation_mode, text="Mode:", font=("Arial", 12)).pack(side="left", padx=(0, 6))
+        self.cbo_generation_mode = ctk.CTkComboBox(
+            self.frame_generation_mode,
+            values=list(GENERATION_MODES),
+            variable=self.var_generation_mode,
+            width=170,
+            button_color="#0A809E",
+            command=self._on_generation_mode_changed,
+        )
+        self.cbo_generation_mode.pack(side="left")
         
         # Generate Button
         self.btn_gen = ctk.CTkButton(
@@ -1055,9 +1075,10 @@ class OASGenApp(ctk.CTk):
         tools_menu.add_command(label="Template Example Tracer", command=self.open_legacy_example_tracer)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
-        # View Menu (Designer, Generation, Validation, YAML Viewer)
+        # View Menu (Generation, Validation, YAML Viewer; Designer is experimental)
         self.view_menu = tk.Menu(menubar, tearoff=0)
-        self.view_menu.add_command(label="Designer", command=self._view_designer)
+        if self._designer_enabled:
+            self.view_menu.add_command(label="Designer", command=self._view_designer)
         self.view_menu.add_command(label="OAS Generation", command=self._view_generation)
         self.view_menu.add_command(label="Validation", command=self._view_validation)
         self.view_menu.add_command(label="YAML Viewer", command=self._view_yaml_viewer)
@@ -1077,6 +1098,36 @@ class OASGenApp(ctk.CTk):
         # Note: ctk doesn't directly support standard menus well on all platforms,
         # but configured it on the underlying tk root usually works on Windows.
         self.config(menu=menubar)
+
+    def _set_designer_visibility(self, enabled: bool):
+        """Enable or hide the experimental Designer tab and related navigation."""
+        enabled = bool(enabled)
+        if enabled == self._designer_enabled:
+            return
+
+        self._designer_enabled = enabled
+        if not hasattr(self, "tabview"):
+            return
+
+        if enabled:
+            self.tab_designer = self.tabview.insert(0, "Designer")
+            self.designer_tab = ApiDesignerTab(
+                self.tab_designer,
+                self.prefs_manager,
+                status_callback=self.log_app,
+            )
+        else:
+            if self.tabview.get() == "Designer":
+                self.tabview.set("OAS Generation")
+            try:
+                self.tabview.delete("Designer")
+            except Exception:
+                pass
+            self.tab_designer = None
+            self.designer_tab = None
+
+        self._create_menu()
+        self._apply_default_tab()
 
     def show_application_logs(self):
         """Open detached application logs window."""
@@ -1116,7 +1167,10 @@ class OASGenApp(ctk.CTk):
         self.tabview.set("View")
 
     def _view_designer(self):
-        self.tabview.set("Designer")
+        if self._designer_enabled:
+            self.tabview.set("Designer")
+        else:
+            self.tabview.set("OAS Generation")
 
     def _smart_select_template(self):
         """Switch to Generation tab and open template selector."""
@@ -1137,10 +1191,12 @@ class OASGenApp(ctk.CTk):
         self.tabview.set("Validation")
 
     def _apply_default_tab(self):
-        default_tab = self.prefs_manager.get("default_tab", "Designer")
-        valid_tabs = {"Designer", "OAS Generation", "Validation", "View"}
+        default_tab = self.prefs_manager.get("default_tab", "OAS Generation")
+        valid_tabs = {"OAS Generation", "Validation", "View"}
+        if self._designer_enabled:
+            valid_tabs.add("Designer")
         if default_tab not in valid_tabs:
-            default_tab = "Designer"
+            default_tab = "OAS Generation"
         try:
             self.tabview.set(default_tab)
             self._on_tab_change()
@@ -1517,6 +1573,9 @@ class OASGenApp(ctk.CTk):
 
     def _apply_preferences(self, new_prefs: dict):
         """Apply new preferences to the UI."""
+        if "enable_api_designer" in new_prefs:
+            self._set_designer_visibility(bool(new_prefs["enable_api_designer"]))
+
         # Apply YAML theme
         if "yaml_theme" in new_prefs:
             self.on_theme_change(new_prefs["yaml_theme"])
@@ -1574,6 +1633,13 @@ class OASGenApp(ctk.CTk):
             self.var_swift.set(True)
         else:
             self.var_swift.set(False)
+
+        if "generation_mode" in new_prefs:
+            mode = normalize_generation_mode(new_prefs.get("generation_mode", DEFAULT_GENERATION_MODE))
+            if hasattr(self, "var_generation_mode"):
+                self.var_generation_mode.set(mode)
+            if hasattr(self, "cbo_generation_mode"):
+                self.cbo_generation_mode.set(mode)
 
         # Apply validation checkbox
         if "ignore_bad_request" in new_prefs:
@@ -1834,14 +1900,23 @@ class OASGenApp(ctk.CTk):
         self.log_area.delete("1.0", "end")
         self.log_area.configure(state="disabled")
 
+    def _on_generation_mode_changed(self, value=None):
+        """Persist the generation mode selected in the OAS Generation toolbar."""
+        mode = normalize_generation_mode(value or self.var_generation_mode.get())
+        self.var_generation_mode.set(mode)
+        try:
+            self.prefs_manager.set("generation_mode", mode)
+            self.prefs_manager.save()
+        except Exception:
+            pass
+
     def start_generation(self):
         base_dir = self.entry_dir.get()
         gen_30 = self.var_30.get()
         gen_31 = self.var_31.get()
         gen_swift = self.var_swift.get()
-        generation_mode = normalize_generation_mode(
-            self.prefs_manager.get("generation_mode", DEFAULT_GENERATION_MODE)
-        )
+        generation_mode = normalize_generation_mode(self.var_generation_mode.get())
+        self._on_generation_mode_changed(generation_mode)
 
         if not base_dir:
             self.log_gen("ERROR: Please select a directory.")
