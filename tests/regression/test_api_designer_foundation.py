@@ -413,6 +413,168 @@ def test_legacy_converter_converts_eba_pattern_constraints_for_examples():
     assert bic11_only.example == "IPSDITM1XXX; DEUTDEFFXXX; BNPAFRPPXXX"
 
 
+def test_legacy_converter_repairs_bic_semantic_fields_without_generic_fallback():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    cases = [
+        (
+            DataType(
+                name="ReBic",
+                type="string",
+                description="Reachable Entity BIC (BIC11)",
+                pattern_eba="4!c2!a2!c3!c",
+                regex=r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}([A-Z0-9]{3,3})",
+                example="AAAAAAAAAAA",
+            ),
+            {"bic11"},
+        ),
+        (
+            DataType(
+                name="ReceiverBic",
+                type="string",
+                description="The BIC of the message receiver",
+                pattern_eba="4!c2!a2!c",
+                regex=r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}",
+                example="AAAAAAAA",
+            ),
+            {"bic8"},
+        ),
+        (
+            DataType(
+                name="ReachableBic",
+                type="string",
+                regex=r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}([A-Z0-9]{3,3})",
+                example="",
+            ),
+            {"bic11"},
+        ),
+        (
+            DataType(
+                name="ReachableEntity",
+                type="string",
+                description="BIC of the reachable entity (BIC11)",
+                pattern_eba="4!c2!a2!c3!c",
+                example="AAAAAAAAAAA",
+            ),
+            {"bic11"},
+        ),
+        (
+            DataType(
+                name="FinancialInstitution",
+                type="string",
+                description="Financial institution BIC",
+                pattern_eba="4!c2!a2!c[3!c]",
+                example="AAAAAAAA",
+            ),
+            {"bic", "bic8", "bic11"},
+        ),
+    ]
+
+    for dt, expected_categories in cases:
+        converter._example_trace_rows = []
+        converter._fill_and_fix_examples_for_data_type(dt, schema_name=dt.name)
+
+        examples = dt.example.split("; ")
+        category = converter._classify_example_category(dt)
+        assert category in expected_categories
+        assert len(examples) == 3
+        assert all(converter._is_valid_example_token(dt, value) for value in examples)
+        assert not any(re.fullmatch(r"([A-Z0-9])\1+", value) for value in examples)
+        assert converter._example_trace_rows[-1]["reason"].startswith("semantic category: bic")
+
+
+def test_legacy_converter_regex_example_generation_unescapes_literal_dots():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    msg_type = DataType(
+        name="msgTp",
+        type="string",
+        regex=r"(pain\.013){1}|(pain\.014){1}|(pacs\.028){1}|(camt\.055){1}|(camt\.029){1}",
+        example="string",
+    )
+
+    converter._fill_and_fix_examples_for_data_type(msg_type)
+
+    assert msg_type.example == "pain.013; pain.014; pacs.028"
+    assert all(re.fullmatch(msg_type.regex, value) for value in msg_type.example.split("; "))
+
+
+def test_legacy_converter_regex_example_generation_validates_simple_quantifiers_and_groups():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    cases = [
+        r"MSG[0-9]{2}",
+        r"^MSG[0-9]{2}$",
+        r"AB+",
+        r"(AB)+",
+        r"X[A-Z]*",
+        r"A{0,3}",
+        r"[^0-9]{3}",
+        r"(AA|BB)[0-9]{2}",
+        r"ABC\+DEF",
+        r"AMOUNT\$",
+    ]
+
+    for pattern in cases:
+        generated = converter._generate_valid_from_regex(pattern)
+        assert generated is not None, pattern
+        assert re.fullmatch(pattern, generated), (pattern, generated)
+
+
+def test_legacy_converter_example_generation_respects_numeric_and_length_constraints():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    integer = DataType(name="RetryCount", type="integer", min_val="2.2", max_val="4.8", example="string")
+    decimal = DataType(name="Amount", type="number", min_val="10.5", max_val="11.5", example="string")
+    short_text = DataType(name="ShortCode", type="string", min_val="3", max_val="5", example="string")
+    empty_allowed_text = DataType(name="EmptyString", type="string", min_val="0", max_val="0", example="string")
+
+    converter._fill_and_fix_examples_for_data_type(integer)
+    converter._fill_and_fix_examples_for_data_type(decimal)
+    converter._fill_and_fix_examples_for_data_type(short_text)
+    converter._fill_and_fix_examples_for_data_type(empty_allowed_text)
+
+    assert integer.example == "3"
+    assert converter._is_valid_example_token(integer, integer.example)
+    assert decimal.example == "11.0"
+    assert converter._is_valid_example_token(decimal, decimal.example)
+    assert converter._is_valid_example_token(short_text, short_text.example)
+    assert 3 <= len(short_text.example) <= 5
+    assert empty_allowed_text.example == ""
+
+
+def test_legacy_converter_does_not_write_best_effort_when_constraints_are_impossible():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    impossible_integer = DataType(name="ImpossibleInteger", type="integer", min_val="1.2", max_val="1.8", example="")
+    impossible_text = DataType(name="ImpossibleText", type="string", min_val="5", max_val="3", example="")
+
+    converter._fill_and_fix_examples_for_data_type(impossible_integer)
+    converter._fill_and_fix_examples_for_data_type(impossible_text)
+
+    assert impossible_integer.example == ""
+    assert impossible_text.example == ""
+    impossible_rows = [row for row in converter._example_trace_rows if row["action"] == "IMPOSSIBLE"]
+    assert len(impossible_rows) == 2
+    assert {row["severity"] for row in impossible_rows} == {"impossible"}
+
+
+def test_legacy_converter_marks_too_complex_regex_examples_in_trace():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    complex_regex = DataType(name="ComplexPattern", type="string", regex=r"(?=ABC)ABC", example="string")
+
+    converter._fill_and_fix_examples_for_data_type(complex_regex)
+
+    assert complex_regex.example == ""
+    assert converter._example_trace_rows[-1]["action"] == "TOO COMPLEX"
+    assert converter._example_trace_rows[-1]["severity"] == "complex"
+
+
+def test_legacy_converter_boolean_examples_respect_allowed_values():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    yes_no = DataType(name="ActiveFlag", type="boolean", allowed_values="yes; no", example="maybe")
+
+    converter._fill_and_fix_examples_for_data_type(yes_no)
+
+    assert yes_no.example == "yes; no"
+    assert converter._is_valid_example_set(yes_no, yes_no.example)
+
+
 def test_legacy_converter_example_tracer_does_not_truncate_values():
     temp_root = _clean_test_temp()
     detail_lines: list[str] = []
@@ -463,6 +625,35 @@ def test_legacy_converter_example_tracer_shows_field_usage_context():
     assert "FIELD/USAGE" in joined
     assert "FIELD USAGE DETAILS" not in joined
     assert "InsertSettlementBICRequest.preferredAgentBIC" in joined
+
+
+def test_legacy_converter_example_tracer_marks_constraint_severity_lines():
+    detail_lines: list[str] = []
+    converter = LegacyConverter("in", "out", fill_fix_examples=True, detail_log_callback=detail_lines.append)
+    converter._record_example_trace(
+        "ImpossibleText",
+        DataType(name="ImpossibleText", type="string"),
+        "IMPOSSIBLE",
+        "",
+        "",
+        "impossible length range",
+        severity="impossible",
+    )
+    converter._record_example_trace(
+        "ComplexPattern",
+        DataType(name="ComplexPattern", type="string"),
+        "TOO COMPLEX",
+        "",
+        "",
+        "too complex regex",
+        severity="complex",
+    )
+
+    converter._log_example_trace_summary()
+
+    joined = "\n".join(detail_lines)
+    assert "[[OASIS_EXAMPLE_TRACE_IMPOSSIBLE]]" in joined
+    assert "[[OASIS_EXAMPLE_TRACE_COMPLEX]]" in joined
 
 
 def test_legacy_converter_standalone_example_trace_reports_kept_examples():

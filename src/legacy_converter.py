@@ -9,6 +9,7 @@ import shutil
 import re
 import copy
 import textwrap
+import math
 from pathlib import Path
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -19,6 +20,10 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 import yaml
+
+
+EXAMPLE_TRACE_IMPOSSIBLE_MARKER = "[[OASIS_EXAMPLE_TRACE_IMPOSSIBLE]]"
+EXAMPLE_TRACE_COMPLEX_MARKER = "[[OASIS_EXAMPLE_TRACE_COMPLEX]]"
 
 
 @dataclass
@@ -255,7 +260,7 @@ class LegacyConverter:
         self.filename_to_error_response: Dict[str, str] = {}  # ep_filename -> ErrorResponse variant name
         self.error_response_variant_rows: Dict[str, List[Tuple[str, str, str, str, str, str, str]]] = {}
         self.error_response_description_candidates: Dict[str, Dict[Tuple[str, str, str, str, str, str], Dict[str, Dict[str, Any]]]] = {}
-        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0}
+        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0, "impossible": 0, "complex": 0}
         self._example_trace_rows: List[Dict[str, str]] = []
 
     def _resolve_internal_master_dir(self):
@@ -611,13 +616,13 @@ class LegacyConverter:
                 return False
             if min_raw and min_raw.lower() != "nan":
                 try:
-                    if intval < int(float(min_raw.replace(",", "."))):
+                    if intval < float(min_raw.replace(",", ".")):
                         return False
                 except Exception:
                     pass
             if max_raw and max_raw.lower() != "nan":
                 try:
-                    if intval > int(float(max_raw.replace(",", "."))):
+                    if intval > float(max_raw.replace(",", ".")):
                         return False
                 except Exception:
                     pass
@@ -648,13 +653,13 @@ class LegacyConverter:
         # Default string validation: length constraints.
         if min_raw and min_raw.lower() != "nan":
             try:
-                if len(val) < int(float(min_raw.replace(",", "."))):
+                if len(val) < int(math.ceil(float(min_raw.replace(",", ".")))):
                     return False
             except Exception:
                 pass
         if max_raw and max_raw.lower() != "nan":
             try:
-                if len(val) > int(float(max_raw.replace(",", "."))):
+                if len(val) > int(math.floor(float(max_raw.replace(",", ".")))):
                     return False
             except Exception:
                 pass
@@ -1022,7 +1027,7 @@ class LegacyConverter:
     def _fill_and_fix_consolidated_examples(self, trace_kept: bool = False) -> None:
         self.example_seed_values = self._load_example_seed_values()
         self.example_semantic_rules = self._load_example_semantic_rules()
-        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0}
+        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0, "impossible": 0, "complex": 0}
         self._example_trace_rows = []
 
         for schema_name, dt in sorted(self.global_schemas.items(), key=lambda item: item[0].lower()):
@@ -1030,11 +1035,12 @@ class LegacyConverter:
 
     def _log_example_repair_report(self) -> None:
         stats = self._example_fix_stats
-        if stats["kept"] or stats["completed"] or stats["repaired"] or stats["best_effort"]:
+        if any(stats.get(key, 0) for key in ("kept", "completed", "repaired", "best_effort", "impossible", "complex")):
             self.log(
                 "Repair and complete examples: "
                 f"kept {stats['kept']}, completed {stats['completed']}, "
-                f"repaired {stats['repaired']}, best-effort {stats['best_effort']}."
+                f"repaired {stats['repaired']}, best-effort {stats['best_effort']}, "
+                f"impossible {stats.get('impossible', 0)}, complex {stats.get('complex', 0)}."
             )
         if self.example_tracing_enabled:
             self._log_example_trace_summary()
@@ -1054,9 +1060,42 @@ class LegacyConverter:
 
         if not examples:
             fallback = self._best_effort_example(dt)
-            examples = [fallback]
-            reason = "best-effort fallback"
-            used_best_effort = True
+            if fallback and self._is_valid_example_token(dt, fallback):
+                examples = [fallback]
+                reason = "best-effort fallback"
+                used_best_effort = True
+            else:
+                issue_severity, issue_reason = self._example_constraint_issue(dt)
+                action = "BEST EFFORT"
+                severity = ""
+                trace_reason = "no valid constraint-compliant example"
+                if issue_severity == "impossible":
+                    action = "IMPOSSIBLE"
+                    severity = "impossible"
+                    trace_reason = issue_reason
+                    self._example_fix_stats["impossible"] += 1
+                elif issue_severity == "complex":
+                    action = "TOO COMPLEX"
+                    severity = "complex"
+                    trace_reason = issue_reason
+                    self._example_fix_stats["complex"] += 1
+                elif original and original.lower() != "nan":
+                    self._example_fix_stats["best_effort"] += 1
+
+                if original and original.lower() != "nan":
+                    dt.example = ""
+                    self._example_fix_stats["repaired"] += 1
+                if severity or (original and original.lower() != "nan"):
+                    self._record_example_trace(
+                        schema_name or dt.name,
+                        dt,
+                        action if severity else "REPAIRED",
+                        original,
+                        "",
+                        trace_reason,
+                        severity=severity,
+                    )
+                return
         elif any(not self._is_valid_example_token(dt, value) for value in examples):
             used_best_effort = True
 
@@ -1104,10 +1143,16 @@ class LegacyConverter:
 
         dtype = str(dt.type or "string").strip().lower()
         if dtype in ("integer", "int"):
+            midpoint = self._numeric_midpoint(dt, integer=True)
+            if midpoint is not None:
+                candidates.append(str(midpoint))
             candidates.extend(self.example_seed_values.get("integer", []))
             candidates.extend(["1", "2", "3"])
             reason = "numeric type: integer"
         elif dtype in ("number", "float", "double", "decimal"):
+            midpoint = self._numeric_midpoint(dt, integer=False)
+            if midpoint is not None:
+                candidates.append(str(midpoint))
             candidates.extend(self.example_seed_values.get("number", []))
             candidates.extend(["1.0", "2.5", "3.75"])
             reason = "numeric type: number"
@@ -1117,11 +1162,14 @@ class LegacyConverter:
         else:
             had_semantic_candidates = bool(candidates)
             for pattern in self._example_constraint_patterns(dt):
-                generated = self._generate_from_simple_regex(pattern)
-                if generated:
-                    candidates.append(generated)
+                generated_values = self._generate_valid_examples_from_regex(pattern, limit=3)
+                if generated_values:
+                    candidates.extend(generated_values)
                     if not had_semantic_candidates and category == "generic":
                         reason = "regex fallback"
+            constrained_string = self._fit_string_bounds(dt, self.example_seed_values.get(category, ["Banking value"])[0])
+            if constrained_string:
+                candidates.append(constrained_string)
             candidates.extend(self.example_seed_values.get("generic", []))
 
         examples = self._unique_valid_examples(dt, candidates, limit=3)
@@ -1143,7 +1191,57 @@ class LegacyConverter:
                 return False
         return True
 
-    def _record_example_trace(self, schema_name: str, dt: DataType, action: str, before: str, after: str, reason: str) -> None:
+    def _example_constraint_issue(self, dt: DataType) -> Tuple[str, str]:
+        dtype = str(dt.type or "string").strip().lower()
+        min_val = self._parse_float(dt.min_val)
+        max_val = self._parse_float(dt.max_val)
+
+        if min_val is not None and max_val is not None and min_val > max_val:
+            return "impossible", f"impossible constraints: min {dt.min_val} > max {dt.max_val}"
+
+        if dtype in ("integer", "int"):
+            min_int = int(math.ceil(min_val)) if min_val is not None else None
+            max_int = int(math.floor(max_val)) if max_val is not None else None
+            if min_int is not None and max_int is not None and min_int > max_int:
+                return "impossible", f"impossible integer range: no integer between {dt.min_val} and {dt.max_val}"
+        elif dtype not in ("number", "float", "double", "decimal", "boolean", "object", "array"):
+            min_count = int(math.ceil(min_val)) if min_val is not None else 0
+            max_count = int(math.floor(max_val)) if max_val is not None else None
+            if max_count is not None and max_count < min_count:
+                return "impossible", f"impossible length range: minLength {dt.min_val} > maxLength {dt.max_val}"
+
+        allowed = self._split_example_values(dt.allowed_values)
+        if allowed and not any(self._is_valid_example_token(dt, value) for value in allowed):
+            return "impossible", "impossible constraints: no allowed value satisfies type/pattern/range constraints"
+
+        for pattern in self._example_constraint_patterns(dt):
+            if self._regex_is_too_complex_for_example_generation(pattern):
+                return "complex", f"too complex regex for automatic example generation: {pattern}"
+
+        return "", ""
+
+    def _regex_is_too_complex_for_example_generation(self, pattern: str) -> bool:
+        text = str(pattern or "").strip()
+        if not text:
+            return False
+        try:
+            re.compile(text)
+        except re.error:
+            return True
+        if self._generate_valid_examples_from_regex(text, limit=1):
+            return False
+        return True
+
+    def _record_example_trace(
+        self,
+        schema_name: str,
+        dt: DataType,
+        action: str,
+        before: str,
+        after: str,
+        reason: str,
+        severity: str = "",
+    ) -> None:
         self._example_trace_rows.append(
             {
                 "schema": schema_name or dt.name,
@@ -1152,6 +1250,7 @@ class LegacyConverter:
                 "before": before if before and before.lower() != "nan" else "<empty>",
                 "after": after,
                 "reason": reason,
+                "severity": severity,
             }
         )
 
@@ -1199,6 +1298,7 @@ class LegacyConverter:
                         "before": str(row.get("before", "")) if idx == 0 else "",
                         "after": str(row.get("after", "")) if idx == 0 else "",
                         "reason": str(row.get("reason", "")) if idx == 0 else "",
+                        "severity": str(row.get("severity", "")),
                     }
                 )
 
@@ -1230,6 +1330,7 @@ class LegacyConverter:
         self.detail_log(sep)
         for record_idx, trace_row in enumerate(self._example_trace_rows):
             fields = self._example_trace_fields(trace_row.get("schema", ""))
+            severity = str(trace_row.get("severity", ""))
             for field_idx, field in enumerate(fields):
                 row = {
                     "schema": str(trace_row.get("schema", "")) if field_idx == 0 else "",
@@ -1250,7 +1351,7 @@ class LegacyConverter:
                         key: wrapped[key][line_idx] if line_idx < len(wrapped[key]) else ""
                         for key, _label in columns
                     }
-                    self.detail_log(
+                    line = (
                         f"| {values['schema']:<{widths['schema']}} | "
                         f"{values['field']:<{widths['field']}} | "
                         f"{values['type']:<{widths['type']}} | "
@@ -1259,9 +1360,18 @@ class LegacyConverter:
                         f"{values['after']:<{widths['after']}} | "
                         f"{values['reason']:<{widths['reason']}} |"
                     )
+                    self._detail_log_example_trace_line(line, severity)
             if record_idx < len(self._example_trace_rows) - 1:
                 self.detail_log(sep)
         self.detail_log("=" * len(header) + "\n")
+
+    def _detail_log_example_trace_line(self, line: str, severity: str = "") -> None:
+        if severity == "impossible":
+            self.detail_log(f"{EXAMPLE_TRACE_IMPOSSIBLE_MARKER}{line}")
+        elif severity == "complex":
+            self.detail_log(f"{EXAMPLE_TRACE_COMPLEX_MARKER}{line}")
+        else:
+            self.detail_log(line)
 
     def _split_example_values(self, raw: Any) -> List[str]:
         text = str(raw or "").strip()
@@ -1479,40 +1589,61 @@ class LegacyConverter:
             return "bic8"
 
         patterns = " ".join(self._example_constraint_patterns(dt)).lower().replace(" ", "")
-        if not patterns:
+        structural_patterns = patterns.replace("(", "").replace(")", "")
+        if not structural_patterns:
             return ""
-        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}\[a-z0-9\]\{3,3\}", patterns):
+        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}\[a-z0-9\]\{3,3\}", structural_patterns):
             return "bic11"
-        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}(?!\[a-z0-9\]\{3,3\})", patterns):
+        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}(?!\[a-z0-9\]\{3,3\})", structural_patterns):
             return "bic8"
-        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}\[a-z0-9\]\{3\}", patterns):
+        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}\[a-z0-9\]\{3\}", structural_patterns):
             return "bic11"
-        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}(?!\[a-z0-9\]\{3\})", patterns):
+        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}(?!\[a-z0-9\]\{3\})", structural_patterns):
             return "bic8"
         return ""
 
     def _best_effort_example(self, dt: DataType) -> str:
         dtype = str(dt.type or "string").strip().lower()
         if dtype in ("integer", "int"):
-            return str(self._numeric_midpoint(dt, integer=True))
+            value = self._numeric_midpoint(dt, integer=True)
+            return "" if value is None else str(value)
         if dtype in ("number", "float", "double", "decimal"):
-            return str(self._numeric_midpoint(dt, integer=False))
+            value = self._numeric_midpoint(dt, integer=False)
+            return "" if value is None else str(value)
         if dtype == "boolean":
-            return "true"
+            for value in self.example_seed_values.get("boolean", ["true", "false"]):
+                if self._is_valid_example_token(dt, value):
+                    return value
+            return ""
         category = self._classify_example_category(dt)
         for value in self.example_seed_values.get(category, []):
             if self._is_valid_example_token(dt, value):
                 return value
         for pattern in self._example_constraint_patterns(dt):
-            generated = self._generate_from_simple_regex(pattern)
-            if generated:
-                return generated
+            generated_values = self._generate_valid_examples_from_regex(pattern, limit=1)
+            if generated_values and self._is_semantically_plausible_example(category, generated_values[0]):
+                return generated_values[0]
         generic = self.example_seed_values.get("generic", ["Banking value"])[0]
-        return self._fit_string_bounds(dt, generic)
+        fitted = self._fit_string_bounds(dt, generic)
+        return fitted if self._is_valid_example_token(dt, fitted) else ""
 
     def _numeric_midpoint(self, dt: DataType, integer: bool) -> Any:
         min_val = self._parse_float(dt.min_val)
         max_val = self._parse_float(dt.max_val)
+        if min_val is not None and max_val is not None and min_val > max_val:
+            return None
+        if integer:
+            min_int = int(math.ceil(min_val)) if min_val is not None else None
+            max_int = int(math.floor(max_val)) if max_val is not None else None
+            if min_int is not None and max_int is not None:
+                if min_int > max_int:
+                    return None
+                return min_int + ((max_int - min_int) // 2)
+            if min_int is not None:
+                return min_int
+            if max_int is not None:
+                return max_int
+            return 1
         if min_val is not None and max_val is not None:
             value = (min_val + max_val) / 2
         elif min_val is not None:
@@ -1536,18 +1667,69 @@ class LegacyConverter:
         text = value or "Banking value"
         min_len = self._parse_float(dt.min_val)
         max_len = self._parse_float(dt.max_val)
-        if max_len is not None and max_len >= 1 and len(text) > int(max_len):
-            text = text[: int(max_len)]
-        if min_len is not None and len(text) < int(min_len):
-            text = text + ("X" * (int(min_len) - len(text)))
+        min_count = int(math.ceil(min_len)) if min_len is not None else 0
+        max_count = int(math.floor(max_len)) if max_len is not None else None
+        if max_count is not None and max_count < min_count:
+            return ""
+        if max_count is not None and len(text) > max_count:
+            text = text[:max_count]
+        if len(text) < min_count:
+            text = text + ("X" * (min_count - len(text)))
         return text
+
+    def _generate_valid_from_regex(self, pattern: str) -> Optional[str]:
+        examples = self._generate_valid_examples_from_regex(pattern, limit=1)
+        return examples[0] if examples else None
+
+    def _generate_valid_examples_from_regex(self, pattern: str, limit: int = 3) -> List[str]:
+        original = str(pattern or "").strip()
+        if not original or limit <= 0:
+            return []
+
+        candidates: List[str] = []
+        stripped = self._strip_regex_anchors(original)
+        alternatives = self._split_top_level_regex_alternatives(stripped)
+        source_patterns = alternatives if len(alternatives) > 1 else [original]
+
+        for source in source_patterns:
+            generated = self._generate_from_simple_regex(source)
+            if generated:
+                candidates.append(generated)
+
+        if len(source_patterns) > 1:
+            generated = self._generate_from_simple_regex(original)
+            if generated:
+                candidates.append(generated)
+
+        out: List[str] = []
+        seen = set()
+        for generated in candidates:
+            if not generated or generated in seen:
+                continue
+            try:
+                if re.fullmatch(original, generated) is not None:
+                    out.append(generated)
+                    seen.add(generated)
+            except re.error:
+                return []
+            if len(out) >= limit:
+                break
+        return out
 
     def _generate_from_simple_regex(self, pattern: str) -> Optional[str]:
         text = str(pattern or "").strip()
         if not text:
             return None
-        text = text.lstrip("^").rstrip("$")
+        text = self._strip_regex_anchors(text)
         if any(marker in text for marker in ("(?", "\\p", "\\P", "\\1", "\\2")):
+            return None
+
+        alternatives = self._split_top_level_regex_alternatives(text)
+        if len(alternatives) > 1:
+            for alternative in alternatives:
+                generated = self._generate_from_simple_regex(alternative)
+                if generated:
+                    return generated
             return None
 
         out = ""
@@ -1556,7 +1738,7 @@ class LegacyConverter:
             ch = text[i]
             token = ""
             if ch == "[":
-                end = text.find("]", i + 1)
+                end = self._find_regex_class_end(text, i)
                 if end == -1:
                     return None
                 token = self._sample_char_from_class(text[i + 1:end])
@@ -1566,15 +1748,20 @@ class LegacyConverter:
                 token = {"d": "1", "w": "A", "s": " "}.get(nxt, nxt)
                 i += 2
             elif ch == "(":
-                end = text.find(")", i + 1)
+                end = self._find_regex_group_end(text, i)
                 if end == -1:
                     return None
-                alternatives = text[i + 1:end].split("|")
-                token = alternatives[0] if alternatives and alternatives[0] else ""
+                alternatives = self._split_top_level_regex_alternatives(text[i + 1:end])
+                selected = alternatives[0] if alternatives else ""
+                token = self._generate_from_simple_regex(selected) if selected else ""
+                if token is None:
+                    token = ""
                 i = end + 1
-            elif ch in ".+*":
+            elif ch == ".":
                 token = "A"
                 i += 1
+            elif ch in "+*)|":
+                return None
             elif ch == "?":
                 i += 1
                 continue
@@ -1587,12 +1774,23 @@ class LegacyConverter:
                 end = text.find("}", i + 1)
                 if end == -1:
                     return None
-                repeat_text = text[i + 1:end].split(",", 1)[0].strip()
+                repeat_parts = text[i + 1:end].split(",", 1)
+                repeat_text = repeat_parts[0].strip()
                 try:
-                    repeat = max(0, int(repeat_text))
+                    repeat = max(0, int(repeat_text)) if repeat_text else 0
+                    if repeat == 0 and len(repeat_parts) > 1:
+                        upper_text = repeat_parts[1].strip()
+                        if not upper_text or int(upper_text) > 0:
+                            repeat = 1
                 except ValueError:
                     repeat = 1
                 i = end + 1
+            elif i < len(text) and text[i] == "+":
+                repeat = 1
+                i += 1
+            elif i < len(text) and text[i] == "*":
+                repeat = 1
+                i += 1
             elif i < len(text) and text[i] == "?":
                 repeat = 1
                 i += 1
@@ -1600,7 +1798,104 @@ class LegacyConverter:
 
         return out or None
 
+    def _strip_regex_anchors(self, text: str) -> str:
+        if text.startswith("^"):
+            text = text[1:]
+        if text.endswith("$") and not self._is_escaped_at(text, len(text) - 1):
+            text = text[:-1]
+        return text
+
+    def _is_escaped_at(self, text: str, index: int) -> bool:
+        backslashes = 0
+        cursor = index - 1
+        while cursor >= 0 and text[cursor] == "\\":
+            backslashes += 1
+            cursor -= 1
+        return backslashes % 2 == 1
+
+    def _split_top_level_regex_alternatives(self, text: str) -> List[str]:
+        alternatives: List[str] = []
+        depth = 0
+        in_class = False
+        escaped = False
+        start = 0
+        for index, ch in enumerate(text):
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if in_class:
+                if ch == "]":
+                    in_class = False
+                continue
+            if ch == "[":
+                in_class = True
+                continue
+            if ch == "(":
+                depth += 1
+                continue
+            if ch == ")" and depth > 0:
+                depth -= 1
+                continue
+            if ch == "|" and depth == 0:
+                alternatives.append(text[start:index])
+                start = index + 1
+        alternatives.append(text[start:])
+        return [alternative for alternative in alternatives if alternative != ""]
+
+    def _find_regex_class_end(self, text: str, start: int) -> int:
+        escaped = False
+        for index in range(start + 1, len(text)):
+            ch = text[index]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == "]":
+                return index
+        return -1
+
+    def _find_regex_group_end(self, text: str, start: int) -> int:
+        depth = 0
+        in_class = False
+        escaped = False
+        for index in range(start, len(text)):
+            ch = text[index]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if in_class:
+                if ch == "]":
+                    in_class = False
+                continue
+            if ch == "[":
+                in_class = True
+                continue
+            if ch == "(":
+                depth += 1
+                continue
+            if ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return -1
+
     def _sample_char_from_class(self, cls: str) -> str:
+        if cls.startswith("^"):
+            for candidate in ("A", "B", "1", "X", "a", "_", "-"):
+                try:
+                    if re.fullmatch(f"[{cls}]", candidate):
+                        return candidate
+                except re.error:
+                    break
+            return "A"
         if "A-Z" in cls:
             return "A"
         if "a-z" in cls:

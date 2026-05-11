@@ -18,6 +18,15 @@
 
 ## Lessons Learned
 
+### 2026-05-11 - Build v3.0.5: Constraint-Aware Example Repair
+
+- Hardened legacy example repair so generated examples are validated against regex, numeric, boolean, and length constraints before being written back.
+- Added multi-example generation for regex alternatives, including escaped literal handling for values such as ISO 20022 message types.
+- Improved BIC/BIC8/BIC11 semantic repair for grouped regex patterns so fields such as `ReBic` use plausible BIC11 seed examples instead of generic regex fallbacks.
+- Added Example Tracer severity markers for intrinsically impossible constraints and too-complex automatic example generation cases.
+- Added regression coverage for regex alternatives, BIC semantic repair, impossible constraints, complex regex tracing, and constraint-aware example generation.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.5`.
+
 ### 2026-05-05 - Build v3.0.4: Intermediate Release with Designer Feature Flag
 
 - Added an `Enable API Designer (experimental)` preference so intermediate colleague builds can hide the unfinished Designer by default without removing the implementation.

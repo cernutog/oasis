@@ -2,7 +2,11 @@ import customtkinter as ctk
 from tkinter import filedialog
 import os
 import threading
-from .legacy_converter import LegacyConverter
+from .legacy_converter import (
+    EXAMPLE_TRACE_COMPLEX_MARKER,
+    EXAMPLE_TRACE_IMPOSSIBLE_MARKER,
+    LegacyConverter,
+)
 
 class CleanFolderDialog(ctk.CTkToplevel):
     def __init__(self, parent, folder_path):
@@ -374,6 +378,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                                       wrap="none", # Important for table alignment
                                       state="disabled")
         self.log_area.pack(fill="both", expand=True, pady=(10, 0))
+        self._configure_log_tags()
 
     def _get_initial_dir(self, entry_widget, pref_key=None):
         """Return the best existing folder for a browse dialog."""
@@ -444,10 +449,40 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             os.startfile(dst)
 
     def _log(self, msg):
+        text = str(msg)
+        tag = None
+        if text.startswith(EXAMPLE_TRACE_IMPOSSIBLE_MARKER):
+            text = text[len(EXAMPLE_TRACE_IMPOSSIBLE_MARKER):]
+            tag = "example_impossible"
+        elif text.startswith(EXAMPLE_TRACE_COMPLEX_MARKER):
+            text = text[len(EXAMPLE_TRACE_COMPLEX_MARKER):]
+            tag = "example_complex"
+
         self.log_area.configure(state="normal")
-        self.log_area.insert("end", f"{msg}\n")
+        if tag:
+            self._insert_tagged_log(f"{text}\n", tag)
+        else:
+            self.log_area.insert("end", f"{text}\n")
         self.log_area.see("end")
         self.log_area.configure(state="disabled")
+
+    def _configure_log_tags(self):
+        tag_target = getattr(self.log_area, "_textbox", self.log_area)
+        try:
+            tag_target.tag_configure("example_impossible", foreground="#A65A5A")
+            tag_target.tag_configure("example_complex", foreground="#9A8700")
+        except Exception:
+            pass
+
+    def _insert_tagged_log(self, text, tag):
+        tag_target = getattr(self.log_area, "_textbox", None)
+        try:
+            if tag_target is not None:
+                tag_target.insert("end", text, tag)
+            else:
+                self.log_area.insert("end", text, tag)
+        except Exception:
+            self.log_area.insert("end", text)
 
     def _get_conversion_metadata_defaults(self):
         if not self.prefs_manager:
