@@ -44,7 +44,7 @@ class DataType:
 
 
 DEFAULT_LEGACY_EXAMPLE_SEED_VALUES = {
-    "bic": ["IPSDITM1", "DEUTDEFF", "BNPAFRPP", "IPSDITM1XXX", "DEUTDEFFXXX", "BNPAFRPPXXX"],
+    "bic": ["IPSDITM1", "DEUTDEFFXXX", "BNPAFRPP", "IPSDITM1XXX", "DEUTDEFF", "BNPAFRPPXXX"],
     "bic8": ["IPSDITM1", "DEUTDEFF", "BNPAFRPP"],
     "bic11": ["IPSDITM1XXX", "DEUTDEFFXXX", "BNPAFRPPXXX"],
     "iban": ["IT60X0542811101000000123456", "DE89370400440532013000", "FR1420041010050500013M02606"],
@@ -55,7 +55,7 @@ DEFAULT_LEGACY_EXAMPLE_SEED_VALUES = {
     "filename": ["banking-data.xml", "banking-report.csv", "banking-document.txt"],
     "uuid": ["550e8400-e29b-41d4-a716-446655440000", "6f9619ff-8b86-d011-b42d-00cf4fc964ff", "123e4567-e89b-12d3-a456-426614174000"],
     "date": ["2026-01-31", "2026-06-30", "2026-12-31"],
-    "datetime": ["2026-01-31T10:15:30Z", "2026-06-30T12:00:00Z", "2026-12-31T23:59:59Z"],
+    "datetime": ["2026-01-31T10:15:30", "2026-06-30T12:00:00", "2026-12-31T23:59:59", "2026-01-31T10:15:30Z", "2026-06-30T12:00:00Z", "2026-12-31T23:59:59Z"],
     "amount": ["100.00", "250.50", "1000.00"],
     "integer": ["1", "2", "3"],
     "number": ["1.0", "2.5", "3.75"],
@@ -1138,6 +1138,7 @@ class LegacyConverter:
         ]
         candidates: List[str] = []
         candidates.extend(valid_existing)
+        candidates.extend(self._semantic_constraint_candidates(category, dt))
         candidates.extend(self.example_seed_values.get(category, []))
         reason = f"semantic category: {category}" if category != "generic" else "generic seed values"
 
@@ -1183,6 +1184,12 @@ class LegacyConverter:
         text = str(value or "").strip()
         if not text:
             return False
+        if category == "datetime":
+            return bool(re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})?", text))
+        if category == "date":
+            return bool(re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}", text))
+        if category == "time":
+            return bool(re.fullmatch(r"[0-9]{2}:[0-9]{2}:[0-9]{2}", text))
         if category in ("bic", "bic8", "bic11"):
             compact = text.upper()
             if re.fullmatch(r"([A-Z0-9])\1+", compact):
@@ -1269,7 +1276,18 @@ class LegacyConverter:
         text = str(value or "")
         if not text:
             return [""]
-        return textwrap.wrap(text, width=width, break_long_words=False, break_on_hyphens=False) or [text]
+        wrapped: List[str] = []
+        for line in text.splitlines() or [""]:
+            wrapped.extend(
+                textwrap.wrap(
+                    line,
+                    width=width,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                )
+                or [""]
+            )
+        return wrapped or [""]
 
     def _log_example_trace_summary(self) -> None:
         if not self._example_trace_rows:
@@ -1393,6 +1411,60 @@ class LegacyConverter:
                 break
         return out
 
+    def _constraint_semantic_category(self, dt: DataType) -> str:
+        patterns = self._example_constraint_patterns(dt)
+        raw_pattern = str(dt.pattern_eba or "").strip()
+        if raw_pattern and raw_pattern.lower() != "nan":
+            patterns.append(raw_pattern)
+        text = " ".join(patterns).lower().replace(" ", "")
+        if not text:
+            return ""
+
+        bic_category = self._classify_bic_variant(dt, text)
+        if bic_category:
+            return bic_category
+
+        digit_4 = r"(?:\[0-9\]|\\d)\{4(?:,4)?\}"
+        digit_2 = r"(?:\[0-9\]|\\d)\{2(?:,2)?\}"
+        dash = r"(?:\\-|-)"
+        colon = r"(?:\\:|:)"
+        date_pattern = rf"{digit_4}{dash}{digit_2}{dash}{digit_2}"
+        time_pattern = rf"{digit_2}{colon}{digit_2}(?:{colon}{digit_2})?"
+        has_date = bool(re.search(date_pattern, text)) or "yyyy-mm-dd" in text
+        has_time = bool(re.search(time_pattern, text)) or "hh:mm" in text
+
+        if has_date and has_time:
+            return "datetime"
+        if has_date:
+            return "date"
+        if has_time:
+            return "time"
+
+        if re.search(r"(?:\[0-9a-f\]|\\w)\{8", text) and "-" in text and "{4" in text and "{12" in text:
+            return "uuid"
+        return ""
+
+    def _semantic_constraint_candidates(self, category: str, dt: DataType) -> List[str]:
+        if category == "bic":
+            return ["IPSDITM1", "DEUTDEFFXXX", "BNPAFRPP"]
+        if category == "datetime":
+            return [
+                "2026-01-31T10:15:30",
+                "2026-06-30T12:00:00",
+                "2026-12-31T23:59:59",
+                "2026-01-31T10:15:30.000001",
+                "2026-06-30T12:00:00.000001",
+                "2026-12-31T23:59:59.000001",
+                "2026-01-31T10:15:30Z",
+                "2026-06-30T12:00:00Z",
+                "2026-12-31T23:59:59Z",
+            ]
+        if category == "date":
+            return ["2026-01-31", "2026-06-30", "2026-12-31"]
+        if category == "time":
+            return ["10:15:30", "12:00:00", "23:59:59"]
+        return []
+
     def _classify_example_category(self, dt: DataType) -> str:
         dtype = str(dt.type or "").strip().lower()
         fmt = str(dt.format or "").strip().lower()
@@ -1422,6 +1494,11 @@ class LegacyConverter:
             return "number"
         if allowed_tokens and allowed_tokens.issubset({"0", "1", "Y", "N", "YES", "NO", "TRUE", "FALSE"}):
             return "flag"
+
+        constraint_category = self._constraint_semantic_category(dt)
+        if constraint_category:
+            return constraint_category
+
         if "iban" in text:
             return "iban"
         if "bic" in text or "swift" in text or "[a-z0-9]{4,4}[a-z]{2,2}[a-z0-9]{2,2}" in text:
@@ -1582,20 +1659,50 @@ class LegacyConverter:
         return "generic"
 
     def _classify_bic_variant(self, dt: DataType, text: str) -> str:
+        min_length = self._parse_float(dt.min_val)
+        max_length = self._parse_float(dt.max_val)
+        if min_length == 11 and max_length == 11:
+            return "bic11"
+        if min_length == 8 and max_length == 8:
+            return "bic8"
+
+        constraint_shape = self._bic_constraint_shape(dt)
+        if constraint_shape:
+            return constraint_shape
+
         compact = re.sub(r"[^a-z0-9]", "", text.lower())
         if "bic11" in compact or "bic11only" in compact:
             return "bic11"
         if "bic8" in compact:
             return "bic8"
+        return ""
 
+    def _bic_constraint_shape(self, dt: DataType) -> str:
         patterns = " ".join(self._example_constraint_patterns(dt)).lower().replace(" ", "")
         structural_patterns = patterns.replace("(", "").replace(")", "")
         if not structural_patterns:
             return ""
+        bic_base = r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}"
+        bic_suffix = r"\[a-z0-9\]\{3,3\}"
+        compact_structural = structural_patterns.replace("?:", "")
+        if re.search(bic_base + r".*" + bic_suffix + r"\?", compact_structural) or (
+            re.search(bic_base, compact_structural) and re.search(bic_suffix, compact_structural) and "|" in compact_structural
+        ):
+            return "bic"
+        if re.search(bic_base + r".*" + bic_suffix, compact_structural):
+            return "bic11"
         if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}\[a-z0-9\]\{3,3\}", structural_patterns):
             return "bic11"
         if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}(?!\[a-z0-9\]\{3,3\})", structural_patterns):
             return "bic8"
+        bic_base_short = r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}"
+        bic_suffix_short = r"\[a-z0-9\]\{3\}"
+        if re.search(bic_base_short + r".*" + bic_suffix_short + r"\?", compact_structural) or (
+            re.search(bic_base_short, compact_structural) and re.search(bic_suffix_short, compact_structural) and "|" in compact_structural
+        ):
+            return "bic"
+        if re.search(bic_base_short + r".*" + bic_suffix_short, compact_structural):
+            return "bic11"
         if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}\[a-z0-9\]\{3\}", structural_patterns):
             return "bic11"
         if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}(?!\[a-z0-9\]\{3\})", structural_patterns):
@@ -1617,6 +1724,9 @@ class LegacyConverter:
             return ""
         category = self._classify_example_category(dt)
         for value in self.example_seed_values.get(category, []):
+            if self._is_valid_example_token(dt, value):
+                return value
+        for value in self._semantic_constraint_candidates(category, dt):
             if self._is_valid_example_token(dt, value):
                 return value
         for pattern in self._example_constraint_patterns(dt):

@@ -26,7 +26,7 @@ try:
     from .redoc_gen import RedocGenerator
     from .preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
     from .preferences_dialog import PreferencesDialog
-    from .doc_viewer import DockedDocViewer
+    from .doc_viewer import DockedDocViewer, get_window_visible_bounds, set_window_visible_bounds
     from .version import VERSION, FULL_VERSION
     from .splash_screen import SplashScreen
     from .oas_importer.oas_converter import OASToExcelConverter
@@ -45,7 +45,7 @@ except ImportError:
     from redoc_gen import RedocGenerator
     from preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
     from preferences_dialog import PreferencesDialog
-    from doc_viewer import DockedDocViewer
+    from doc_viewer import DockedDocViewer, get_window_visible_bounds, set_window_visible_bounds
     from version import VERSION, FULL_VERSION
     from splash_screen import SplashScreen
     from oas_importer.oas_converter import OASToExcelConverter
@@ -3092,7 +3092,7 @@ class OASGenApp(ctk.CTk):
         """Position main window and viewer side-by-side (snap-like behavior).
         Uses non-blocking scheduling to avoid freezing the UI."""
 
-        def do_positioning():
+        def do_positioning(attempt=0):
             """Actual positioning logic, called after delay."""
             try:
                 import pygetwindow as gw
@@ -3111,29 +3111,46 @@ class OASGenApp(ctk.CTk):
                 work_width = work_area.right - work_area.left
                 work_height = work_area.bottom - work_area.top
 
-                # Windows 11 has invisible borders (7px) plus rounded corners (~10px)
-                # We compensate to position windows correctly and show rounded corners above taskbar
-                BORDER = 7
-                BOTTOM_MARGIN = 30  # Extra space to show UI elements above taskbar
-
                 # Calculate half-width for each window
                 half_width = work_width // 2
 
-                # Position main window on left half of work area
-                self.geometry(
-                    f"{half_width + BORDER}x{work_height - BOTTOM_MARGIN}+{work_left - BORDER}+{work_top}"
-                )
+                app_windows = gw.getWindowsWithTitle(self.title())
+                app_win = next((w for w in app_windows if w.title == self.title()), None)
+                if app_win:
+                    set_window_visible_bounds(
+                        app_win,
+                        work_left,
+                        work_top,
+                        work_left + half_width,
+                        work_area.bottom,
+                    )
+                else:
+                    self.geometry(
+                        f"{half_width}x{work_height}+{work_left}+{work_top}"
+                    )
                 self.update_idletasks()
 
-                # Find and position doc viewer window by its actual title
+                # Find and position doc viewer window by its actual title.
+                # The webview process may still be creating the native window, so
+                # retry briefly instead of leaving the first dock with stale width.
                 if hasattr(viewer, "_window_title") and viewer._window_title:
                     doc_windows = gw.getWindowsWithTitle(viewer._window_title)
                     if doc_windows:
                         doc_win = doc_windows[0]
-                        doc_win.moveTo(work_left + half_width - BORDER, work_top)
-                        doc_win.resizeTo(
-                            half_width + BORDER, work_height - BOTTOM_MARGIN
+                        self.update_idletasks()
+                        if app_win:
+                            _, _, doc_x, _ = get_window_visible_bounds(app_win)
+                        else:
+                            doc_x = self.winfo_x() + self.winfo_width()
+                        set_window_visible_bounds(
+                            doc_win,
+                            doc_x,
+                            work_top,
+                            work_area.right,
+                            work_area.bottom,
                         )
+                    elif attempt < 8:
+                        self.after(250, lambda: do_positioning(attempt + 1))
 
             except Exception:
                 # If positioning fails, just continue without it

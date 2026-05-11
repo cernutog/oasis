@@ -12,6 +12,15 @@ import ctypes
 import pygetwindow as gw
 
 
+class RECT(ctypes.Structure):
+    _fields_ = [
+        ("left", ctypes.c_long),
+        ("top", ctypes.c_long),
+        ("right", ctypes.c_long),
+        ("bottom", ctypes.c_long),
+    ]
+
+
 def resource_path(relative_path):
     """Get absolute path to resource, works for dev and for PyInstaller"""
     try:
@@ -139,15 +148,6 @@ def _get_monitor_work_area():
     Returns (left, top, right, bottom) of the primary monitor work area.
     """
     try:
-        # Structure for RECT
-        class RECT(ctypes.Structure):
-            _fields_ = [
-                ("left", ctypes.c_long),
-                ("top", ctypes.c_long),
-                ("right", ctypes.c_long),
-                ("bottom", ctypes.c_long),
-            ]
-
         # SPI_GETWORKAREA = 0x0030
         rect = RECT()
         # SystemParametersInfoW(UINT uiAction, UINT uiParam, PVOID pvParam, UINT fWinIni)
@@ -158,6 +158,76 @@ def _get_monitor_work_area():
         # Fallback to screen size using tkinter (passed via parent normally, but here we are in same process mainly)
         # For simplicity, if this fails, we return a safe default or full screen
         return (0, 0, 1920, 1080)
+
+
+def _get_window_hwnd(window):
+    return getattr(window, "_hWnd", None) or getattr(window, "hWnd", None)
+
+
+def _get_window_rect(hwnd):
+    rect = RECT()
+    if ctypes.windll.user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return rect
+    return None
+
+
+def _get_visible_frame_bounds(hwnd):
+    rect = RECT()
+    # DWMWA_EXTENDED_FRAME_BOUNDS = 9: visible frame excluding invisible resize borders.
+    result = ctypes.windll.dwmapi.DwmGetWindowAttribute(
+        hwnd,
+        9,
+        ctypes.byref(rect),
+        ctypes.sizeof(rect),
+    )
+    if result == 0:
+        return rect
+    return None
+
+
+def get_window_visible_bounds(window):
+    hwnd = _get_window_hwnd(window)
+    if not hwnd:
+        return (window.left, window.top, window.left + window.width, window.top + window.height)
+
+    frame = _get_visible_frame_bounds(hwnd)
+    if frame:
+        return (frame.left, frame.top, frame.right, frame.bottom)
+
+    rect = _get_window_rect(hwnd)
+    if rect:
+        return (rect.left, rect.top, rect.right, rect.bottom)
+
+    return (window.left, window.top, window.left + window.width, window.top + window.height)
+
+
+def set_window_visible_bounds(window, left, top, right, bottom):
+    """
+    Set a native window so its visible frame matches the requested rectangle.
+
+    pygetwindow positions the outer HWND rectangle. On Windows 10/11 that
+    rectangle includes invisible resize borders, so using it directly leaves
+    visible gaps. DWM exposes the actual visible frame; we measure the delta
+    and compensate deterministically before calling SetWindowPos.
+    """
+    hwnd = _get_window_hwnd(window)
+    if not hwnd:
+        window.moveTo(left, top)
+        window.resizeTo(right - left, bottom - top)
+        return
+
+    outer = _get_window_rect(hwnd)
+    visible = _get_visible_frame_bounds(hwnd)
+    if outer and visible:
+        left -= visible.left - outer.left
+        top -= visible.top - outer.top
+        right += outer.right - visible.right
+        bottom += outer.bottom - visible.bottom
+
+    width = max(1, right - left)
+    height = max(1, bottom - top)
+    # SWP_NOZORDER | SWP_NOACTIVATE
+    ctypes.windll.user32.SetWindowPos(hwnd, None, left, top, width, height, 0x0004 | 0x0010)
 
 
 class DockedDocViewer:
@@ -236,7 +306,12 @@ class DockedDocViewer:
 
         self.doc_x = self.parent_x + self.parent_width
         self.doc_y = self.parent_y
-        self.doc_width = max(800, self.parent_width)
+        available_doc_width = 0
+        try:
+            available_doc_width = wa_right - self.doc_x
+        except Exception:
+            pass
+        self.doc_width = max(400, available_doc_width or self.parent_width)
         self.doc_height = min(self.parent_height, max_h) # Clamp initial height
 
         self._start_webview()
@@ -275,6 +350,23 @@ class DockedDocViewer:
         """Set snap state (writes to shared memory)."""
         self._snap_flag.value = 1 if snapped else 0
         debug_log(f"Backend set_bound to {snapped} for {self.file_name}")
+
+    def _get_parent_visible_bounds(self):
+        try:
+            windows = gw.getWindowsWithTitle(self.parent.title())
+            for window in windows:
+                if window.title == self.parent.title():
+                    return get_window_visible_bounds(window)
+        except Exception:
+            pass
+
+        title_bar_height = self.parent.winfo_rooty() - self.parent.winfo_y()
+        return (
+            self.parent.winfo_x(),
+            self.parent.winfo_y(),
+            self.parent.winfo_x() + self.parent.winfo_width(),
+            self.parent.winfo_y() + self.parent.winfo_height() + title_bar_height + 8,
+        )
 
     def _sync_position(self):
         """Sync doc window position with parent, process sync queue, with mouse-guard and stability check."""
@@ -386,7 +478,7 @@ class DockedDocViewer:
 
                 if target_window:
                     win = target_window
-                    doc_x, doc_y = win.left, win.top
+                    doc_left, doc_top, doc_right, doc_bottom = get_window_visible_bounds(win)
 
                     # Focus Detection: Check if this window is currently active
                     try:
@@ -406,36 +498,38 @@ class DockedDocViewer:
                         debug_log(f"Focus check error: {fe}")
 
                     # Store current position to track dragging
-                    self._last_real_doc_x = doc_x
-                    self._last_real_doc_y = doc_y
+                    self._last_real_doc_x = doc_left
+                    self._last_real_doc_y = doc_top
 
-                    title_bar_height = self.parent.winfo_rooty() - self.parent.winfo_y()
-                    outer_height = current_height + title_bar_height + 8
-                    target_x = current_x + current_width
-                    target_y = current_y
+                    parent_left, parent_top, parent_right, parent_bottom = self._get_parent_visible_bounds()
+                    target_x = parent_right
+                    target_y = parent_top
+                    outer_height = parent_bottom - parent_top
+                    target_width = max(400, win.width)
 
                     # Prevent going under taskbar
                     try:
-                        _, wa_top, _, wa_bottom = _get_monitor_work_area()
+                        _, _, wa_right, wa_bottom = _get_monitor_work_area()
                         max_h = wa_bottom - target_y # Available workspace height
-                        
-                        # Windows 10/11 invisible border/shadow allowance (~8px)
-                        # Clamping strictly to max_h cuts off the shadow, causing a visual gap.
-                        # We allow slight overhang for the border to match Main Window's visual alignment.
-                        border_allowance = 8 
-                        
-                        if outer_height > (max_h + border_allowance):
-                             outer_height = max_h + border_allowance
+                        target_width = max(400, wa_right - target_x)
+                        if outer_height > max_h:
+                             outer_height = max_h
                     except:
                         pass # Fallback to no clamping if error
 
                     if (
-                        abs(doc_x - target_x) > 2
-                        or abs(doc_y - target_y) > 2
-                        or abs(win.height - outer_height) > 2
+                        abs(doc_left - target_x) > 2
+                        or abs(doc_top - target_y) > 2
+                        or abs((doc_right - doc_left) - target_width) > 2
+                        or abs((doc_bottom - doc_top) - outer_height) > 2
                     ):
-                        win.moveTo(target_x, target_y)
-                        win.resizeTo(win.width, outer_height)
+                        set_window_visible_bounds(
+                            win,
+                            target_x,
+                            target_y,
+                            target_x + target_width,
+                            target_y + outer_height,
+                        )
 
         except Exception as e:
             debug_log(f"Error in _sync_position loop: {e}")

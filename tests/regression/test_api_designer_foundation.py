@@ -235,6 +235,55 @@ def test_generation_mode_filters_response_examples_and_optional_placeholders():
     assert "examples" not in minimal_content["application/json"]
 
 
+def test_minimal_generation_removes_schema_examples_from_yaml_output():
+    generator = OASGenerator(generation_mode=GENERATION_MODE_MINIMAL)
+    generator.oas["components"]["schemas"]["Payment"] = {
+        "type": "object",
+        "example": {"amount": 100},
+        "examples": [{"amount": 200}],
+        "properties": {
+            "amount": {"type": "number", "example": 100},
+            "examples": {"type": "string", "example": "business-field"},
+        },
+    }
+    generator.oas["paths"]["/payments"] = {
+        "post": {
+            "requestBody": {
+                "content": {
+                    "application/json": {
+                        "schema": {"$ref": "#/components/schemas/Payment"},
+                        "examples": {"OK": {"value": {"amount": 100}}},
+                    }
+                }
+            },
+            "responses": {
+                "200": {
+                    "description": "OK",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/Payment"},
+                            "example": {"amount": 100},
+                        }
+                    },
+                }
+            },
+        }
+    }
+
+    generated = yaml.safe_load(generator.get_yaml())
+    payment_schema = generated["components"]["schemas"]["Payment"]
+    payment_media = generated["paths"]["/payments"]["post"]["requestBody"]["content"]["application/json"]
+    response_media = generated["paths"]["/payments"]["post"]["responses"]["200"]["content"]["application/json"]
+
+    assert "example" not in payment_schema
+    assert "examples" not in payment_schema
+    assert "example" not in payment_schema["properties"]["amount"]
+    assert "examples" in payment_schema["properties"]
+    assert "example" not in payment_schema["properties"]["examples"]
+    assert "examples" not in payment_media
+    assert "example" not in response_media
+
+
 def test_raw_extension_filter_keeps_only_yaml_extension_blocks():
     generator = OASGenerator(generation_mode=GENERATION_MODE_MINIMAL)
 
@@ -409,8 +458,24 @@ def test_legacy_converter_converts_eba_pattern_constraints_for_examples():
     converter._fill_and_fix_examples_for_data_type(generic_bic)
     converter._fill_and_fix_examples_for_data_type(bic11_only)
 
-    assert generic_bic.example == "IPSDITM1XXX; DEUTDEFFXXX; BNPAFRPPXXX"
+    assert converter._classify_example_category(generic_bic) == "bic"
+    assert generic_bic.example == "IPSDITM1; DEUTDEFFXXX; BNPAFRPP"
     assert bic11_only.example == "IPSDITM1XXX; DEUTDEFFXXX; BNPAFRPPXXX"
+
+
+def test_legacy_converter_general_bic_semantics_use_mixed_lengths():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    receiver_bic = DataType(
+        name="ReceiverBic",
+        type="string",
+        description="The BIC of the message receiver",
+        example="",
+    )
+
+    converter._fill_and_fix_examples_for_data_type(receiver_bic)
+
+    assert converter._classify_example_category(receiver_bic) == "bic"
+    assert receiver_bic.example == "IPSDITM1; DEUTDEFFXXX; BNPAFRPP"
 
 
 def test_legacy_converter_repairs_bic_semantic_fields_without_generic_fallback():
@@ -606,6 +671,31 @@ def test_legacy_converter_example_tracer_does_not_truncate_values():
         shutil.rmtree(temp_root, ignore_errors=True)
 
 
+def test_legacy_converter_example_tracer_wraps_long_unbroken_values_in_grid():
+    detail_lines: list[str] = []
+    converter = LegacyConverter("in", "out", fill_fix_examples=True, detail_log_callback=detail_lines.append)
+    long_value = (
+        "P08M59270578EA544566A8DB7D970D;"
+        "P08B59450578EA544526A8DB7D060D;"
+        "P08R59805521EA544566A8DB7P998C"
+    )
+    converter._record_example_trace(
+        "MessageId",
+        DataType(name="MessageId", type="string"),
+        "REPAIRED",
+        long_value,
+        long_value,
+        "semantic category: message_id",
+    )
+
+    converter._log_example_trace_summary()
+
+    table_lines = [line for line in detail_lines if line.startswith("| ")]
+    assert len(table_lines) > 2
+    assert len({len(line) for line in table_lines}) == 1
+    assert long_value.replace(";", "") not in "\n".join(table_lines)
+
+
 def test_legacy_converter_example_tracer_shows_field_usage_context():
     detail_lines: list[str] = []
     converter = LegacyConverter("in", "out", fill_fix_examples=True, detail_log_callback=detail_lines.append)
@@ -720,6 +810,33 @@ def test_legacy_converter_semantic_classifier_uses_template_wide_categories():
     assert converter._classify_example_category(
         DataType(name="AccptncDtTm", type="string", pattern_eba="YYYY-MM-DDTHH:MM:SS[.M{1,6}]")
     ) == "datetime"
+    assert converter._classify_example_category(
+        DataType(
+            name="dataTime",
+            type="string",
+            regex=r"[0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}[T][0-9]{2,2}:[0-9]{2,2}:[0-9]{2,2}",
+        )
+    ) == "datetime"
+
+
+def test_legacy_converter_datetime_regex_drives_realistic_examples():
+    converter = LegacyConverter("in", "out", fill_fix_examples=True)
+    data_time = DataType(
+        name="dataTime",
+        type="string",
+        regex=r"[0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}[T][0-9]{2,2}:[0-9]{2,2}:[0-9]{2,2}",
+        example="1111-11-11T11:11:11A1",
+    )
+
+    converter._fill_and_fix_examples_for_data_type(data_time)
+
+    examples = data_time.example.split("; ")
+    assert examples == [
+        "2026-01-31T10:15:30",
+        "2026-06-30T12:00:00",
+        "2026-12-31T23:59:59",
+    ]
+    assert all(converter._is_valid_example_token(data_time, value) for value in examples)
 
 
 def test_legacy_converter_semantic_classifier_uses_configured_overrides_and_rules():

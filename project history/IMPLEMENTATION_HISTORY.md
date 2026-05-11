@@ -18,6 +18,16 @@
 
 ## Lessons Learned
 
+### 2026-05-11 - Build v3.0.6: Regex-Driven Example Semantics
+
+- Made regex constraints a primary semantic signal for repaired examples, so date/time-like patterns produce realistic date-time values even when field names are ambiguous or misspelled.
+- Updated general BIC semantic repair to generate mixed BIC8/BIC11 examples when the regex permits both forms, while preserving strict BIC8 or BIC11 output when constraints require a specific length.
+- Improved Example Tracer table rendering so long unbroken values wrap within the table grid instead of breaking column alignment.
+- Extended Minimal generation so schema-level examples are removed from generated OAS output, not only request/response body examples.
+- Added deterministic visible-window docking calculations for API documentation so initial dock geometry uses native visible frame bounds.
+- Added regression coverage for Minimal schema example removal, regex-driven date-time examples, mixed BIC examples, and Example Tracer grid wrapping.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.6`.
+
 ### 2026-05-11 - Build v3.0.5: Constraint-Aware Example Repair
 
 - Hardened legacy example repair so generated examples are validated against regex, numeric, boolean, and length constraints before being written back.

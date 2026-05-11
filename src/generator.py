@@ -1446,6 +1446,9 @@ class OASGenerator:
         # (e.g., convert numeric values to strings when schema expects string)
         self._coerce_all_example_types(ordered_oas)
 
+        if self.generation_mode == GENERATION_MODE_MINIMAL:
+            self._remove_all_examples(ordered_oas)
+
         # Generate YAML
         yaml_output = yaml.dump(
             ordered_oas,
@@ -1466,6 +1469,24 @@ class OASGenerator:
     def get_source_map_json(self):
         """Returns the source map as a JSON string."""
         return json.dumps(self.source_map, indent=2)
+
+    def _remove_all_examples(self, obj, parent_key=None):
+        """
+        Remove OAS example/examples keywords from the generated document.
+
+        In Minimal mode examples must not be emitted anywhere in the OAS output.
+        A schema property can still legitimately be named "example" or "examples",
+        so keys below a "properties" map are treated as business field names.
+        """
+        if isinstance(obj, dict):
+            for key in list(obj.keys()):
+                if key in {"example", "examples"} and parent_key != "properties":
+                    del obj[key]
+                    continue
+                self._remove_all_examples(obj[key], key)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._remove_all_examples(item, parent_key)
 
     def _recursive_schema_fix(self, obj, in_example=False):
         """
