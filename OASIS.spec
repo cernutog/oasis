@@ -16,11 +16,11 @@ def _collect_docs_datas():
     excluded_root = docs_root / "presentations"
     datas = []
     for path in docs_root.rglob("*"):
+        if excluded_root in path.parents:
+            continue
         if not path.is_file():
             continue
         if path.name.startswith("~$"):
-            continue
-        if excluded_root in path.parents:
             continue
         datas.append((str(path), str(path.parent.relative_to(docs_root.parent))))
     return datas

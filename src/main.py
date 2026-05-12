@@ -103,6 +103,62 @@ def generate_oas(
     else:
         gen_dir = output_dir
 
+    schema_parent_issues = {}
+
+    def collect_schema_parent_issues(generator):
+        for issue in generator.get_schema_parent_issues():
+            key = (
+                issue.get("severity"),
+                issue.get("schema"),
+                issue.get("field"),
+                issue.get("parent"),
+                issue.get("status"),
+            )
+            schema_parent_issues[key] = issue
+
+    def format_schema_parent_issue(issue):
+        severity = issue.get("severity", "WARNING")
+        schema = issue.get("schema", "<schema>")
+        field = issue.get("field", "<field>")
+        parent = issue.get("parent", "<parent>")
+        return (
+            f"[{severity}] {schema}.{field} has a wrong parent ({parent}). "
+            "Fallback applied but correct result is not guaranteed."
+        )
+
+    def log_schema_parent_issue_report():
+        if not schema_parent_issues:
+            return
+
+        issues = sorted(
+            schema_parent_issues.values(),
+            key=lambda item: (
+                item.get("schema", ""),
+                item.get("field", ""),
+                item.get("parent", ""),
+                item.get("severity", ""),
+            ),
+        )
+        log_callback("")
+        log_callback("=== TEMPLATE ISSUES: BAD PARENTS ===")
+        log_callback(f"{len(issues)} wrong parent reference(s) found.")
+        log_callback("+-- ACTION REQUIRED ----------------------------------------+")
+        log_callback("| Fix the Parent column in $index.xlsx, sheet Schemas.      |")
+        log_callback("| Then regenerate the OAS.                                  |")
+        log_callback("+-----------------------------------------------------------+")
+        log_callback("")
+
+        current_schema = None
+        for issue in issues:
+            schema = issue.get("schema", "<schema>")
+            if schema != current_schema:
+                if current_schema is not None:
+                    log_callback("")
+                current_schema = schema
+                log_callback(f"Schema {schema}")
+            log_callback(f"  - {format_schema_parent_issue(issue)}")
+        log_callback("")
+
     # Output Map Directory and Cleanup
     map_dir = os.path.join(gen_dir, ".oasis_excel_maps")
     os.makedirs(map_dir, exist_ok=True)
@@ -166,7 +222,7 @@ def generate_oas(
     # 4. Generate OAS 3.0
     if gen_30:
         log_callback("Generating OAS 3.0...")
-        generator_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode)
+        generator_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode, log_callback=log_callback)
         generator_30.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_30._record_source("tags", "$index.xlsx", "Tags")
@@ -203,11 +259,12 @@ def generate_oas(
         map_30 = Path(map_dir) / (fname_30 + ".map.json")
         with open(map_30, "w", encoding="utf-8") as f:
             f.write(generator_30.get_source_map_json())
+        collect_schema_parent_issues(generator_30)
 
     # 5. Generate OAS 3.1
     if gen_31:
         log_callback("Generating OAS 3.1...")
-        generator_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode)
+        generator_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode, log_callback=log_callback)
         generator_31.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_31._record_source("tags", "$index.xlsx", "Tags")
@@ -234,12 +291,13 @@ def generate_oas(
         map_31 = Path(map_dir) / (fname_31 + ".map.json")
         with open(map_31, "w", encoding="utf-8") as f:
             f.write(generator_31.get_source_map_json())
+        collect_schema_parent_issues(generator_31)
 
     # 6. Generate SWIFT OAS (Customized)
     if gen_swift:
         # SWIFT OAS 3.0
         log_callback("Generating SWIFT OAS 3.0...")
-        sw_gen_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode)
+        sw_gen_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode, log_callback=log_callback)
         sw_gen_30.build_info(clean_info)
         if tags_data:
             sw_gen_30.oas["tags"] = tags_data
@@ -273,10 +331,11 @@ def generate_oas(
         map_sw_30 = Path(map_dir) / (out_sw_30.name + ".map.json")
         with open(map_sw_30, "w", encoding="utf-8") as f:
             f.write(sw_gen_30.get_source_map_json())
+        collect_schema_parent_issues(sw_gen_30)
 
         # SWIFT OAS 3.1
         log_callback("Generating SWIFT OAS 3.1...")
-        sw_gen_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode)
+        sw_gen_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode, log_callback=log_callback)
         sw_gen_31.build_info(clean_info)
         if tags_data:
             sw_gen_31.oas["tags"] = tags_data
@@ -301,7 +360,9 @@ def generate_oas(
         map_sw_31 = Path(map_dir) / (out_sw_31.name + ".map.json")
         with open(map_sw_31, "w", encoding="utf-8") as f:
             f.write(sw_gen_31.get_source_map_json())
+        collect_schema_parent_issues(sw_gen_31)
 
+    log_schema_parent_issue_report()
     log_callback("\n=== OAS GENERATION COMPLETED ===\n")
 
 

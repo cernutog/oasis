@@ -294,6 +294,36 @@ class LegacyConverter:
         cloned.name = target_name
         self.global_schemas[target_name] = cloned
 
+    def _apply_schema_rename_to_blocks(
+        self,
+        blocks: List[Tuple[str, List[List[Any]]]],
+        mapping: Dict[str, str],
+    ) -> List[Tuple[str, List[List[Any]]]]:
+        """Apply final schema-name compaction to blocks and their internal root parent edge."""
+        out_blocks: List[Tuple[str, List[List[Any]]]] = []
+        for block_name, block_rows in blocks:
+            new_block_name = mapping.get(block_name, block_name)
+            new_rows: List[List[Any]] = []
+            for row in block_rows:
+                rr = list(row)
+                # Update Schema Name (col F, index 5)
+                if len(rr) > 5 and isinstance(rr[5], str) and rr[5]:
+                    rr[5] = mapping.get(rr[5], rr[5])
+                # Update Items Type (col E, index 4)
+                if len(rr) > 4 and isinstance(rr[4], str) and rr[4]:
+                    rr[4] = mapping.get(rr[4], rr[4])
+                # Update root schema name in column A when parent is empty.
+                if len(rr) > 1 and (rr[1] == "" or rr[1] is None):
+                    if len(rr) > 0 and isinstance(rr[0], str) and rr[0]:
+                        rr[0] = new_block_name
+                # Parent is an internal tree edge. If the block root was renamed,
+                # direct children must point at the renamed root, not the pre-compaction name.
+                elif len(rr) > 1 and rr[1] == block_name:
+                    rr[1] = new_block_name
+                new_rows.append(rr)
+            out_blocks.append((new_block_name, new_rows))
+        return out_blocks
+
     def _usage_context_kind(self, usage_ctx: Optional[str]) -> str:
         text = str(usage_ctx or "")
         return "request" if "(Body)" in text else "response"
@@ -4130,27 +4160,6 @@ class LegacyConverter:
                         _refs.add(_it2)
             return _refs
 
-        def _apply_rename_to_blocks(_blocks: List[Tuple[str, List[List[Any]]]], mapping: Dict[str, str]) -> List[Tuple[str, List[List[Any]]]]:
-            out_blocks: List[Tuple[str, List[List[Any]]]] = []
-            for _bn2, _br2 in _blocks:
-                new_bn = mapping.get(_bn2, _bn2)
-                new_rows: List[List[Any]] = []
-                for _row2 in _br2:
-                    rr = list(_row2)
-                    # Update Schema Name (col F, index 5)
-                    if len(rr) > 5 and isinstance(rr[5], str) and rr[5]:
-                        rr[5] = mapping.get(rr[5], rr[5])
-                    # Update Items Type (col E, index 4)
-                    if len(rr) > 4 and isinstance(rr[4], str) and rr[4]:
-                        rr[4] = mapping.get(rr[4], rr[4])
-                    # Update root schema name in column A when parent is empty
-                    if len(rr) > 1 and (rr[1] == "" or rr[1] is None):
-                        if len(rr) > 0 and isinstance(rr[0], str) and rr[0]:
-                            rr[0] = new_bn
-                    new_rows.append(rr)
-                out_blocks.append((new_bn, new_rows))
-            return out_blocks
-
         # Build variant sets by stem
         names_in_blocks = [n for n, _r in all_blocks]
         stem_map: Dict[str, Dict[str, Any]] = {}
@@ -4220,7 +4229,7 @@ class LegacyConverter:
                 used_after.add(new_nm)
 
         if rename_map:
-            all_blocks = _apply_rename_to_blocks(all_blocks, rename_map)
+            all_blocks = self._apply_schema_rename_to_blocks(all_blocks, rename_map)
 
             # Keep registries aligned for tracing / later lookups
             try:

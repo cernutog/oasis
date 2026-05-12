@@ -46,9 +46,12 @@ from src.preferences import (
 
 
 class OASGenerator:
-    def __init__(self, version="3.0.0", generation_mode=DEFAULT_GENERATION_MODE):
+    def __init__(self, version="3.0.0", generation_mode=DEFAULT_GENERATION_MODE, log_callback=None):
         self.version = version
         self.generation_mode = normalize_generation_mode(generation_mode)
+        self.log_callback = log_callback
+        self._schema_parent_diagnostics = set()
+        self._schema_parent_issues = []
         self.oas = {
             "openapi": version,
             "info": {},
@@ -65,6 +68,32 @@ class OASGenerator:
         self.oneof_refs = set()
         self.allof_refs = set()
         self.inlined_components = set() # Track components inlined for OAS 3.0 cleanup
+
+    def _record_schema_parent_issue(
+        self,
+        *,
+        severity: str,
+        schema: str,
+        field: str,
+        parent: str,
+        status: str,
+    ) -> None:
+        key = (severity, schema, field, parent, status)
+        if key in self._schema_parent_diagnostics:
+            return
+        self._schema_parent_diagnostics.add(key)
+        self._schema_parent_issues.append(
+            {
+                "severity": severity,
+                "schema": schema,
+                "field": field,
+                "parent": parent,
+                "status": status,
+            }
+        )
+
+    def get_schema_parent_issues(self):
+        return list(self._schema_parent_issues)
 
     def _is_api_portal_ready_mode(self) -> bool:
         return self.generation_mode == GENERATION_MODE_API_PORTAL_READY
@@ -945,17 +974,29 @@ class OASGenerator:
                 if base_key in node_map:
                     return node_map[base_key]
 
-            # Legacy schema components sometimes encode the parent as Foo1 while the
-            # actual schema root row is Foo. Only fall back when the exact name is missing.
-            m = re.match(r"^(.*?)(\d+)$", parent_str)
-            if m:
-                base_name = m.group(1).strip()
-                if base_name:
-                    alias_key = (block_id, base_name)
-                    if alias_key in node_map:
-                        return node_map[alias_key]
-
             return None
+
+        def schema_block_label(block_id, child_node=None):
+            roots_for_block = [
+                n
+                for n in nodes.values()
+                if n.get("block_id") == block_id and n.get("parent") is None
+            ]
+            if child_node is not None:
+                child_row_index = child_node.get("row_index")
+                if child_row_index is not None:
+                    previous_roots = [
+                        n
+                        for n in roots_for_block
+                        if n.get("row_index") is not None
+                        and n.get("row_index") <= child_row_index
+                    ]
+                    if previous_roots:
+                        root = max(previous_roots, key=lambda n: n["row_index"])
+                        return root.get("name") or f"block {block_id}"
+            if roots_for_block:
+                return roots_for_block[0].get("name") or f"block {block_id}"
+            return f"block {block_id}"
 
         # Schemas sheet contains multiple schema blocks separated by blank rows.
         # Without scoping, repeated names (e.g. 'searchCriteria') can collide across blocks and
@@ -1076,6 +1117,7 @@ class OASGenerator:
                 "mandatory": is_mandatory,
                 "schema_obj": self._map_type_to_schema(row, is_node=True),
                 "block_id": block_id,
+                "row_index": idx,
             }
 
             nodes[idx] = node
@@ -1208,6 +1250,13 @@ class OASGenerator:
             else:
                 parent = resolve_parent_node(b_id, parent_name)
                 if parent is None:
+                    self._record_schema_parent_issue(
+                        severity="WARNING",
+                        schema=schema_block_label(b_id, node),
+                        field=name,
+                        parent=parent_name,
+                        status="blocking",
+                    )
                     roots.append(node)
                     continue
                 parent_schema = parent["schema_obj"]

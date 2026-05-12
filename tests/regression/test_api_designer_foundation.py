@@ -478,6 +478,27 @@ def test_legacy_converter_general_bic_semantics_use_mixed_lengths():
     assert receiver_bic.example == "IPSDITM1; DEUTDEFFXXX; BNPAFRPP"
 
 
+def test_legacy_converter_schema_compaction_renames_block_root_parent_edges():
+    converter = LegacyConverter("in", "out")
+    blocks = [
+        (
+            "ProductList14",
+            [
+                ["ProductList14", "", "", "array", "object", "", "", "", "", "", "", "", "", ""],
+                ["solutionPurposeId", "ProductList14", "", "schema", "", "SolutionPurposeId", "", "O", "", "", "", "", "", ""],
+                ["pryRcvgNetAd", "ProductList14", "", "schema", "", "PryRcvgNetAd", "", "O", "", "", "", "", "", ""],
+            ],
+        ),
+    ]
+
+    renamed = converter._apply_schema_rename_to_blocks(blocks, {"ProductList14": "ProductList6"})
+
+    assert renamed[0][0] == "ProductList6"
+    assert renamed[0][1][0][0] == "ProductList6"
+    assert [row[1] for row in renamed[0][1][1:]] == ["ProductList6", "ProductList6"]
+    assert [row[5] for row in renamed[0][1][1:]] == ["SolutionPurposeId", "PryRcvgNetAd"]
+
+
 def test_legacy_converter_repairs_bic_semantic_fields_without_generic_fallback():
     converter = LegacyConverter("in", "out", fill_fix_examples=True)
     cases = [

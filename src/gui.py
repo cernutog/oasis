@@ -485,6 +485,11 @@ class OASGenApp(ctk.CTk):
         # Log Area (Row 2)
         self.log_area = ctk.CTkTextbox(self.tab_gen, font=("Consolas", 11), wrap="word")
         self.log_area.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.log_area._textbox.tag_configure(
+            "action_required",
+            background="#FFF3CD",
+            foreground="#7A3E00",
+        )
         self.log_area.configure(state="disabled")
         
         # Add Context Menu for clearing
@@ -1856,9 +1861,11 @@ class OASGenApp(ctk.CTk):
         # Update Generation Tab Log
         self.log_area.configure(state="normal")
         
-        # Formatting for "Done!" message (Green + Bold)
-        # Formatting for "Done!" message (Green + Bold)
-        self.log_area.insert("end", gui_msg + "\n")
+        if self._is_action_required_log_line(gui_msg):
+            self.log_area.insert("end", gui_msg, "action_required")
+            self.log_area.insert("end", "\n")
+        else:
+            self.log_area.insert("end", gui_msg + "\n")
         
         self.log_area.see("end")
         self.log_area.configure(state="disabled")
@@ -1866,6 +1873,15 @@ class OASGenApp(ctk.CTk):
         # Duplicate to Global Application Log (with timestamp)
         self._log_history_append(full_msg)
 
+    def _is_action_required_log_line(self, message):
+        if not isinstance(message, str):
+            return False
+        return (
+            message.startswith("+-- ACTION REQUIRED")
+            or message.startswith("| Fix the Parent column")
+            or message.startswith("| Then regenerate the OAS")
+            or message.startswith("+-----------------------------------------------------------+")
+        )
 
     def log_app(self, message):
         # Add Timestamp: HH:MM:SS.mmm > 
