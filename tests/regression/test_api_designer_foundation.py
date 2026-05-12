@@ -939,3 +939,26 @@ def test_legacy_converter_standalone_example_trace_repairs_template_schema_examp
         assert all(re.fullmatch(r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}", value) for value in repaired.split("; "))
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def test_legacy_converter_blocks_conversion_when_index_references_missing_file():
+    temp_root = _clean_test_temp()
+    index_path = temp_root / "$index.xlsx"
+    logs: list[str] = []
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Paths"
+    ws.append(["Path", "Method", "Excel File", "OperationId"])
+    ws.append(["/missing", "get", "listLCR.260424", "listLCR"])
+    wb.save(index_path)
+    wb.close()
+
+    try:
+        converter = LegacyConverter(str(temp_root), str(temp_root / "out"), log_callback=logs.append)
+
+        assert converter.convert() is False
+        assert converter.missing_index_files == ["listLCR.260424"]
+        assert any("ERROR: $index.xlsx references missing endpoint templates" in line for line in logs)
+        assert any("ERROR: Conversion aborted because $index.xlsx references missing endpoint templates." in line for line in logs)
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)

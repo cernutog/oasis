@@ -141,14 +141,16 @@ Questo file consente di aggiungere override, nuove regole e esclusioni senza mod
 
 ## Vincoli e Priorita
 
+La categoria semantica propone candidati, ma non e una validazione alternativa. La validazione resta sempre basata sui constraint Excel.
+
 La generazione degli esempi segue questa priorita:
 
 1. `allowed_values`, se presenti;
 2. esempi esistenti e validi;
-3. seed della categoria semantica;
+3. candidati della categoria semantica;
 4. generazione da regex semplice, se possibile;
-5. seed `generic`;
-6. best-effort fallback.
+5. seed `generic`, se compatibili;
+6. best-effort fallback tracciato, oppure `IMPOSSIBLE` / `TOO COMPLEX`.
 
 Ogni candidato viene validato contro:
 
@@ -158,7 +160,11 @@ Ogni candidato viene validato contro:
 - min/max numerici;
 - min/max length stringa.
 
-Per i BIC viene applicato anche un controllo di plausibilita: valori formalmente validi ma fittizi come `AAAAAAAA` non vengono mantenuti come esempi preferiti.
+Gli esempi gia presenti nel template Excel vengono conservati se rispettano i constraint. Non vengono scartati solo perche non corrispondono ai seed della categoria semantica.
+
+Quando l'esempio Excel manca o non e valido, la categoria semantica viene usata prima della generazione da regex. Questo evita esempi formalmente validi ma poco realistici, per esempio un orario `99:99` prodotto da una regex troppo ampia. La regex resta comunque il filtro finale: se un campo ammette solo `HH:MM`, i candidati `HH:MM:SS` vengono esclusi.
+
+Le categorie ammesse sono quelle presenti nei seed caricati da `%APPDATA%\OASIS\legacy_example_seed_values.yaml`. Aggiungere una nuova categoria in quel file e poi referenziarla in `legacy_example_semantic_rules.yaml` non richiede modifiche al codice.
 
 ## Casi Generic Voluti
 

@@ -78,7 +78,7 @@ DEFAULT_LEGACY_EXAMPLE_SEED_VALUES = {
     "cycle": ["01", "02", "03"],
     "offset": ["0", "100", "200"],
     "sequence": ["1", "2", "3"],
-    "time": ["10:15:30", "12:00:00", "23:59:59"],
+    "time": ["10:15", "12:00", "23:59", "10:15:30", "12:00:00", "23:59:59"],
     "period": ["2026Q1", "2026Q2", "2026Q3"],
     "xml": ["<Document/>", "<Message/>", "<Report/>"],
     "aos": ["A01", "A02", "A03"],
@@ -115,6 +115,7 @@ DEFAULT_LEGACY_EXAMPLE_SEED_VALUES = {
 LEGACY_GENERATED_EXAMPLE_SEED_VALUES = {
     "filename": ["payment-instructions.xml", "settlement-report.csv", "reconciliation-data.json"],
     "generic": ["sampleValue", "exampleValue", "testValue"],
+    "time": ["10:15:30", "12:00:00", "23:59:59"],
 }
 
 DEFAULT_LEGACY_EXAMPLE_SEMANTIC_RULES = {
@@ -243,6 +244,7 @@ class LegacyConverter:
         
         # Operation IDs mapping
         self.filename_to_opid = {}
+        self.missing_index_files: List[str] = []
         self.filename_to_path: Dict[str, str] = {}  # filename_stem -> API path
         self.emitted_wrappers = set()
         self.emitted_inline_components = set()
@@ -356,6 +358,9 @@ class LegacyConverter:
             
         if index_path.exists():
             self._pre_read_index(index_path)
+            if self.missing_index_files:
+                self.log("ERROR: Conversion aborted because $index.xlsx references missing endpoint templates.")
+                return False
 
         # Validate: at least one endpoint file must exist before proceeding.
         ep_candidates = [
@@ -833,6 +838,8 @@ class LegacyConverter:
 
     def _load_example_semantic_rules(self) -> Dict[str, Any]:
         rules_config = copy.deepcopy(DEFAULT_LEGACY_EXAMPLE_SEMANTIC_RULES)
+        if not self.example_seed_values:
+            self.example_seed_values = self._load_example_seed_values()
         path = self.example_semantic_rules_path
         if not path:
             return rules_config
@@ -886,7 +893,10 @@ class LegacyConverter:
         return self.example_semantic_rules
 
     def _known_example_categories(self) -> set:
-        return set(DEFAULT_LEGACY_EXAMPLE_SEED_VALUES) | {"generic"}
+        categories = set(DEFAULT_LEGACY_EXAMPLE_SEED_VALUES) | {"generic"}
+        if self.example_seed_values:
+            categories.update(str(key).strip().lower() for key in self.example_seed_values if str(key).strip())
+        return categories
 
     def _warn_example_semantic_rule(self, message: str) -> None:
         if message in self._example_semantic_rule_warnings:
@@ -1085,6 +1095,11 @@ class LegacyConverter:
         original = str(dt.example or "").strip()
         existing = [p.strip() for p in re.split(r"[;\n]", original) if p and p.strip()]
         valid_existing = [v for v in existing if self._is_valid_example_token(dt, v)]
+        invalid_existing_reasons = [
+            self._example_token_invalid_reason(dt, value)
+            for value in existing
+            if not self._is_valid_example_token(dt, value)
+        ]
         examples, reason = self._build_example_candidates(dt, valid_existing)
         used_best_effort = False
 
@@ -1133,14 +1148,20 @@ class LegacyConverter:
         if not new_value:
             return
 
-        if not original or original.lower() == "nan":
-            action = "COMPLETED"
-            self._example_fix_stats["completed"] += 1
-        elif new_value != original:
+        action, trace_reason = self._example_trace_action_and_reason(
+            original,
+            existing,
+            invalid_existing_reasons,
+            examples[:3],
+            reason,
+        )
+
+        if action == "REPAIRED":
             action = "REPAIRED"
             self._example_fix_stats["repaired"] += 1
+        elif action == "COMPLETED":
+            self._example_fix_stats["completed"] += 1
         else:
-            action = "KEPT"
             self._example_fix_stats["kept"] += 1
 
         if used_best_effort:
@@ -1151,7 +1172,112 @@ class LegacyConverter:
         dt.example = new_value
 
         if action != "KEPT" or trace_kept:
-            self._record_example_trace(schema_name or dt.name, dt, action, original, new_value, reason)
+            self._record_example_trace(schema_name or dt.name, dt, action, original, new_value, trace_reason)
+
+    def _example_trace_action_and_reason(
+        self,
+        original: str,
+        existing: List[str],
+        invalid_existing_reasons: List[str],
+        examples: List[str],
+        base_reason: str,
+    ) -> Tuple[str, str]:
+        if invalid_existing_reasons:
+            reason = next((item for item in invalid_existing_reasons if item), "constraint mismatch")
+            return "REPAIRED", f"repaired invalid example: {reason}"
+
+        if not original or original.lower() == "nan":
+            return "COMPLETED", self._completed_example_reason(base_reason)
+
+        normalized_existing = [str(value).strip() for value in existing if str(value).strip()]
+        normalized_examples = [str(value).strip() for value in examples if str(value).strip()]
+        if normalized_examples == normalized_existing:
+            return "KEPT", base_reason
+
+        return "COMPLETED", self._completed_example_reason(base_reason)
+
+    def _completed_example_reason(self, base_reason: str) -> str:
+        if base_reason == "allowed values":
+            return "completed missing examples from allowed values"
+        if base_reason.startswith("semantic category:"):
+            return f"completed missing examples from {base_reason}"
+        if base_reason == "regex fallback":
+            return "completed missing examples from regex alternatives"
+        if base_reason:
+            return f"completed missing examples from {base_reason}"
+        return "completed missing examples"
+
+    def _example_token_invalid_reason(self, dt: DataType, token: str) -> str:
+        val = str(token or "").strip()
+        if not val:
+            return "empty example"
+
+        allowed_raw = str(dt.allowed_values or "").strip()
+        if allowed_raw and allowed_raw.lower() != "nan":
+            allowed = [p.strip() for p in re.split(r"[;,]", allowed_raw) if p.strip()]
+            if allowed and val not in allowed:
+                return "allowed values mismatch"
+
+        for regex_raw in self._example_constraint_patterns(dt):
+            try:
+                if re.fullmatch(regex_raw, val) is None:
+                    return "regex mismatch"
+            except re.error:
+                return "invalid regex constraint"
+
+        type_lower = str(dt.type or "string").strip().lower()
+        min_raw = str(dt.min_val or "").strip()
+        max_raw = str(dt.max_val or "").strip()
+
+        if type_lower in ("integer", "int"):
+            try:
+                number = int(val.replace(",", "."))
+            except Exception:
+                return "type mismatch"
+            return self._numeric_example_range_issue(number, min_raw, max_raw)
+
+        if type_lower in ("number", "float", "double", "decimal"):
+            try:
+                number = float(val.replace(",", "."))
+            except Exception:
+                return "type mismatch"
+            return self._numeric_example_range_issue(number, min_raw, max_raw)
+
+        if type_lower == "boolean" and val.lower() not in ("true", "false", "yes", "no", "1", "0"):
+            return "type mismatch"
+
+        length_issue = self._string_example_length_issue(val, min_raw, max_raw)
+        return length_issue or "constraint mismatch"
+
+    def _numeric_example_range_issue(self, value: Any, min_raw: str, max_raw: str) -> str:
+        if min_raw and min_raw.lower() != "nan":
+            try:
+                if value < float(min_raw.replace(",", ".")):
+                    return "minimum value not met"
+            except Exception:
+                pass
+        if max_raw and max_raw.lower() != "nan":
+            try:
+                if value > float(max_raw.replace(",", ".")):
+                    return "maximum value exceeded"
+            except Exception:
+                pass
+        return "constraint mismatch"
+
+    def _string_example_length_issue(self, value: str, min_raw: str, max_raw: str) -> str:
+        if min_raw and min_raw.lower() != "nan":
+            try:
+                if len(value) < int(math.ceil(float(min_raw.replace(",", ".")))):
+                    return "minLength not met"
+            except Exception:
+                pass
+        if max_raw and max_raw.lower() != "nan":
+            try:
+                if len(value) > int(math.floor(float(max_raw.replace(",", ".")))):
+                    return "maxLength exceeded"
+            except Exception:
+                pass
+        return ""
 
     def _build_example_candidates(self, dt: DataType, valid_existing: List[str]) -> Tuple[List[str], str]:
         allowed = self._split_example_values(dt.allowed_values)
@@ -1162,14 +1288,10 @@ class LegacyConverter:
             )
 
         category = self._classify_example_category(dt)
-        valid_existing = [
-            value for value in valid_existing
-            if self._is_semantically_plausible_example(category, value)
-        ]
         candidates: List[str] = []
         candidates.extend(valid_existing)
-        candidates.extend(self._semantic_constraint_candidates(category, dt))
         candidates.extend(self.example_seed_values.get(category, []))
+        candidates.extend(self._semantic_constraint_candidates(category, dt))
         reason = f"semantic category: {category}" if category != "generic" else "generic seed values"
 
         dtype = str(dt.type or "string").strip().lower()
@@ -1204,29 +1326,7 @@ class LegacyConverter:
             candidates.extend(self.example_seed_values.get("generic", []))
 
         examples = self._unique_valid_examples(dt, candidates, limit=3)
-        examples = [
-            value for value in examples
-            if self._is_semantically_plausible_example(category, value)
-        ]
         return examples, reason
-
-    def _is_semantically_plausible_example(self, category: str, value: str) -> bool:
-        text = str(value or "").strip()
-        if not text:
-            return False
-        if category == "datetime":
-            return bool(re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]{1,6})?(?:Z|[+-][0-9]{2}:[0-9]{2})?", text))
-        if category == "date":
-            return bool(re.fullmatch(r"20[0-9]{2}-[0-9]{2}-[0-9]{2}", text))
-        if category == "time":
-            return bool(re.fullmatch(r"[0-9]{2}:[0-9]{2}:[0-9]{2}", text))
-        if category in ("bic", "bic8", "bic11"):
-            compact = text.upper()
-            if re.fullmatch(r"([A-Z0-9])\1+", compact):
-                return False
-            if compact.startswith("AAAA"):
-                return False
-        return True
 
     def _example_constraint_issue(self, dt: DataType) -> Tuple[str, str]:
         dtype = str(dt.type or "string").strip().lower()
@@ -1492,7 +1592,7 @@ class LegacyConverter:
         if category == "date":
             return ["2026-01-31", "2026-06-30", "2026-12-31"]
         if category == "time":
-            return ["10:15:30", "12:00:00", "23:59:59"]
+            return ["10:15", "12:00", "23:59", "10:15:30", "12:00:00", "23:59:59"]
         return []
 
     def _classify_example_category(self, dt: DataType) -> str:
@@ -1761,7 +1861,7 @@ class LegacyConverter:
                 return value
         for pattern in self._example_constraint_patterns(dt):
             generated_values = self._generate_valid_examples_from_regex(pattern, limit=1)
-            if generated_values and self._is_semantically_plausible_example(category, generated_values[0]):
+            if generated_values:
                 return generated_values[0]
         generic = self.example_seed_values.get("generic", ["Banking value"])[0]
         fitted = self._fit_string_bounds(dt, generic)
@@ -3560,6 +3660,7 @@ class LegacyConverter:
 
     def _pre_read_index(self, index_path: Path):
         """Pre-read index to map filenames to operationIds."""
+        self.missing_index_files = []
         xl = None
         try:
             xl = pd.ExcelFile(index_path)
@@ -3597,7 +3698,14 @@ class LegacyConverter:
                                 # Also map without extension for robustness
                                 self.filename_to_opid[actual_fname.replace(".xlsx", "").replace(".xlsm", "")] = opid
                             else:
-                                self.log(f"  WARNING: File '{entry_name}' from index not found in {self.input_dir}")
+                                self.missing_index_files.append(entry_name)
+                if self.missing_index_files:
+                    self.log(
+                        "ERROR: $index.xlsx references missing endpoint templates. "
+                        "Conversion cannot continue until the index or source folder is fixed."
+                    )
+                    for missing_name in self.missing_index_files:
+                        self.log(f"  - Missing file from index: {missing_name}")
         except Exception as e:
             self.log(f"Error pre-reading index: {e}")
         finally:

@@ -165,11 +165,75 @@ Le esclusioni usano gli stessi matcher delle regole.
 
 ## Categorie ammesse
 
-Le categorie devono esistere anche nel file seed values. Le principali sono:
+Le categorie devono esistere nel file seed values. Sono ammesse sia le categorie predefinite sia le categorie aggiunte dall'utente in:
+
+`%APPDATA%\OASIS\legacy_example_seed_values.yaml`
+
+Le principali categorie predefinite sono:
 
 `bic`, `bic8`, `bic11`, `iban`, `account`, `dca`, `currency`, `country`, `email`, `url`, `uuid`, `date`, `datetime`, `time`, `period`, `amount`, `integer`, `number`, `boolean`, `description`, `reference`, `request_id`, `message_id`, `transaction_id`, `instruction_id`, `operation_id`, `identifier`, `user_id`, `status`, `type`, `network`, `product`, `cycle`, `offset`, `sequence`, `xml`, `aos`, `flag`, `profile`, `role`, `service`, `module`, `channel`, `duration`, `lac`, `sign`, `direction`, `settlement_method`, `csm`, `pointer`, `field_name`, `field_value`, `validation_detail`, `network_address`, `count`, `routing_table`, `operation`, `reason`, `endpoint`, `file_size`, `certificate`, `code`, `error_code`, `name`, `generic`.
 
-Se usi una categoria non riconosciuta, il converter la ignora e scrive un warning nel log.
+Se usi una categoria che non esiste nei seed, il converter la ignora e scrive un warning nel log.
+
+## Nuove Categorie
+
+Per creare una nuova categoria semantica, aggiungila prima nel file seed values:
+
+```yaml
+clearing_system:
+  - STEP2
+  - RT1
+  - TIPS
+```
+
+Poi usa la categoria nel file delle regole:
+
+```yaml
+rules:
+  - category: clearing_system
+    compact_exact:
+      - clrgsys
+```
+
+La categoria diventa valida perche esiste nei seed caricati. Non serve modificare il codice.
+
+I valori nei seed sono candidati: il converter li usa solo se rispettano i constraint Excel del campo, come type, allowed values, regex, Pattern EBA e min/max.
+
+## Priorita nella Generazione degli Esempi
+
+Le regole semantiche classificano il campo, ma non validano i valori. La validazione resta sempre basata sui constraint Excel.
+
+La generazione segue questa priorita:
+
+1. `allowed_values`, se presenti;
+2. esempi Excel esistenti e validi;
+3. candidati della categoria semantica;
+4. candidati generati da regex/pattern semplice;
+5. seed `generic`, se compatibili;
+6. best-effort tracciato, oppure `IMPOSSIBLE` / `TOO COMPLEX`.
+
+Per esempio, un campo `TimeIndicator` con regex `[0-9]{2,2}:[0-9]{2,2}` usa prima i candidati della categoria `time`, come `10:15`, `12:00`, `23:59`. La regex resta il filtro finale e impedisce di usare candidati con formato diverso.
+
+## Azioni dell'Example Tracer
+
+La colonna `ACTION` indica il tipo di intervento effettuato:
+
+- `KEPT`: gli esempi Excel erano validi e sono rimasti invariati.
+- `COMPLETED`: il campo non aveva esempi, oppure aveva esempi validi ma incompleti e il converter ne ha aggiunti altri.
+- `REPAIRED`: almeno un esempio Excel era presente ma non rispettava i constraint, quindi e stato corretto, sostituito o rimosso.
+- `BEST EFFORT`: e stato possibile produrre solo un esempio di fallback.
+- `IMPOSSIBLE`: i constraint sono internamente incompatibili.
+- `TOO COMPLEX`: i constraint sono troppo complessi per la generazione automatica.
+
+La colonna `REASON` deve spiegare la causa reale dell'intervento. Per esempio:
+
+- `completed missing examples from allowed values`
+- `completed missing examples from semantic category: time`
+- `completed missing examples from regex alternatives`
+- `repaired invalid example: regex mismatch`
+- `repaired invalid example: minLength not met`
+- `repaired invalid example: maxLength exceeded`
+- `repaired invalid example: type mismatch`
 
 ## Esempi pratici
 
