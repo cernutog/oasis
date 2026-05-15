@@ -457,10 +457,13 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         elif text.startswith(EXAMPLE_TRACE_COMPLEX_MARKER):
             text = text[len(EXAMPLE_TRACE_COMPLEX_MARKER):]
             tag = "example_complex"
+        elif self._is_action_required_log_line(text):
+            tag = "action_required"
 
         self.log_area.configure(state="normal")
         if tag:
-            self._insert_tagged_log(f"{text}\n", tag)
+            self._insert_tagged_log(text, tag)
+            self.log_area.insert("end", "\n")
         else:
             self.log_area.insert("end", f"{text}\n")
         self.log_area.see("end")
@@ -471,8 +474,21 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         try:
             tag_target.tag_configure("example_impossible", foreground="#A65A5A")
             tag_target.tag_configure("example_complex", foreground="#9A8700")
+            tag_target.tag_configure("action_required", background="#FFF2CC", foreground="#8A5A00")
         except Exception:
             pass
+
+    def _is_action_required_log_line(self, message):
+        if not isinstance(message, str):
+            return False
+        return (
+            message.startswith("+-- ACTION REQUIRED")
+            or message.startswith("| Fix the Allowed value column")
+            or message.startswith("| Ensure each Allowed value")
+            or message.startswith("| For boolean fields use")
+            or message.startswith("| If 0/1 is intended")
+            or message.startswith("+-----------------------------------------------------------+")
+        )
 
     def _insert_tagged_log(self, text, tag):
         tag_target = getattr(self.log_area, "_textbox", None)

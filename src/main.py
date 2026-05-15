@@ -11,9 +11,118 @@ from .generator import OASGenerator
 from .preferences import DEFAULT_GENERATION_MODE, normalize_generation_mode
 
 
+INDEX_FILENAME = "$index.xlsx"
+LEGACY_INDEX_FILENAME = "$index.xlsm"
+REQUIRED_INDEX_SHEETS = (
+    "General Description",
+    "Tags",
+    "Paths",
+    "Parameters",
+    "Headers",
+    "Schemas",
+    "Responses",
+)
+REQUIRED_OPERATION_SHEETS = ("Parameters",)
+
+
 def find_best_match_file(target, directory, files_list):
     # Delegate to parser's logic or reimplement simple one
     return parser.find_best_match_file(target, directory, files_list)
+
+
+def _excel_sheet_names(path):
+    xl = None
+    try:
+        xl = pd.ExcelFile(path)
+        return set(xl.sheet_names)
+    finally:
+        if xl is not None:
+            xl.close()
+
+
+def _format_missing_sheets_error(template_path, missing_sheets):
+    return [
+        "ERROR: Invalid converted template structure.",
+        f"Template: {template_path}",
+        f"Missing sheet(s): {', '.join(sorted(missing_sheets))}",
+        "Please make sure the selected folder contains a complete set of valid templates.",
+    ]
+
+
+def get_converted_template_validation_errors(base_dir):
+    """Return blocking validation errors for an OAS Generation input folder."""
+    base_path = Path(base_dir)
+    index_path = base_path / INDEX_FILENAME
+    legacy_index_path = base_path / LEGACY_INDEX_FILENAME
+
+    if not index_path.exists():
+        errors = ["ERROR: OAS Generation requires valid templates with $index.xlsx."]
+        if legacy_index_path.exists():
+            errors.append("The selected folder appears to contain legacy templates ($index.xlsm).")
+        errors.append("Please select a folder containing a complete set of valid templates.")
+        return errors
+
+    try:
+        index_sheet_names = _excel_sheet_names(index_path)
+    except Exception as exc:
+        return [
+            "ERROR: Invalid converted template structure.",
+            f"Template: {index_path}",
+            f"Cannot read workbook: {exc}",
+            "Please make sure the selected folder contains a complete set of valid templates.",
+        ]
+
+    missing_index_sheets = [name for name in REQUIRED_INDEX_SHEETS if name not in index_sheet_names]
+    if missing_index_sheets:
+        return _format_missing_sheets_error(index_path, missing_index_sheets)
+
+    df_paths = parser.load_excel_sheet(index_path, "Paths")
+    paths_list = parser.parse_paths_index(df_paths)
+    endpoint_files = sorted(
+        {
+            str(op.get("file")).strip()
+            for op in paths_list
+            if op.get("file") is not None and not pd.isna(op.get("file")) and str(op.get("file")).strip()
+        }
+    )
+
+    errors = []
+    for raw_file_name in endpoint_files:
+        endpoint_path = base_path / raw_file_name
+        if not endpoint_path.exists():
+            errors.extend(
+                [
+                    "ERROR: Invalid converted template structure.",
+                    f"Template: {index_path}",
+                    f"Missing endpoint file: {raw_file_name}",
+                    "Please make sure the selected folder contains a complete set of valid templates.",
+                ]
+            )
+            continue
+
+        try:
+            endpoint_sheet_names = _excel_sheet_names(endpoint_path)
+        except Exception as exc:
+            errors.extend(
+                [
+                    "ERROR: Invalid converted template structure.",
+                    f"Template: {endpoint_path}",
+                    f"Cannot read workbook: {exc}",
+                    "Please make sure the selected folder contains a complete set of valid templates.",
+                ]
+            )
+            continue
+
+        missing_endpoint_sheets = [
+            name for name in REQUIRED_OPERATION_SHEETS if name not in endpoint_sheet_names
+        ]
+        has_response_sheet = any(name.isdigit() for name in endpoint_sheet_names)
+        if not has_response_sheet:
+            missing_endpoint_sheets.append("<response sheet>")
+        if missing_endpoint_sheets:
+            errors.extend(_format_missing_sheets_error(endpoint_path, missing_endpoint_sheets))
+
+    return errors
 
 
 def generate_oas(
@@ -34,24 +143,18 @@ def generate_oas(
         log_callback(f"Error: Directory not found: {base_dir}")
         return
 
+    validation_errors = get_converted_template_validation_errors(base_dir)
+    if validation_errors:
+        for error in validation_errors:
+            log_callback(error)
+        return
+
     generation_mode = normalize_generation_mode(generation_mode)
     log_callback(f"Starting generation in: {base_dir}")
     log_callback(f"Generation mode: {generation_mode}")
 
     # 1. Setup Paths
-    files_in_dir = os.listdir(base_dir)
-    
-    # Look for $index.xlsx directly (project standard is .xlsx, not .xlsm)
-    index_filename = "$index.xlsx"
-    if index_filename in files_in_dir:
-        index_path = os.path.join(base_dir, index_filename)
-    else:
-        # Fallback to fuzzy match for legacy support
-        index_path = find_best_match_file("$index.xlsx", base_dir, files_in_dir)
-    
-    if not index_path:
-        log_callback("Error: $index.xlsx not found in the specified directory.")
-        return
+    index_path = os.path.join(base_dir, INDEX_FILENAME)
 
     # 2. Parse Master Index
     log_callback(f"Parsing index: {os.path.basename(index_path)}")
@@ -88,8 +191,8 @@ def generate_oas(
     for raw_file_name in unique_files:
         if not raw_file_name:
             continue
-        full_path = find_best_match_file(raw_file_name, base_dir, files_in_dir)
-        if full_path:
+        full_path = os.path.join(base_dir, raw_file_name)
+        if os.path.exists(full_path):
             # log_callback(f"  Parsing: {os.path.basename(full_path)}")
             op_det = parser.parse_operation_file(full_path)
             if op_det:

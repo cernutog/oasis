@@ -123,6 +123,13 @@ DEFAULT_LEGACY_EXAMPLE_SEMANTIC_RULES = {
         "exact": {},
         "compact_exact": {},
     },
+    "placeholder_patterns": {
+        "categories": {
+            "bic": [r"^([A-Z0-9])\1+$"],
+            "bic8": [r"^([A-Z0-9])\1+$"],
+            "bic11": [r"^([A-Z0-9])\1+$"],
+        },
+    },
     "exclusions": {
         "filename": {
             "exact": ["FileStatus", "FileReference"],
@@ -245,6 +252,7 @@ class LegacyConverter:
         # Operation IDs mapping
         self.filename_to_opid = {}
         self.missing_index_files: List[str] = []
+        self.invalid_allowed_value_errors: List[Dict[str, str]] = []
         self.filename_to_path: Dict[str, str] = {}  # filename_stem -> API path
         self.emitted_wrappers = set()
         self.emitted_inline_components = set()
@@ -375,7 +383,11 @@ class LegacyConverter:
             return False
 
         self.log("Collecting data types from all endpoints...")
+        self.invalid_allowed_value_errors = []
         self._collect_all_data_types()
+        if self.invalid_allowed_value_errors:
+            self._log_invalid_allowed_value_errors()
+            return False
         
         self.log("Performing naming and usage analysis pass...")
         self._perform_naming_and_usage_pass()
@@ -470,7 +482,7 @@ class LegacyConverter:
             all_c = gv(["allowed value", "allowed"])
             ex_c = gv(["example"])
 
-            for _, row in df.iterrows():
+            for row_offset, (_, row) in enumerate(df.iterrows()):
                 name = self._clean_value(row.get(name_c, ""))
                 if not name or str(name).lower() == "nan":
                     continue
@@ -490,6 +502,11 @@ class LegacyConverter:
                     items_type=self._clean_value(row.get(items_c, "")),
                     source_file=file_key
                 )
+                self._record_invalid_allowed_values(
+                    dt,
+                    file_path=file_path,
+                    excel_row=header_row_idx + 2 + row_offset,
+                )
 
                 # Defer registration naming
                 if file_key not in self.raw_data_types:
@@ -497,6 +514,109 @@ class LegacyConverter:
                 self.raw_data_types[file_key][norm_name] = dt
         finally:
             self._close_excel_file(xl)
+
+    def _record_invalid_allowed_values(self, dt: DataType, file_path: Path, excel_row: int) -> None:
+        """Record blocking mismatches between a Data Type row and its allowed values."""
+        allowed = self._split_allowed_value_tokens(dt.allowed_values)
+        if not allowed:
+            return
+
+        reason = self._allowed_values_type_mismatch_reason(dt, allowed)
+        if not reason:
+            return
+
+        self.invalid_allowed_value_errors.append(
+            {
+                "template": str(file_path),
+                "sheet": "Data Type",
+                "row": str(excel_row),
+                "field": dt.name,
+                "type": str(dt.type or "").strip() or "string",
+                "allowed_values": str(dt.allowed_values or "").strip(),
+                "reason": reason,
+            }
+        )
+
+    def _split_allowed_value_tokens(self, raw: Any) -> List[str]:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return []
+        return [part.strip() for part in re.split(r"[;,]", text) if part and part.strip()]
+
+    def _unquote_allowed_value(self, value: str) -> str:
+        text = str(value or "").strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+            return text[1:-1].strip()
+        return text
+
+    def _allowed_values_type_mismatch_reason(self, dt: DataType, allowed: List[str]) -> str:
+        dtype = str(dt.type or "string").strip().lower()
+        normalized = [self._unquote_allowed_value(value) for value in allowed]
+
+        if dtype in {"", "string"}:
+            return ""
+
+        if dtype in {"integer", "int"}:
+            for value in normalized:
+                try:
+                    int(value)
+                except (TypeError, ValueError):
+                    return "integer allowed values must be valid integers."
+            return ""
+
+        if dtype in {"number", "float", "double", "decimal"}:
+            for value in normalized:
+                try:
+                    float(value.replace(",", "."))
+                except (AttributeError, TypeError, ValueError):
+                    return "number allowed values must be valid numbers."
+            return ""
+
+        if dtype == "boolean":
+            if any(value.lower() not in {"true", "false"} for value in normalized):
+                return "boolean allowed values must be true/false."
+            return ""
+
+        if dtype in {"array", "object", "schema"}:
+            return f"{dtype} data types cannot define scalar allowed values."
+
+        return ""
+
+    def _log_invalid_allowed_value_errors(self) -> None:
+        issues = sorted(
+            self.invalid_allowed_value_errors,
+            key=lambda issue: (
+                Path(issue.get("template", "")).name.lower(),
+                int(issue.get("row", "0") or 0),
+                issue.get("field", "").lower(),
+            ),
+        )
+        self.log("")
+        self.log("=== CONVERSION BLOCKED: TEMPLATE DATA ERRORS ===")
+        self.log(f"{len(issues)} issue(s) found. Fix the Excel templates, then run conversion again.")
+        self.log("")
+        self.log("+-- ACTION REQUIRED ----------------------------------------+")
+        self.log("| Fix the Allowed value column in the Data Type sheet.      |")
+        self.log("| Ensure each Allowed value matches its declared Type.      |")
+        self.log("| For boolean fields use true,false instead of 0,1.         |")
+        self.log("| If 0/1 is intended, change Type or use true,false.        |")
+        self.log("+-----------------------------------------------------------+")
+        self.log("")
+        self.log("ISSUES")
+        self.log("")
+        for index, issue in enumerate(issues, start=1):
+            template = str(issue.get("template", ""))
+            self.log(f"[{index}] {Path(template).name}")
+            self.log(f"    Template: {template}")
+            self.log(f"    Sheet: {issue['sheet']}")
+            self.log(f"    Row: {issue['row']}")
+            self.log(f"    Field: {issue['field']}")
+            self.log(f"    Type: {issue['type']}")
+            self.log(f"    Allowed value: {issue['allowed_values']}")
+            self.log(f"    Problem: {issue['reason']}")
+            self.log("")
+        self.log("CONVERSION FAILED")
+        self.log("No files were converted.")
 
     def _register_data_type(self, file_key: str, norm_name: str, dt: DataType):
         """Registers a data type, deduplicating by content and handling name collisions."""
@@ -879,6 +999,30 @@ class LegacyConverter:
                                 merged.append(value)
                         target[matcher] = merged
 
+            loaded_placeholder_patterns = loaded.get("placeholder_patterns")
+            if isinstance(loaded_placeholder_patterns, dict):
+                target = rules_config.setdefault("placeholder_patterns", {})
+                loaded_global = loaded_placeholder_patterns.get("global")
+                if loaded_global is not None:
+                    merged = list(target.get("global", []))
+                    for value in self._semantic_values(loaded_global):
+                        if value not in merged:
+                            merged.append(value)
+                    target["global"] = merged
+
+                loaded_categories = loaded_placeholder_patterns.get("categories")
+                if isinstance(loaded_categories, dict):
+                    target_categories = target.setdefault("categories", {})
+                    for category, patterns in loaded_categories.items():
+                        clean_category = str(category or "").strip().lower()
+                        if not clean_category:
+                            continue
+                        merged = list(target_categories.get(clean_category, []))
+                        for value in self._semantic_values(patterns):
+                            if value not in merged:
+                                merged.append(value)
+                        target_categories[clean_category] = merged
+
             loaded_rules = loaded.get("rules")
             if isinstance(loaded_rules, list):
                 rules_config["rules"] = [rule for rule in loaded_rules if isinstance(rule, dict)]
@@ -1094,13 +1238,34 @@ class LegacyConverter:
 
         original = str(dt.example or "").strip()
         existing = [p.strip() for p in re.split(r"[;\n]", original) if p and p.strip()]
-        valid_existing = [v for v in existing if self._is_valid_example_token(dt, v)]
-        invalid_existing_reasons = [
-            self._example_token_invalid_reason(dt, value)
-            for value in existing
-            if not self._is_valid_example_token(dt, value)
+        category = self._classify_example_category(dt)
+        has_allowed_values = bool(self._split_example_values(dt.allowed_values))
+        valid_existing = [
+            v
+            for v in existing
+            if not self._example_token_invalid_reason(
+                dt,
+                v,
+                category=category,
+                include_semantic_placeholder=not has_allowed_values,
+            )
         ]
-        examples, reason = self._build_example_candidates(dt, valid_existing)
+        invalid_existing_reasons = [
+            self._example_token_invalid_reason(
+                dt,
+                value,
+                category=category,
+                include_semantic_placeholder=not has_allowed_values,
+            )
+            for value in existing
+            if self._example_token_invalid_reason(
+                dt,
+                value,
+                category=category,
+                include_semantic_placeholder=not has_allowed_values,
+            )
+        ]
+        examples, reason = self._build_example_candidates(dt, valid_existing, category=category)
         used_best_effort = False
 
         if not examples:
@@ -1207,7 +1372,13 @@ class LegacyConverter:
             return f"completed missing examples from {base_reason}"
         return "completed missing examples"
 
-    def _example_token_invalid_reason(self, dt: DataType, token: str) -> str:
+    def _example_token_invalid_reason(
+        self,
+        dt: DataType,
+        token: str,
+        category: str = "",
+        include_semantic_placeholder: bool = False,
+    ) -> str:
         val = str(token or "").strip()
         if not val:
             return "empty example"
@@ -1247,7 +1418,39 @@ class LegacyConverter:
             return "type mismatch"
 
         length_issue = self._string_example_length_issue(val, min_raw, max_raw)
-        return length_issue or "constraint mismatch"
+        if length_issue:
+            return length_issue
+
+        if include_semantic_placeholder:
+            placeholder_reason = self._semantic_placeholder_reason(category or self._classify_example_category(dt), val)
+            if placeholder_reason:
+                return placeholder_reason
+
+        return ""
+
+    def _semantic_placeholder_reason(self, category: str, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        rules_config = self._get_example_semantic_rules()
+        placeholder_patterns = rules_config.get("placeholder_patterns", {})
+        if not isinstance(placeholder_patterns, dict):
+            return ""
+
+        patterns: List[str] = []
+        patterns.extend(self._semantic_values(placeholder_patterns.get("global")))
+        category_patterns = placeholder_patterns.get("categories", {})
+        clean_category = str(category or "").strip().lower()
+        if isinstance(category_patterns, dict) and clean_category:
+            patterns.extend(self._semantic_values(category_patterns.get(clean_category)))
+
+        for pattern in patterns:
+            try:
+                if re.fullmatch(pattern, text):
+                    return "semantic placeholder"
+            except re.error as exc:
+                self._warn_example_semantic_rule(f"invalid placeholder pattern '{pattern}': {exc}")
+        return ""
 
     def _numeric_example_range_issue(self, value: Any, min_raw: str, max_raw: str) -> str:
         if min_raw and min_raw.lower() != "nan":
@@ -1262,7 +1465,7 @@ class LegacyConverter:
                     return "maximum value exceeded"
             except Exception:
                 pass
-        return "constraint mismatch"
+        return ""
 
     def _string_example_length_issue(self, value: str, min_raw: str, max_raw: str) -> str:
         if min_raw and min_raw.lower() != "nan":
@@ -1279,7 +1482,12 @@ class LegacyConverter:
                 pass
         return ""
 
-    def _build_example_candidates(self, dt: DataType, valid_existing: List[str]) -> Tuple[List[str], str]:
+    def _build_example_candidates(
+        self,
+        dt: DataType,
+        valid_existing: List[str],
+        category: str = "",
+    ) -> Tuple[List[str], str]:
         allowed = self._split_example_values(dt.allowed_values)
         if allowed:
             return (
@@ -1287,7 +1495,7 @@ class LegacyConverter:
                 "allowed values",
             )
 
-        category = self._classify_example_category(dt)
+        category = category or self._classify_example_category(dt)
         candidates: List[str] = []
         candidates.extend(valid_existing)
         candidates.extend(self.example_seed_values.get(category, []))

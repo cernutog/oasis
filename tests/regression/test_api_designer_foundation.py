@@ -1,4 +1,6 @@
 from pathlib import Path
+import datetime
+import os
 import re
 import shutil
 
@@ -12,6 +14,15 @@ from src.excel_parser import parse_paths_index
 from src.generator import OASGenerator
 from src.legacy_converter import DataType, LegacyConverter
 from src.legacy_converter_dialog import LegacyConverterDialog
+from src import main as main_script
+from src.oas_output_archive import (
+    archive_existing_oas_files,
+    build_expected_oas_filenames,
+    delete_existing_oas_files,
+    describe_archive_destinations,
+    filter_previous_oas_files,
+    list_existing_oas_files,
+)
 from src.preferences import (
     GENERATION_MODE_MINIMAL,
     GENERATION_MODE_STANDARD,
@@ -34,6 +45,237 @@ def _clean_test_temp() -> Path:
         shutil.rmtree(TEST_TEMP_ROOT)
     TEST_TEMP_ROOT.mkdir(parents=True)
     return TEST_TEMP_ROOT
+
+
+def _create_workbook(path: Path, sheets: dict[str, list[list[str]]] | None = None) -> None:
+    workbook = Workbook()
+    workbook.remove(workbook.active)
+    for sheet_name, rows in (sheets or {}).items():
+        sheet = workbook.create_sheet(sheet_name)
+        for row in rows:
+            sheet.append(row)
+    workbook.save(path)
+
+
+def _create_minimal_converted_index(path: Path, endpoint_file: str = "operation.xlsx") -> None:
+    _create_workbook(
+        path,
+        {
+            "General Description": [
+                ["Key", "Value"],
+                ["Info Title", "Payments API"],
+                ["Info Version", "1.0"],
+            ],
+            "Tags": [["Name", "Description"]],
+            "Servers": [["URL", "Description"]],
+            "Security": [["Name", "Type", "Scheme", "Format", "Description"]],
+            "Paths": [
+                ["Excel", "Path", "Description", "Method", "Tag", "Summary", "OperationId"],
+                [endpoint_file, "/payments", "Payments", "get", "Payments", "List payments", "listPayments"],
+            ],
+            "Parameters": [["Name", "Description", "In", "Required", "Schema"]],
+            "Headers": [["Name", "Description", "Schema"]],
+            "Schemas": [["Name", "Parent", "Description", "Type"]],
+            "Responses": [["Name", "Description", "Schema"]],
+        },
+    )
+
+
+def _create_minimal_endpoint(path: Path) -> None:
+    _create_workbook(
+        path,
+        {
+            "Parameters": [["Name", "Description", "In", "Required", "Schema"]],
+            "200": [
+                ["Response", "200", "OK"],
+                ["Name", "Description", "Type", "Schema Name"],
+            ],
+        },
+    )
+
+
+def test_oas_generation_rejects_legacy_template_folder_before_writing_outputs():
+    temp_root = _clean_test_temp()
+    output_dir = temp_root / "out"
+    _create_workbook(temp_root / "$index.xlsm", {"General Description": [["Key", "Value"]]})
+    logs: list[str] = []
+
+    main_script.generate_oas(
+        str(temp_root),
+        output_dir=str(output_dir),
+        log_callback=logs.append,
+    )
+
+    log_text = "\n".join(logs)
+    assert "OAS Generation requires valid templates with $index.xlsx" in log_text
+    assert "appears to contain legacy templates ($index.xlsm)" in log_text
+    assert "Please select a folder containing a complete set of valid templates" in log_text
+    assert not list(output_dir.rglob("*.yaml")) if output_dir.exists() else True
+
+
+def test_converted_template_validation_reports_missing_index_sheets():
+    temp_root = _clean_test_temp()
+    _create_workbook(temp_root / "$index.xlsx", {"General Description": [["Key", "Value"]]})
+
+    errors = main_script.get_converted_template_validation_errors(str(temp_root))
+
+    assert any("Invalid converted template structure" in line for line in errors)
+    assert any("Missing sheet(s):" in line and "Paths" in line and "Schemas" in line for line in errors)
+    assert any("complete set of valid templates" in line for line in errors)
+
+
+def test_converted_template_validation_allows_optional_servers_and_security_sheets():
+    temp_root = _clean_test_temp()
+    _create_minimal_converted_index(temp_root / "$index.xlsx", endpoint_file="operation.xlsx")
+    _create_minimal_endpoint(temp_root / "operation.xlsx")
+    workbook = load_workbook(temp_root / "$index.xlsx")
+    del workbook["Servers"]
+    del workbook["Security"]
+    workbook.save(temp_root / "$index.xlsx")
+    workbook.close()
+
+    errors = main_script.get_converted_template_validation_errors(str(temp_root))
+
+    assert errors == []
+
+
+def test_converted_template_validation_reports_endpoint_files_with_missing_sheets():
+    temp_root = _clean_test_temp()
+    _create_minimal_converted_index(temp_root / "$index.xlsx", endpoint_file="operation.xlsx")
+    _create_workbook(temp_root / "operation.xlsx", {"Path": [["Name", "Value"]]})
+
+    errors = main_script.get_converted_template_validation_errors(str(temp_root))
+
+    assert any("Invalid converted template structure" in line for line in errors)
+    assert any("operation.xlsx" in line for line in errors)
+    assert any("Missing sheet(s):" in line and "Parameters" in line for line in errors)
+
+
+def test_oas_output_archive_moves_oas_files_and_source_maps_by_modified_date():
+    temp_root = _clean_test_temp()
+    output_dir = temp_root / "Generated OAS"
+    map_dir = output_dir / ".oasis_excel_maps"
+    output_dir.mkdir(parents=True)
+    map_dir.mkdir()
+
+    first = output_dir / "api.yaml"
+    second = output_dir / "api.json"
+    ignored = output_dir / "notes.txt"
+    first.write_text("openapi: 3.1.0\n", encoding="utf-8")
+    second.write_text('{"openapi":"3.0.0"}', encoding="utf-8")
+    ignored.write_text("keep me", encoding="utf-8")
+    (map_dir / "api.yaml.map.json").write_text('{"source":"api"}', encoding="utf-8")
+    (map_dir / "api.json.map.json").write_text('{"source":"json"}', encoding="utf-8")
+
+    first_ts = 1715428800  # 2024-05-11
+    second_ts = 1715515200  # 2024-05-12
+    for path, ts in [(first, first_ts), (second, second_ts)]:
+        path.touch()
+        os.utime(path, (ts, ts))
+
+    existing = list_existing_oas_files(output_dir)
+    assert [path.name for path in existing] == ["api.json", "api.yaml"]
+
+    moved = archive_existing_oas_files(existing, output_dir)
+
+    assert not first.exists()
+    assert not second.exists()
+    assert ignored.exists()
+    assert (output_dir / "Archive" / "20240511" / "api.yaml").exists()
+    assert (output_dir / "Archive" / "20240511" / ".oasis_excel_maps" / "api.yaml.map.json").exists()
+    assert (output_dir / "Archive" / "20240512" / "api.json").exists()
+    assert (output_dir / "Archive" / "20240512" / ".oasis_excel_maps" / "api.json.map.json").exists()
+    assert {dest.name for _, dest in moved} == {"api.yaml", "api.json"}
+
+
+def test_oas_output_archive_renames_colliding_archived_files_and_can_delete_current_files():
+    temp_root = _clean_test_temp()
+    output_dir = temp_root / "Generated OAS"
+    archive_dir = output_dir / "Archive" / "20240511"
+    map_dir = output_dir / ".oasis_excel_maps"
+    output_dir.mkdir(parents=True)
+    archive_dir.mkdir(parents=True)
+    map_dir.mkdir()
+
+    current = output_dir / "api.yaml"
+    current.write_text("new", encoding="utf-8")
+    (map_dir / "api.yaml.map.json").write_text("map", encoding="utf-8")
+    (archive_dir / "api.yaml").write_text("old", encoding="utf-8")
+
+    os.utime(current, (1715428800, 1715428800))
+
+    archive_existing_oas_files([current], output_dir)
+
+    assert (archive_dir / "api.yaml").read_text(encoding="utf-8") == "old"
+    assert (archive_dir / "api_1.yaml").read_text(encoding="utf-8") == "new"
+    assert (archive_dir / ".oasis_excel_maps" / "api_1.yaml.map.json").exists()
+
+    fresh = output_dir / "fresh.yml"
+    fresh.write_text("fresh", encoding="utf-8")
+    (map_dir / "fresh.yml.map.json").write_text("fresh-map", encoding="utf-8")
+    delete_existing_oas_files([fresh], output_dir)
+
+    assert not fresh.exists()
+    assert not (map_dir / "fresh.yml.map.json").exists()
+
+
+def test_oas_output_archive_describes_actual_archive_folders():
+    moved = [
+        (Path("api.yaml"), Path(r"C:\out\Archive\20240511\api.yaml")),
+        (Path("other.yaml"), Path(r"C:\out\Archive\20240512\other.yaml")),
+        (Path("api-31.yaml"), Path(r"C:\out\Archive\20240511\api-31.yaml")),
+    ]
+
+    assert describe_archive_destinations(moved) == [
+        r"C:\out\Archive\20240511",
+        r"C:\out\Archive\20240512",
+    ]
+
+
+def test_oas_output_archive_filters_only_unexpected_or_not_today_files():
+    temp_root = _clean_test_temp()
+    output_dir = temp_root / "Generated OAS"
+    output_dir.mkdir(parents=True)
+
+    current = output_dir / "expected.yaml"
+    old_expected = output_dir / "expected-old.yaml"
+    unexpected = output_dir / "unexpected.yaml"
+    for path in [current, old_expected, unexpected]:
+        path.write_text("openapi: 3.1.0\n", encoding="utf-8")
+
+    today = datetime.date(2026, 5, 15)
+    today_ts = datetime.datetime(2026, 5, 15, 10, 30).timestamp()
+    old_ts = datetime.datetime(2026, 5, 14, 23, 59).timestamp()
+    os.utime(current, (today_ts, today_ts))
+    os.utime(old_expected, (old_ts, old_ts))
+    os.utime(unexpected, (today_ts, today_ts))
+
+    previous = filter_previous_oas_files(
+        [current, old_expected, unexpected],
+        expected_filenames={"expected.yaml", "expected-old.yaml"},
+        today=today,
+    )
+
+    assert [path.name for path in previous] == ["expected-old.yaml", "unexpected.yaml"]
+
+
+def test_oas_output_archive_builds_expected_filenames_from_pattern_and_selected_versions():
+    names = build_expected_oas_filenames(
+        "EBACL_<current_date>_OpenApi<oas_version>_<customization>OPS_<api_version>_<release>.yaml",
+        api_version="4.0",
+        release="v20261116",
+        gen_30=True,
+        gen_31=True,
+        gen_swift=True,
+        today=datetime.date(2026, 5, 15),
+    )
+
+    assert names == {
+        "EBACL_20260515_OpenApi3.0_OPS_4.0_v20261116.yaml",
+        "EBACL_20260515_OpenApi3.1_OPS_4.0_v20261116.yaml",
+        "EBACL_20260515_OpenApi3.0_SWIFT_OPS_4.0_v20261116.yaml",
+        "EBACL_20260515_OpenApi3.1_SWIFT_OPS_4.0_v20261116.yaml",
+    }
 
 
 def test_designer_is_hidden_by_default_for_intermediate_releases():
@@ -565,7 +807,8 @@ def test_legacy_converter_repairs_bic_semantic_fields_without_generic_fallback()
         assert len(examples) == 3
         assert all(converter._is_valid_example_token(dt, value) for value in examples)
         assert not any(re.fullmatch(r"([A-Z0-9])\1+", value) for value in examples)
-        assert converter._example_trace_rows[-1]["reason"].startswith("semantic category: bic")
+        reason = converter._example_trace_rows[-1]["reason"]
+        assert "semantic category: bic" in reason or reason == "repaired invalid example: semantic placeholder"
 
 
 def test_legacy_converter_regex_example_generation_unescapes_literal_dots():
@@ -962,3 +1205,71 @@ def test_legacy_converter_blocks_conversion_when_index_references_missing_file()
         assert any("ERROR: Conversion aborted because $index.xlsx references missing endpoint templates." in line for line in logs)
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def test_legacy_converter_blocks_conversion_when_allowed_values_do_not_match_type():
+    temp_root = _clean_test_temp()
+    template_path = temp_root / "insertAP.240906.xlsm"
+    second_template_path = temp_root / "listThrottlingThreshold.240423.xlsm"
+    logs: list[str] = []
+
+    def write_template(path: Path, field_name: str, row_number: int) -> None:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Data Type"
+        ws.append(["Data Type"])
+        ws.append(["Name", "Description", "Type", "Allowed value", "Example"])
+        for _ in range(row_number - 3):
+            ws.append(["", "", "", "", ""])
+        ws.append([field_name, "", "boolean", "0,1", ""])
+        wb.save(path)
+        wb.close()
+
+    write_template(template_path, "BeneficiaryBankPosPaymConf", 8)
+    write_template(second_template_path, "DefaultId", 12)
+
+    try:
+        converter = LegacyConverter(str(temp_root), str(temp_root / "out"), log_callback=logs.append)
+
+        assert converter.convert() is False
+        joined = "\n".join(logs)
+        assert "=== CONVERSION BLOCKED: TEMPLATE DATA ERRORS ===" in joined
+        assert "2 issue(s) found. Fix the Excel templates, then run conversion again." in joined
+        assert "+-- ACTION REQUIRED ----------------------------------------+" in joined
+        assert "| Fix the Allowed value column in the Data Type sheet.      |" in joined
+        assert "| Ensure each Allowed value matches its declared Type.      |" in joined
+        assert "| For boolean fields use true,false instead of 0,1.         |" in joined
+        assert "| If 0/1 is intended, change Type or use true,false.        |" in joined
+        assert "ISSUES" in joined
+        assert "[1] insertAP.240906.xlsm" in joined
+        assert str(template_path) in joined
+        assert "Sheet: Data Type" in joined
+        assert "Row: 8" in joined
+        assert "Field: BeneficiaryBankPosPaymConf" in joined
+        assert "[2] listThrottlingThreshold.240423.xlsm" in joined
+        assert str(second_template_path) in joined
+        assert "Row: 12" in joined
+        assert "Field: DefaultId" in joined
+        assert "Type: boolean" in joined
+        assert "Allowed value: 0,1" in joined
+        assert "Problem: boolean allowed values must be true/false." in joined
+        assert "CONVERSION FAILED" in joined
+        assert "No files were converted." in joined
+    finally:
+        shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def test_legacy_converter_allows_quoted_and_unquoted_string_allowed_values():
+    converter = LegacyConverter("in", "out")
+
+    unquoted = DataType(name="DefaultId", type="string", allowed_values="0,1")
+    quoted = DataType(name="Status", type="string", allowed_values="'ACTV',\"INAC\"")
+
+    assert converter._allowed_values_type_mismatch_reason(
+        unquoted,
+        converter._split_allowed_value_tokens(unquoted.allowed_values),
+    ) == ""
+    assert converter._allowed_values_type_mismatch_reason(
+        quoted,
+        converter._split_allowed_value_tokens(quoted.allowed_values),
+    ) == ""

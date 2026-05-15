@@ -214,6 +214,27 @@ La generazione segue questa priorita:
 
 Per esempio, un campo `TimeIndicator` con regex `[0-9]{2,2}:[0-9]{2,2}` usa prima i candidati della categoria `time`, come `10:15`, `12:00`, `23:59`. La regex resta il filtro finale e impedisce di usare candidati con formato diverso.
 
+## Placeholder semantici
+
+Alcuni esempi presenti nei template legacy possono rispettare formalmente i constraint Excel ma essere comunque placeholder non significativi per una categoria semantica nota. Per esempio `AAAAAAAA` rispetta una regex BIC8 generica, ma non e un BIC verosimile.
+
+Questi casi vanno configurati in `placeholder_patterns`. I pattern sono espressioni regolari Python applicate al valore intero dell'esempio gia letto da Excel. Se un esempio matcha uno di questi pattern, viene trattato come non valido e riparato.
+
+```yaml
+placeholder_patterns:
+  categories:
+    bic:
+      - '^([A-Z0-9])\1+$'
+    bic8:
+      - '^([A-Z0-9])\1+$'
+    bic11:
+      - '^([A-Z0-9])\1+$'
+```
+
+Il filtro e applicato solo dopo i constraint Excel. Gli `allowed_values` espliciti restano la fonte piu forte: se il template dichiara allowed values, il converter non li scarta come placeholder semantici.
+
+Un esempio Excel valido e non-placeholder viene conservato. Per esempio `TimeIndicator = 16:00` con regex `[0-9]{2,2}:[0-9]{2,2}` resta il primo esempio, anche se la categoria `time` dispone di seed diversi.
+
 ## Azioni dell'Example Tracer
 
 La colonna `ACTION` indica il tipo di intervento effettuato:
@@ -231,6 +252,7 @@ La colonna `REASON` deve spiegare la causa reale dell'intervento. Per esempio:
 - `completed missing examples from semantic category: time`
 - `completed missing examples from regex alternatives`
 - `repaired invalid example: regex mismatch`
+- `repaired invalid example: semantic placeholder`
 - `repaired invalid example: minLength not met`
 - `repaired invalid example: maxLength exceeded`
 - `repaired invalid example: type mismatch`

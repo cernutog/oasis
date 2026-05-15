@@ -37,6 +37,14 @@ try:
     from .legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from .oas_diff_dialog import OASDiffDialog
     from .api_designer.designer_tab import ApiDesignerTab
+    from .oas_output_archive import (
+        archive_existing_oas_files,
+        build_expected_oas_filenames,
+        delete_existing_oas_files,
+        describe_archive_destinations,
+        filter_previous_oas_files,
+        list_existing_oas_files,
+    )
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
     import main as main_script
@@ -56,6 +64,14 @@ except ImportError:
     from legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from oas_diff_dialog import OASDiffDialog
     from api_designer.designer_tab import ApiDesignerTab
+    from oas_output_archive import (
+        archive_existing_oas_files,
+        build_expected_oas_filenames,
+        delete_existing_oas_files,
+        describe_archive_destinations,
+        filter_previous_oas_files,
+        list_existing_oas_files,
+    )
 
 from chlorophyll import CodeView
 import pygments.lexers
@@ -234,6 +250,131 @@ class OASErrorDialog(ctk.CTkToplevel):
         if self.on_close_callback:
             self.on_close_callback()
         self.destroy()
+
+
+class OASOutputFolderDialog(ctk.CTkToplevel):
+    def __init__(self, parent, folder_path, file_count):
+        super().__init__(parent)
+        self.folder_path = folder_path
+        self.file_count = file_count
+        self.title("OAS Output Folder Not Empty")
+        self.geometry("620x260")
+        self.resizable(False, False)
+        self.choice = "cancel"
+
+        self.update_idletasks()
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() // 2) - 310
+            y = parent.winfo_y() + (parent.winfo_height() // 2) - 130
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except Exception:
+            pass
+
+        self.transient(parent)
+        self.grab_set()
+        self.after(200, self._set_icon)
+        self._build_ui()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self):
+        main_container = ctk.CTkFrame(self, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        content_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        content_frame.pack(fill="x", expand=True)
+
+        ctk.CTkLabel(
+            content_frame,
+            text="\u26A0",
+            text_color="#FBC02D",
+            font=ctk.CTkFont(size=52),
+        ).pack(side="left", padx=(10, 20))
+
+        msg_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        msg_frame.pack(side="left", fill="both", expand=True)
+
+        ctk.CTkLabel(
+            msg_frame,
+            text=f"The OAS Output Folder already contains {self.file_count} OAS file(s).",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=("#000000", "#FFFFFF"),
+            anchor="w",
+            justify="left",
+        ).pack(fill="x")
+
+        path_label = ctk.CTkLabel(
+            msg_frame,
+            text=self.folder_path,
+            font=ctk.CTkFont(size=11),
+            text_color="#0A809E",
+            cursor="hand2",
+            anchor="w",
+            justify="left",
+        )
+        path_label.pack(fill="x", pady=(2, 5))
+        path_label.bind("<Button-1>", lambda _event: self._open_folder())
+
+        ctk.CTkLabel(
+            msg_frame,
+            text="What would you like to do before generating the new OAS files?",
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+            anchor="w",
+            justify="left",
+        ).pack(fill="x")
+
+        btn_container = ctk.CTkFrame(main_container, fg_color="transparent")
+        btn_container.pack(fill="x", side="bottom", pady=(0, 5))
+
+        row1 = ctk.CTkFrame(btn_container, fg_color="transparent")
+        row1.pack(side="top", pady=(0, 10))
+
+        ctk.CTkButton(
+            row1,
+            text="Keep Files",
+            width=120,
+            height=32,
+            command=lambda: self._set_choice("keep"),
+        ).pack(side="left", padx=5)
+        ctk.CTkButton(
+            row1,
+            text="Archive Files",
+            width=130,
+            height=32,
+            command=lambda: self._set_choice("archive"),
+        ).pack(side="left", padx=5)
+        ctk.CTkButton(
+            row1,
+            text="Delete Files",
+            width=120,
+            height=32,
+            fg_color="#D32F2F",
+            hover_color="#B71C1C",
+            command=lambda: self._set_choice("delete"),
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_container,
+            text="Cancel",
+            width=120,
+            height=32,
+            command=lambda: self._set_choice("cancel"),
+        ).pack(side="top", pady=(0, 5))
+
+    def _set_choice(self, choice):
+        self.choice = choice
+        self.destroy()
+
+    def _open_folder(self):
+        if self.folder_path and os.path.exists(self.folder_path):
+            os.startfile(self.folder_path)
 
 import customtkinter as ctk
 from customtkinter import ThemeManager  # REQUIRED FOR DIRECT OVERRIDE
@@ -1927,6 +2068,7 @@ class OASGenApp(ctk.CTk):
             pass
 
     def start_generation(self):
+        self.clear_gen_log()
         base_dir = self.entry_dir.get()
         gen_30 = self.var_30.get()
         gen_31 = self.var_31.get()
@@ -1938,6 +2080,16 @@ class OASGenApp(ctk.CTk):
             self.log_gen("ERROR: Please select a directory.")
             return
 
+        validation_errors = main_script.get_converted_template_validation_errors(base_dir)
+        if validation_errors:
+            for error in validation_errors:
+                self.log_gen(error)
+            return
+
+        if not self._prepare_oas_output_folder(base_dir, gen_30, gen_31, gen_swift):
+            self.log_gen("Generation cancelled.")
+            return
+
         self.btn_gen.configure(state="disabled", text="GENERATING...")
         self.log_gen("Starting generation process...")
 
@@ -1945,6 +2097,79 @@ class OASGenApp(ctk.CTk):
             target=self.run_process, args=(base_dir, gen_30, gen_31, gen_swift, generation_mode)
         )
         t.start()
+
+    def _prepare_oas_output_folder(self, base_dir, gen_30, gen_31, gen_swift):
+        output_dir = self.entry_oas_folder.get()
+        if not output_dir:
+            return True
+
+        previous_files = self._get_previous_oas_output_files(
+            base_dir,
+            output_dir,
+            gen_30,
+            gen_31,
+            gen_swift,
+        )
+        if not previous_files:
+            return True
+
+        dialog = OASOutputFolderDialog(self, output_dir, len(previous_files))
+        self.wait_window(dialog)
+        choice = dialog.choice
+
+        try:
+            if choice == "cancel":
+                return False
+            if choice == "keep":
+                self.log_gen(f"Keeping {len(previous_files)} previous OAS file(s) in output folder.")
+                return True
+            if choice == "archive":
+                moved = archive_existing_oas_files(previous_files, output_dir)
+                folders = describe_archive_destinations(moved)
+                if folders:
+                    self.log_gen(f"Archived {len(moved)} previous OAS file(s) under:")
+                    for folder in folders:
+                        self.log_gen(f"  {folder}")
+                else:
+                    self.log_gen("No previous OAS files were archived.")
+                self.update_file_list()
+                return True
+            if choice == "delete":
+                deleted = delete_existing_oas_files(previous_files, output_dir)
+                self.log_gen(f"Deleted {len(deleted)} previous OAS file(s) from output folder.")
+                self.update_file_list()
+                return True
+        except Exception as exc:
+            self.log_gen(f"ERROR: Failed to prepare OAS output folder: {exc}")
+            return False
+
+        return False
+
+    def _get_previous_oas_output_files(self, base_dir, output_dir, gen_30, gen_31, gen_swift):
+        existing_files = list_existing_oas_files(output_dir)
+        if not existing_files:
+            return []
+
+        try:
+            index_path = os.path.join(base_dir, "$index.xlsx")
+            if not os.path.exists(index_path):
+                return existing_files
+
+            df_info = main_script.parser.load_excel_sheet(index_path, "General Description")
+            info_data, _inline_servers = main_script.parser.parse_info(df_info)
+            expected_filenames = build_expected_oas_filenames(
+                info_data.get("filename_pattern"),
+                api_version=info_data.get("version", "1.0"),
+                release=info_data.get("release", ""),
+                gen_30=gen_30,
+                gen_31=gen_31,
+                gen_swift=gen_swift,
+            )
+        except Exception as exc:
+            self.log_gen(f"WARNING: Could not determine expected OAS filenames: {exc}")
+            return existing_files
+
+        return filter_previous_oas_files(existing_files, expected_filenames)
 
     def run_process(self, base_dir, gen_30, gen_31, gen_swift, generation_mode=None):
         try:

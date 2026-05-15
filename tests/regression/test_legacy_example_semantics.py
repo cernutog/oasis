@@ -70,6 +70,45 @@ def test_valid_excel_example_is_kept_even_when_semantic_category_has_other_defau
     assert dt.example.startswith("16:00")
 
 
+def test_configured_semantic_placeholders_are_repaired_but_valid_examples_are_kept():
+    tmp_path = Path("tmp") / "test_legacy_example_semantic_placeholders"
+    if tmp_path.exists():
+        shutil.rmtree(tmp_path)
+    tmp_path.mkdir(parents=True)
+    try:
+        rules_path = tmp_path / "legacy_example_semantic_rules.yaml"
+        rules_path.write_text(
+            "placeholder_patterns:\n"
+            "  categories:\n"
+            "    bic8:\n"
+            "      - '^([A-Z0-9])\\\\1+$'\n",
+            encoding="utf-8",
+        )
+        converter = _converter(example_semantic_rules_path=rules_path)
+        bic = DataType(
+            name="ReceiverBic",
+            type="string",
+            regex="[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}",
+            example="AAAAAAAA",
+        )
+        time = DataType(
+            name="TimeIndicator",
+            type="string",
+            regex="[0-9]{2,2}:[0-9]{2,2}",
+            example="16:00",
+        )
+
+        converter._fill_and_fix_examples_for_data_type(bic, schema_name="ReceiverBic")
+        converter._fill_and_fix_examples_for_data_type(time, schema_name="TimeIndicator")
+
+        assert bic.example == "IPSDITM1; DEUTDEFF; BNPAFRPP"
+        assert converter._example_trace_rows[-2]["action"] == "REPAIRED"
+        assert converter._example_trace_rows[-2]["reason"] == "repaired invalid example: semantic placeholder"
+        assert time.example.startswith("16:00")
+    finally:
+        shutil.rmtree(tmp_path, ignore_errors=True)
+
+
 def test_semantic_time_candidates_are_filtered_by_regex_before_regex_fallback():
     converter = _converter()
     dt = DataType(

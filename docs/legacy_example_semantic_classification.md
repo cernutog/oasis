@@ -160,7 +160,9 @@ Ogni candidato viene validato contro:
 - min/max numerici;
 - min/max length stringa.
 
-Gli esempi gia presenti nel template Excel vengono conservati se rispettano i constraint. Non vengono scartati solo perche non corrispondono ai seed della categoria semantica.
+Gli esempi gia presenti nel template Excel vengono conservati se rispettano i constraint e non matchano un placeholder semantico configurato per la categoria. Non vengono scartati solo perche non corrispondono ai seed della categoria semantica.
+
+I placeholder semantici sono configurati in `legacy_example_semantic_rules.yaml`, sezione `placeholder_patterns`. Servono per casi in cui un valore e formalmente valido per la regex ma non e un esempio verosimile, per esempio `AAAAAAAA` per una categoria BIC. Gli `allowed_values` espliciti restano prevalenti e non vengono scartati da questo filtro.
 
 Quando l'esempio Excel manca o non e valido, la categoria semantica viene usata prima della generazione da regex. Questo evita esempi formalmente validi ma poco realistici, per esempio un orario `99:99` prodotto da una regex troppo ampia. La regex resta comunque il filtro finale: se un campo ammette solo `HH:MM`, i candidati `HH:MM:SS` vengono esclusi.
 
