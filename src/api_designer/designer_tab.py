@@ -698,7 +698,12 @@ class ApiDesignerTab:
         self.model_tree.bind("<Motion>", self._on_model_guides_motion)
         self.model_tree.bind("<Leave>", self._hide_model_tooltip)
         self.model_tree.tag_configure("shared_component", foreground=PETROL)
-        self.model_context_menu = tk.Menu(self.model_tree, tearoff=0)
+        self.model_context_menu = tk.Menu(
+            self.model_tree,
+            tearoff=0,
+            activebackground="#0A809E",
+            activeforeground="#FFFFFF",
+        )
 
         model_header = getattr(self.model_frame, "_header", None)
         if model_header is not None:

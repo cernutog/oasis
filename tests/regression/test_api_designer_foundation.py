@@ -741,6 +741,105 @@ def test_legacy_converter_schema_compaction_renames_block_root_parent_edges():
     assert [row[5] for row in renamed[0][1][1:]] == ["SolutionPurposeId", "PryRcvgNetAd"]
 
 
+def test_legacy_converter_literal_array_uses_distinct_item_component_when_named_array_exists():
+    converter = LegacyConverter("in", "out")
+    converter.global_schemas["AosId"] = DataType(
+        name="AosId",
+        type="array",
+        items_type="object",
+    )
+    converter.output_names[("$global", "AosId")] = "AosId"
+
+    rows, _, extra_blocks = converter._build_children_rows(
+        "Wrapper",
+        [
+            ("aosId", "", "", "array", "O", "", "", "object"),
+            ("value", "aosId", "", "string", "M", "", "", ""),
+        ],
+    )
+
+    array_row = next(row for row in rows if row[0] == "aosId")
+    item_component = array_row[4]
+
+    assert array_row[3] == "array"
+    assert array_row[5] == ""
+    assert item_component != "AosId"
+    assert any(row[0] == item_component and row[3] == "object" for row in extra_blocks)
+    assert any(row[0] == "value" and row[1] == item_component for row in extra_blocks)
+
+
+def test_legacy_converter_named_array_datatype_is_property_array_with_item_schema_reference():
+    converter = LegacyConverter("in", "out")
+    converter.global_schemas["AosId"] = DataType(
+        name="AosId",
+        type="array",
+        items_type="AosIdItem",
+        min_val="0",
+        max_val="30",
+    )
+    converter.global_schemas["AosIdItem"] = DataType(
+        name="AosIdItem",
+        type="string",
+        allowed_values="ALIA,LINK,ZZZZ",
+    )
+    converter.output_names[("$global", "AosId")] = "AosId"
+    converter.output_names[("$global", "AosIdItem")] = "AosIdItem"
+
+    rows, referenced, extra_blocks = converter._build_children_rows(
+        "Wrapper",
+        [
+            ("aosId", "", "", "AosId", "O", "", "", ""),
+        ],
+    )
+
+    array_row = next(row for row in rows if row[0] == "aosId")
+
+    assert array_row[3] == "array"
+    assert array_row[4] == "AosId"
+    assert array_row[5] == ""
+    assert array_row[8] == "0"
+    assert array_row[9] == "30"
+    assert referenced == {"AosId"}
+    assert extra_blocks == []
+
+    item_schema = converter._array_alias_item_schema("AosId", converter.global_schemas["AosId"])
+    assert item_schema is not None
+    assert item_schema.type == "string"
+    assert item_schema.min_val == ""
+    assert item_schema.max_val == ""
+    assert item_schema.allowed_values == "ALIA,LINK,ZZZZ"
+
+
+def test_legacy_converter_named_array_with_object_children_is_property_array_with_object_item_component():
+    converter = LegacyConverter("in", "out")
+    converter.global_schemas["ListReOperationDetails"] = DataType(
+        name="ListReOperationDetails",
+        type="array",
+        items_type="object",
+        min_val="1",
+        max_val="10",
+    )
+    converter.output_names[("$global", "ListReOperationDetails")] = "ListReOperationDetails"
+
+    rows, referenced, extra_blocks = converter._build_children_rows(
+        "Wrapper",
+        [
+            ("listReOperationDetails", "", "", "ListReOperationDetails", "O", "", "", ""),
+            ("aosId", "listReOperationDetails", "", "AosId", "O", "", "", ""),
+        ],
+    )
+
+    array_row = next(row for row in rows if row[0] == "listReOperationDetails")
+
+    assert array_row[3] == "array"
+    assert array_row[4] == "ListReOperationDetails"
+    assert array_row[5] == ""
+    assert array_row[8] == "1"
+    assert array_row[9] == "10"
+    assert referenced == {"ListReOperationDetails"}
+    assert any(row[0] == "ListReOperationDetails" and row[3] == "object" for row in extra_blocks)
+
+
 def test_legacy_converter_repairs_bic_semantic_fields_without_generic_fallback():
     converter = LegacyConverter("in", "out", fill_fix_examples=True)
     cases = [

@@ -435,24 +435,42 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         # === 6. OAS DIFF TAB ===
         self.tab_diff.grid_columnconfigure(0, weight=1)
-        self.tab_diff.grid_rowconfigure(5, weight=1) # Spacer row to absorb vertical height
+        self.tab_diff.grid_rowconfigure(0, weight=1)
 
-        # Row 0: Separator 1
-        sep1 = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
-        sep1.grid(row=0, column=0, sticky="ew")
-        self._add_section_separator(sep1, "Static Variables (User Defined)")
+        self.diff_tabview = ctk.CTkTabview(
+            self.tab_diff,
+            fg_color="transparent",
+            segmented_button_selected_color="#0A809E",
+            segmented_button_selected_hover_color="#076075",
+        )
+        self.diff_tabview.grid(row=0, column=0, sticky="nsew", padx=6, pady=0)
+
+        self.diff_tab_general = self.diff_tabview.add("General")
+        self.diff_tab_synthesis = self.diff_tabview.add("Synthesis")
+        self.diff_tab_analytical = self.diff_tabview.add("Analytical")
+        self.diff_tab_impact = self.diff_tabview.add("Impact")
+        self.diff_tab_interface = self.diff_tabview.add("Interface")
+
+        for tab in (
+            self.diff_tab_general,
+            self.diff_tab_synthesis,
+            self.diff_tab_analytical,
+            self.diff_tab_impact,
+            self.diff_tab_interface,
+        ):
+            tab.grid_columnconfigure(0, weight=1)
+
+        self._add_section_separator(self.diff_tab_general, "Static Variables (User Defined)")
         
-        # Row 1: Label
-        help_lbl = ctk.CTkLabel(self.tab_diff, 
+        help_lbl = ctk.CTkLabel(self.diff_tab_general,
                                 text="Use placeholders like {{variable_name}} in custom Word templates to inject these values.",
                                 font=ctk.CTkFont(size=12, slant="italic"),
                                 text_color="#333333")
-        help_lbl.grid(row=1, column=0, sticky="w", padx=20, pady=(0, 3))
+        help_lbl.pack(anchor="w", padx=20, pady=(0, 3))
 
-        self.frame_vars = ctk.CTkFrame(self.tab_diff, fg_color="transparent", height=170)
-        self.frame_vars.grid(row=2, column=0, sticky="ew", padx=10, pady=(0, 5))
+        self.frame_vars = ctk.CTkFrame(self.diff_tab_general, fg_color="transparent", height=170)
+        self.frame_vars.pack(fill="x", padx=10, pady=(0, 5))
         
-        # Standard Frame for variables (replaces scrollable to prevent height expanding bugs)
         self.scroll_vars = ctk.CTkFrame(self.frame_vars, fg_color="transparent")
         self.scroll_vars.pack(fill="x", expand=False, pady=(0, 5))
 
@@ -463,44 +481,47 @@ class PreferencesDialog(ctk.CTkToplevel):
         ctk.CTkButton(self.vars_controls, text="Add Variable", width=100, fg_color="#0A809E", hover_color="#076075", command=self._on_add_var).pack(side="left", padx=(0, 5))
         ctk.CTkButton(self.vars_controls, text="Clear All", width=100, fg_color="#D04040", hover_color="#B03030", command=self._on_clear_vars).pack(side="left")
 
-        # Row 3: Separator 2
-        sep2 = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
-        sep2.grid(row=3, column=0, sticky="ew")
-        self._add_section_separator(sep2, "Reports Custom Templates")
-        
-        # Row 4: Templates Frame
-        self.frame_tmpl = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
-        self.frame_tmpl.grid(row=4, column=0, sticky="ew", padx=10, pady=(0, 5))
+        def _add_report_template_tab(tab, label, attr_name, browse_key):
+            self._add_section_separator(tab, "Custom Template")
+            frame = ctk.CTkFrame(tab, fg_color="transparent")
+            frame.pack(fill="x", padx=10, pady=(8, 5))
+            frame.grid_columnconfigure(1, weight=1)
+            ctk.CTkLabel(frame, text=f"{label}:", width=95, anchor="w").grid(row=0, column=0, sticky="w", padx=(5, 5))
+            entry = ctk.CTkEntry(frame)
+            entry.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
+            setattr(self, attr_name, entry)
+            ctk.CTkButton(
+                frame,
+                text="...",
+                width=30,
+                fg_color="#0A809E",
+                hover_color="#076075",
+                command=lambda: self._browse_template(browse_key),
+            ).grid(row=0, column=2)
 
-        self.frame_tmpl.grid_columnconfigure(1, weight=1) # Make entry column expand
-        
-        # Synthesis Template
-        ctk.CTkLabel(self.frame_tmpl, text="Synthesis:").grid(row=0, column=0, sticky="w", padx=(5, 5))
-        self.entry_tmpl_syn = ctk.CTkEntry(self.frame_tmpl)
-        self.entry_tmpl_syn.grid(row=0, column=1, sticky="ew", padx=5, pady=2)
-        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("syn")).grid(row=0, column=2)
+        _add_report_template_tab(self.diff_tab_synthesis, "Synthesis", "entry_tmpl_syn", "syn")
+        _add_report_template_tab(self.diff_tab_analytical, "Analytical", "entry_tmpl_ana", "ana")
+        _add_report_template_tab(self.diff_tab_impact, "Impact", "entry_tmpl_imp", "imp")
+        _add_report_template_tab(self.diff_tab_interface, "Interface", "entry_tmpl_comp", "comp")
 
-        # Analytical Template
-        ctk.CTkLabel(self.frame_tmpl, text="Analytical:").grid(row=1, column=0, sticky="w", padx=(5, 5))
-        self.entry_tmpl_ana = ctk.CTkEntry(self.frame_tmpl)
-        self.entry_tmpl_ana.grid(row=1, column=1, sticky="ew", padx=5, pady=2)
-        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("ana")).grid(row=1, column=2)
+        self._add_section_separator(self.diff_tab_interface, "Interface Filters")
+        self.var_diff_show_enum_order_changes = ctk.BooleanVar(value=False)
+        self.chk_diff_show_enum_order_changes = ctk.CTkSwitch(
+            self.diff_tab_interface,
+            text="Show enum order changes",
+            variable=self.var_diff_show_enum_order_changes,
+            progress_color="#0A809E",
+        )
+        self.chk_diff_show_enum_order_changes.pack(anchor="w", padx=20, pady=(8, 6))
 
-        # Impact Template
-        ctk.CTkLabel(self.frame_tmpl, text="Impact:").grid(row=2, column=0, sticky="w", padx=(5, 5))
-        self.entry_tmpl_imp = ctk.CTkEntry(self.frame_tmpl)
-        self.entry_tmpl_imp.grid(row=2, column=1, sticky="ew", padx=5, pady=2)
-        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("imp")).grid(row=2, column=2)
-
-        # Compatibility Template
-        ctk.CTkLabel(self.frame_tmpl, text="Interface:").grid(row=3, column=0, sticky="w", padx=(5, 5))
-        self.entry_tmpl_comp = ctk.CTkEntry(self.frame_tmpl)
-        self.entry_tmpl_comp.grid(row=3, column=1, sticky="ew", padx=5, pady=2)
-        ctk.CTkButton(self.frame_tmpl, text="...", width=30, fg_color="#0A809E", hover_color="#076075", command=lambda: self._browse_template("comp")).grid(row=3, column=2)
-
-        # Flexible spacer to absorb remaining space and pack items tightly at the top
-        spacer = ctk.CTkFrame(self.tab_diff, fg_color="transparent")
-        spacer.grid(row=5, column=0, sticky="nsew")
+        self.var_diff_show_validation_rule_only_description_changes = ctk.BooleanVar(value=True)
+        self.chk_diff_show_validation_rule_only_description_changes = ctk.CTkSwitch(
+            self.diff_tab_interface,
+            text="Show description changes caused only by added validation rules",
+            variable=self.var_diff_show_validation_rule_only_description_changes,
+            progress_color="#0A809E",
+        )
+        self.chk_diff_show_validation_rule_only_description_changes.pack(anchor="w", padx=20, pady=(3, 6))
 
 
 
@@ -640,6 +661,10 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.entry_tmpl_imp.insert(0, prefs.get("diff_template_impact", ""))
         self.entry_tmpl_comp.delete(0, "end")
         self.entry_tmpl_comp.insert(0, prefs.get("diff_template_compatibility", ""))
+        self.var_diff_show_enum_order_changes.set(prefs.get("diff_show_enum_order_changes", False))
+        self.var_diff_show_validation_rule_only_description_changes.set(
+            prefs.get("diff_show_validation_rule_only_description_changes", True)
+        )
 
 
             
@@ -794,6 +819,10 @@ class PreferencesDialog(ctk.CTkToplevel):
             "diff_template_analytical": self.entry_tmpl_ana.get(),
             "diff_template_impact": self.entry_tmpl_imp.get(),
             "diff_template_compatibility": self.entry_tmpl_comp.get(),
+            "diff_show_enum_order_changes": bool(self.var_diff_show_enum_order_changes.get()),
+            "diff_show_validation_rule_only_description_changes": bool(
+                self.var_diff_show_validation_rule_only_description_changes.get()
+            ),
 
             "diff_debug_mode": False,
             "diff_static_variables": self.current_diff_vars,
@@ -877,6 +906,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.entry_legacy_contact_url.delete(0, "end")
         self.entry_legacy_release.delete(0, "end")
         self.entry_legacy_filename_pattern.delete(0, "end")
+
+        self.var_diff_show_enum_order_changes.set(False)
+        self.var_diff_show_validation_rule_only_description_changes.set(True)
 
         self.var_legacy_tracing.set(True)
         self.var_legacy_collision_desc.set(False)

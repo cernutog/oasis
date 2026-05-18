@@ -1197,7 +1197,7 @@ class OASGenApp(ctk.CTk):
     def _create_menu(self):
         """Create standard menu bar."""
         menubar = tk.Menu(self)
-        self.file_menu = tk.Menu(menubar, tearoff=0)  # Save reference for enabling/disabling
+        self.file_menu = self._create_styled_menu(menubar)  # Save reference for enabling/disabling
         
         # File Menu
         self.file_menu.add_command(label="Select Template Folder...", command=self._smart_select_template)
@@ -1207,12 +1207,12 @@ class OASGenApp(ctk.CTk):
         menubar.add_cascade(label="File", menu=self.file_menu)
         
         # Edit Menu
-        edit_menu = tk.Menu(menubar, tearoff=0)
+        edit_menu = self._create_styled_menu(menubar)
         edit_menu.add_command(label="Preferences", command=self.open_preferences)
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
         # Tools Menu
-        tools_menu = tk.Menu(menubar, tearoff=0)
+        tools_menu = self._create_styled_menu(menubar)
         tools_menu.add_command(label="Create Template from OAS", command=self.open_import_dialog)
         tools_menu.add_command(label="OAS Comparison", command=self.open_oas_diff)
         tools_menu.add_separator()
@@ -1222,7 +1222,7 @@ class OASGenApp(ctk.CTk):
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
         # View Menu (Generation, Validation, YAML Viewer; Designer is experimental)
-        self.view_menu = tk.Menu(menubar, tearoff=0)
+        self.view_menu = self._create_styled_menu(menubar)
         if self._designer_enabled:
             self.view_menu.add_command(label="Designer", command=self._view_designer)
         self.view_menu.add_command(label="OAS Generation", command=self._view_generation)
@@ -1235,7 +1235,7 @@ class OASGenApp(ctk.CTk):
         menubar.add_cascade(label="View", menu=self.view_menu)
 
         # Help Menu
-        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu = self._create_styled_menu(menubar)
         help_menu.add_command(label="User Guide", command=self.open_user_guide)
         help_menu.add_command(label="About", command=self.show_about_dialog)
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -1244,6 +1244,15 @@ class OASGenApp(ctk.CTk):
         # Note: ctk doesn't directly support standard menus well on all platforms,
         # but configured it on the underlying tk root usually works on Windows.
         self.config(menu=menubar)
+
+    def _create_styled_menu(self, parent):
+        """Create a native Tk menu with OASIS highlight colors."""
+        return tk.Menu(
+            parent,
+            tearoff=0,
+            activebackground="#0A809E",
+            activeforeground="#FFFFFF",
+        )
 
     def _set_designer_visibility(self, enabled: bool):
         """Enable or hide the experimental Designer tab and related navigation."""
@@ -2045,7 +2054,7 @@ class OASGenApp(ctk.CTk):
 
     def _show_log_context_menu(self, event):
         """Show context menu for log area."""
-        menu = tk.Menu(self, tearoff=0)
+        menu = self._create_styled_menu(self)
         menu.add_command(label="Clear Log", command=self.clear_gen_log)
         menu.add_separator()
         menu.add_command(label="Copy", command=lambda: self.log_area.event_generate("<<Copy>>"))
@@ -3922,7 +3931,7 @@ class OASGenApp(ctk.CTk):
             if not history:
                 return
                 
-            menu = tk.Menu(self, tearoff=0)
+            menu = self._create_styled_menu(self)
             
             def load_search(text):
                 self.search_entry.delete(0, "end")

@@ -104,6 +104,9 @@ class PreferencesManager:
         "diff_template_analytical": "",
         "diff_template_impact": "",
         "diff_template_compatibility": "",
+        "diff_selected_reports": ["synthesis", "analytical", "impact", "compatibility"],
+        "diff_show_enum_order_changes": False,
+        "diff_show_validation_rule_only_description_changes": True,
         "diff_debug_mode": False,
 
         

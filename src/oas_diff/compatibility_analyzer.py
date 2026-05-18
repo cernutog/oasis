@@ -3,6 +3,31 @@ from dataclasses import dataclass, field
 from .comparator import _unwrap_schema
 import re
 
+
+VALIDATION_RULE_MARKER_RE = re.compile(r"\*\*\s*Validation Rule\(s\)\s*\*\*", re.IGNORECASE)
+
+
+def _normalize_description(text):
+    if text is None:
+        return ""
+    return re.sub(r"\s+", " ", str(text)).strip()
+
+
+def _has_validation_rules(text):
+    return bool(VALIDATION_RULE_MARKER_RE.search(str(text or "")))
+
+
+def _is_validation_rule_only_addition(old_text, new_text):
+    old_norm = _normalize_description(old_text)
+    new_norm = _normalize_description(new_text)
+    if old_norm == new_norm:
+        return False
+    if _has_validation_rules(old_text) or not _has_validation_rules(new_text):
+        return False
+    new_prefix = VALIDATION_RULE_MARKER_RE.split(str(new_text or ""), maxsplit=1)[0]
+    return old_norm == _normalize_description(new_prefix)
+
+
 @dataclass
 class CompatibilityIssue:
     path: str
@@ -21,10 +46,28 @@ class CompatibilityAnalyzer:
     Compares fully resolved OpenAPI paths to verify constraint identity
     and report differences in parameters, payloads, and response headers.
     """
-    def __init__(self, resolved_spec1: Dict[str, Any], resolved_spec2: Dict[str, Any]):
+    def __init__(
+        self,
+        resolved_spec1: Dict[str, Any],
+        resolved_spec2: Dict[str, Any],
+        show_enum_order_changes: bool = False,
+        show_validation_rule_only_description_changes: bool = True,
+    ):
         self.spec1 = resolved_spec1
         self.spec2 = resolved_spec2
         self.issues: List[CompatibilityIssue] = []
+        self.show_enum_order_changes = show_enum_order_changes
+        self.show_validation_rule_only_description_changes = show_validation_rule_only_description_changes
+
+    def _should_report_description_change(self, old_text, new_text):
+        if _normalize_description(old_text) == _normalize_description(new_text):
+            return False
+        if (
+            not self.show_validation_rule_only_description_changes
+            and _is_validation_rule_only_addition(old_text, new_text)
+        ):
+            return False
+        return True
 
     def analyze(self) -> List[CompatibilityIssue]:
         self.issues = []
@@ -188,14 +231,9 @@ class CompatibilityAnalyzer:
             if req1 != req2:
                  self.issues.append(CompatibilityIssue(path, method, f"Parameter ({location})", name, "Constraint Mismatch", f"Property 'required' changed from {req1} to {req2}", old_value=req1, new_value=req2))
 
-            def _norm_desc(txt):
-                if txt is None:
-                    return ''
-                return re.sub(r'\s+', ' ', str(txt)).strip()
-
             desc1 = p1.get('description')
             desc2 = p2.get('description')
-            if _norm_desc(desc1) != _norm_desc(desc2):
+            if self._should_report_description_change(desc1, desc2):
                 self.issues.append(
                     CompatibilityIssue(
                         path,
@@ -328,14 +366,8 @@ class CompatibilityAnalyzer:
                 eff2 = p2
                 skip_desc_recursive = False
 
-        # Compare effective descriptions
-        def _norm_desc(txt):
-            if txt is None: return ''
-            # Aggressive normalization: handle newlines, tabs, multiple spaces
-            return re.sub(r'\s+', ' ', str(txt)).strip()
-        
         if not skip_description:
-            if _norm_desc(eff1) != _norm_desc(eff2):
+            if self._should_report_description_change(eff1, eff2):
                 self.issues.append(CompatibilityIssue(path, method, location, item_name_prefix, "Description Change", "Description changed", old_value=eff1, new_value=eff2))
 
         # 2. Compare Core Constraints
@@ -349,7 +381,8 @@ class CompatibilityAnalyzer:
                 # Special Case: Enum Order
                 if c == 'enum' and isinstance(v1, list) and isinstance(v2, list):
                     if set(v1) == set(v2):
-                        self.issues.append(CompatibilityIssue(path, method, location, item_name_prefix, "Enum values order changed", "Constraint 'enum' order changed", severity="INFO", old_value=v1, new_value=v2))
+                        if self.show_enum_order_changes:
+                            self.issues.append(CompatibilityIssue(path, method, location, item_name_prefix, "Enum values order changed", "Constraint 'enum' order changed", severity="INFO", old_value=v1, new_value=v2))
                         continue
 
                 v1_str = f"'{v1}'" if v1 is not None else "<None>"

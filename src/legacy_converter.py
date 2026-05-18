@@ -304,6 +304,55 @@ class LegacyConverter:
         cloned.name = target_name
         self.global_schemas[target_name] = cloned
 
+    def _array_alias_item_schema(self, alias_name: str, dt: Optional[DataType]) -> Optional[DataType]:
+        """Return the component schema represented by a legacy array alias.
+
+        Legacy templates can define a named Data Type as an array while endpoint
+        sheets use that name as the item schema of a property-level array.  In
+        that form the array cardinality belongs to the property row, while the
+        named component represents the array item.
+        """
+        if not alias_name or not dt or not dt.type or dt.type.lower() != "array":
+            return None
+        items_name = self._clean_value(dt.items_type)
+        if not items_name:
+            return None
+
+        item_low = items_name.lower()
+        if item_low == "object":
+            return DataType(
+                name=alias_name,
+                type="object",
+                description=dt.description,
+                source_file=dt.source_file,
+            )
+        if item_low in {"string", "number", "integer", "boolean"}:
+            return DataType(
+                name=alias_name,
+                type=item_low,
+                format=dt.format,
+                description=dt.description,
+                pattern_eba=dt.pattern_eba,
+                regex=dt.regex,
+                allowed_values=dt.allowed_values,
+                example=dt.example,
+                source_file=dt.source_file,
+            )
+
+        _item_out, item_dt = self._resolve_data_type(
+            items_name,
+            dt.source_file if dt.source_file != "$global" else None,
+        )
+        if not item_dt:
+            return None
+
+        cloned = copy.deepcopy(item_dt)
+        cloned.name = alias_name
+        if dt.description:
+            cloned.description = dt.description
+        cloned.source_file = dt.source_file
+        return cloned
+
     def _apply_schema_rename_to_blocks(
         self,
         blocks: List[Tuple[str, List[List[Any]]]],
@@ -4360,10 +4409,10 @@ class LegacyConverter:
 
             self._close_excel_file(xl)
 
-        # 2a. Transitively expand referenced_data_types: array DataTypes whose
-        #     items_type is itself a named DataType (e.g. AosId → AosIdItem)
-        #     are not encountered as direct property types in endpoint sheets,
-        #     so they would be missed without this expansion.
+        # 2a. Transitively expand referenced_data_types for true array
+        #     components. Legacy array aliases are skipped here because their
+        #     referenced component represents the item schema, not the array
+        #     container.
         _prim_expand = {"string", "number", "integer", "boolean", "array", "object"}
         _expand_pending = set(referenced_data_types)
         _expand_visited: set = set()
@@ -4374,6 +4423,8 @@ class LegacyConverter:
             _expand_visited.add(_ename)
             _edt = self.global_schemas.get(_ename)
             if not _edt or _edt.type.lower() != "array" or not _edt.items_type:
+                continue
+            if self._array_alias_item_schema(_ename, _edt) is not None:
                 continue
             _eitems = self._recursive_resolve_items(
                 _edt.items_type,
@@ -4387,8 +4438,7 @@ class LegacyConverter:
         global_blocks = []
         for out_name in sorted(referenced_data_types):
             if out_name in self.emitted_wrappers: continue
-            # Skip schemas already emitted as structured named-array inline components
-            # (they were written with proper type=array + children via named_array_key_map)
+            # Skip schemas already emitted as structured inline components.
             if out_name in self.emitted_inline_components: continue
 
             # Only skip true primitive schema names. Named DataTypes such as
@@ -4399,20 +4449,21 @@ class LegacyConverter:
 
             dt = self.global_schemas.get(out_name)
             if not dt: continue
+            emit_dt = self._array_alias_item_schema(out_name, dt) or dt
             
-            # Resolve Items Type recursively if it's an array
-            # Rule: only inline if name is 'object' or 'array'
-            items_out = dt.items_type
-            if dt.type.lower() == "array" and dt.items_type:
+            # Resolve items recursively for true array components. Legacy array
+            # aliases have already been converted to their item schema above.
+            items_out = emit_dt.items_type
+            if emit_dt.type.lower() == "array" and emit_dt.items_type:
                 # Use recursive resolution helper
-                items_out = self._recursive_resolve_items(dt.items_type, dt.source_file)
+                items_out = self._recursive_resolve_items(emit_dt.items_type, emit_dt.source_file)
             
             # Only emit pattern_eba when there IS a regex; old tool never emitted
             # EBA-only patterns (e.g. '4!c2!a2!c') as OAS pattern values.
-            emit_pat_eba = dt.pattern_eba if dt.regex else ""
-            row = [out_name, "", dt.description, dt.type if dt.type else "string",
-                   items_out, "", dt.format, "", dt.min_val, dt.max_val,
-                   emit_pat_eba, dt.regex, dt.allowed_values, dt.example, ""]
+            emit_pat_eba = emit_dt.pattern_eba if emit_dt.regex else ""
+            row = [out_name, "", emit_dt.description, emit_dt.type if emit_dt.type else "string",
+                   items_out, "", emit_dt.format, "", emit_dt.min_val, emit_dt.max_val,
+                   emit_pat_eba, emit_dt.regex, emit_dt.allowed_values, emit_dt.example, ""]
             global_blocks.append((out_name, [row]))
 
         # 3. Final Write-back with Cosmetics
@@ -5192,10 +5243,11 @@ class LegacyConverter:
                 if norm_dt and norm_dt not in self._current_children_map:
                     self._current_children_map[norm_dt] = frozenset(parent_children[cn.lower()])
 
-        def _unique_inline_component_name(base_name: str) -> str:
+        def _unique_inline_component_name(base_name: str, extra_reserved: Optional[set] = None) -> str:
             candidate = base_name
             i = 1
-            reserved = reserved_names or set()
+            reserved = set(reserved_names or set())
+            reserved.update(extra_reserved or set())
             registered_names = set(self.inline_component_fingerprints.values())
             while (candidate in reserved
                    or candidate in self.emitted_wrappers
@@ -5473,7 +5525,10 @@ class LegacyConverter:
                             if ex_sig and ex_sig != canon_ex:
                                 self._record_merge_provenance(existing, "example", ex_sig, ep_filename or "")
                     else:
-                        comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                        comp_name = _unique_inline_component_name(
+                            self._to_pascal_case(name),
+                            extra_reserved=set(self.global_schemas.keys()),
+                        )
                         array_items_ref_map[name_norm] = comp_name
                         array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
@@ -5482,7 +5537,10 @@ class LegacyConverter:
                         self.inline_component_example_sig[comp_name] = ex_sig
                         self._clone_schema_variant(dt, comp_name)
                 else:
-                    comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                    comp_name = _unique_inline_component_name(
+                        self._to_pascal_case(name),
+                        extra_reserved=set(self.global_schemas.keys()),
+                    )
                     array_items_ref_map[name_norm] = comp_name
                     array_key_map[key] = comp_name
                     self._clone_schema_variant(dt, comp_name)
@@ -5552,6 +5610,8 @@ class LegacyConverter:
             resolved_type = "string"
             schema_name = ""
             items_type = ""
+            row_min = ""
+            row_max = ""
             
             name_out = str(name).strip() if name is not None else ""
             low_dtype = _norm(dtype)
@@ -5599,33 +5659,32 @@ class LegacyConverter:
                 resolved_type = dt.type.lower()
                 schema_name = ""
                 if resolved_type == "array":
-                    # Named-DataType array with children: emit as $ref to the schema.
-                    # The schema (type=array with items.properties) is emitted separately
-                    # via named_array_key_map to avoid the double-array anti-pattern.
                     if key_emit in named_array_key_map:
-                        resolved_type = "schema"
-                        schema_name = named_array_key_map[key_emit]
-                        items_type = ""
-                        referenced_data_types.add(schema_name)
+                        resolved_type = "array"
+                        schema_name = ""
+                        items_type = named_array_key_map[key_emit]
+                        if dt:
+                            row_min = dt.min_val
+                            row_max = dt.max_val
                     elif name_norm in named_array_items_ref_map:
-                        resolved_type = "schema"
-                        schema_name = named_array_items_ref_map[name_norm]
-                        items_type = ""
-                        referenced_data_types.add(schema_name)
+                        resolved_type = "array"
+                        schema_name = ""
+                        items_type = named_array_items_ref_map[name_norm]
+                        if dt:
+                            row_min = dt.min_val
+                            row_max = dt.max_val
                     elif key_emit in array_key_map:
                         items_type = array_key_map[key_emit]
                     elif name_norm in array_items_ref_map:
                         items_type = array_items_ref_map[name_norm]
                     else:
-                        # Named-DataType array with no inline children in this
-                        # endpoint sheet: emit as $ref so constraints (minItems/
-                        # maxItems) from the DataType sheet are preserved.
-                        # The component schema is emitted via global_blocks.
                         if out_name and out_name.lower() not in ["array", "object"]:
-                            resolved_type = "schema"
-                            schema_name = out_name
-                            items_type = ""
+                            resolved_type = "array"
+                            schema_name = ""
+                            items_type = out_name
                             referenced_data_types.add(out_name)
+                            row_min = dt.min_val
+                            row_max = dt.max_val
                         else:
                             it_to_resolve = items_type_row
                             if not it_to_resolve:
@@ -5664,7 +5723,7 @@ class LegacyConverter:
             rows.append([
                 name_out, actual_parent, final_desc, resolved_type,
                 items_type, schema_name, "", mand_value,
-                "", "", "", "", "", "", "" # Col J-O: Min, Max, PatternEba, Regex, Allowed, Example
+                row_min, row_max, "", "", "", "", "" # Col J-O: Min, Max, PatternEba, Regex, Allowed, Example
             ])
 
         for (prop_low, prop_parent_low), comp_name in object_key_map.items():
@@ -5733,22 +5792,7 @@ class LegacyConverter:
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
 
-            # Determine the primitive items type of the named-array DataType so we
-            # can emit it correctly as  type=array, items=<primitive>.
-            dt_for_schema = self.global_schemas.get(comp_name)
-            items_primitive = "object"
-            if dt_for_schema and dt_for_schema.items_type:
-                items_primitive = self._recursive_resolve_items(
-                    dt_for_schema.items_type,
-                    dt_for_schema.source_file if dt_for_schema.source_file != "$global" else None,
-                )
-
-            # Emit root row as type=array (NOT object) so generator produces
-            # the correct  {type: array, items: {properties: ...}}  schema.
-            # Carry minItems/maxItems from the original DataType definition.
-            _na_min = dt_for_schema.min_val if dt_for_schema else ""
-            _na_max = dt_for_schema.max_val if dt_for_schema else ""
-            extra_schema_blocks.append([comp_name, "", "", "array", items_primitive, "", "", "", _na_min, _na_max, "", "", "", ""])
+            extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
             extra_schema_blocks.extend(nested_blocks)
 

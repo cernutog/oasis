@@ -4,6 +4,22 @@ import os
 import threading
 from .oas_diff.report_manager import OASDiffReportManager
 
+REPORT_TYPES = ("synthesis", "analytical", "impact", "compatibility")
+
+
+def normalize_selected_reports(value):
+    """Return a valid persisted report selection, defaulting to every report."""
+    if not isinstance(value, (list, tuple)):
+        return list(REPORT_TYPES)
+
+    selected = []
+    for item in value:
+        report_type = str(item)
+        if report_type in REPORT_TYPES and report_type not in selected:
+            selected.append(report_type)
+    return selected or list(REPORT_TYPES)
+
+
 class OASDiffDialog(ctk.CTkToplevel):
     def __init__(self, parent, prefs_manager=None):
         super().__init__(parent)
@@ -11,7 +27,7 @@ class OASDiffDialog(ctk.CTkToplevel):
         self.title("OAS Comparison - Contract Comparison")
         
         # Report paths state
-        self.report_paths = {"synthesis": None, "analytical": None, "impact": None}
+        self.report_paths = {report_type: None for report_type in REPORT_TYPES}
         
         # Match parent window size and position
         try:
@@ -54,6 +70,12 @@ class OASDiffDialog(ctk.CTkToplevel):
                 self.entry_new.insert(0, new_path)
             if out_dir and os.path.exists(out_dir):
                 self.entry_out.insert(0, out_dir)
+            
+            selected_reports = normalize_selected_reports(
+                self.prefs_manager.get("diff_selected_reports", list(REPORT_TYPES))
+            )
+            for report_type, var in self._report_vars().items():
+                var.set(report_type in selected_reports)
 
     def _build_ui(self):
         # Container
@@ -234,13 +256,32 @@ class OASDiffDialog(ctk.CTkToplevel):
     def _on_close(self):
         """Save settings and close window."""
         if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
-            self.prefs_manager.update({
+            prefs = {
                 "diff_old_spec": self.entry_old.get(),
                 "diff_new_spec": self.entry_new.get(),
                 "diff_output_dir": self.entry_out.get()
-            })
+            }
+            selected_reports = self._get_selected_reports()
+            if selected_reports:
+                prefs["diff_selected_reports"] = selected_reports
+            self.prefs_manager.update(prefs)
             self.prefs_manager.save()
         self.destroy()
+
+    def _report_vars(self):
+        return {
+            "synthesis": self.var_syn,
+            "analytical": self.var_ana,
+            "impact": self.var_imp,
+            "compatibility": self.var_com,
+        }
+
+    def _get_selected_reports(self):
+        return [
+            report_type
+            for report_type, var in self._report_vars().items()
+            if var.get()
+        ]
 
     def _log(self, msg):
         # 1. Local Log (No timestamp)
@@ -283,14 +324,21 @@ class OASDiffDialog(ctk.CTkToplevel):
         if not os.path.exists(old_p) or not os.path.exists(new_p):
             self._log("Error: Specification files not found.")
             return
+        
+        report_types = self._get_selected_reports()
+        if not report_types:
+            self._log("No report types selected. Comparison not started.")
+            return
 
         # Save paths to preferences
         if self.prefs_manager:
             self.prefs_manager.update({
                 "diff_old_spec": old_p,
                 "diff_new_spec": new_p,
-                "diff_output_dir": out_d
+                "diff_output_dir": out_d,
+                "diff_selected_reports": report_types
             })
+            self.prefs_manager.save()
 
         self.btn_run.configure(state="disabled")
         self.log_area.configure(state="normal")
@@ -305,27 +353,17 @@ class OASDiffDialog(ctk.CTkToplevel):
         self.btn_open_ana.pack_forget()
         self.btn_open_imp.pack_forget()
         self.btn_open_com.pack_forget()
-        self.report_paths = {"synthesis": None, "analytical": None, "impact": None, "compatibility": None}
+        self.report_paths = {report_type: None for report_type in REPORT_TYPES}
 
-        threading.Thread(target=self._run_diff, args=(old_p, new_p, out_d), daemon=True).start()
+        threading.Thread(target=self._run_diff, args=(old_p, new_p, out_d, report_types), daemon=True).start()
 
-    def _run_diff(self, old_p, new_p, out_d):
+    def _run_diff(self, old_p, new_p, out_d, report_types):
         try:
             self._log("Loading specifications...")
             manager = OASDiffReportManager(old_p, new_p, out_d, self.prefs_manager.get_all())
             
             self._log("Running comparison engine...")
             manager.run_comparison()
-            
-            report_types = []
-            if self.var_syn.get(): report_types.append('synthesis')
-            if self.var_ana.get(): report_types.append('analytical')
-            if self.var_imp.get(): report_types.append('impact')
-            if self.var_com.get(): report_types.append('compatibility')
-            
-            if not report_types:
-                self._log("No report types selected. Comparison finished.")
-                return
 
             self._log(f"Generating {len(report_types)} reports...")
             paths = manager.generate_reports(report_types)

@@ -98,13 +98,32 @@ class OASDiffReportManager:
             r1 = resolve_spec(self.spec1)
             r2 = resolve_spec(self.spec2)
             # Run Analyzer
-            analyzer = CompatibilityAnalyzer(r1, r2)
+            analyzer = CompatibilityAnalyzer(
+                r1,
+                r2,
+                show_enum_order_changes=self.preferences.get('diff_show_enum_order_changes', False),
+                show_validation_rule_only_description_changes=self.preferences.get(
+                    'diff_show_validation_rule_only_description_changes',
+                    True,
+                ),
+            )
             issues = analyzer.analyze()
             # Generate Report
             gen = CompatibilityDocxGenerator(
                 issues, self.old_path, self.new_path, 
                 template_path=self.preferences.get('diff_template_compatibility'),
-                spec1=self.spec1, spec2=self.spec2
+                spec1=self.spec1,
+                spec2=self.spec2,
+                report_filters={
+                    "show_enum_order_changes": self.preferences.get(
+                        'diff_show_enum_order_changes',
+                        False,
+                    ),
+                    "show_validation_rule_only_description_changes": self.preferences.get(
+                        'diff_show_validation_rule_only_description_changes',
+                        True,
+                    ),
+                },
             )
 
             gen.generate(path)
