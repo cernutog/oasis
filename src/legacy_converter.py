@@ -243,6 +243,9 @@ class LegacyConverter:
         self.used_names = set()
         self.fingerprints = {} # fingerprint -> out_name
         self.output_names = {} # (filename, original_name) -> out_name
+        self.source_schema_names = set() # normalized DataType names read from Excel
+        self.generated_collision_names = set() # output names created only to resolve collisions
+        self.generated_collision_families: Dict[str, str] = {} # generated output name -> source family
         
         # Double-pass state
         self.raw_data_types: Dict[str, Dict[str, DataType]] = {} # file_key -> {norm_name -> DataType}
@@ -537,6 +540,7 @@ class LegacyConverter:
                     continue
 
                 norm_name = self._to_pascal_case(name)
+                self.source_schema_names.add(norm_name)
                 dt = DataType(
                     name=norm_name,
                     type=self._clean_value(row.get(type_c, "string")),
@@ -765,7 +769,10 @@ class LegacyConverter:
         # 2. Name collision handling for new unique content
         output_name = norm_name
         counter = 1
-        while output_name in self.used_names:
+        while (
+            output_name in self.used_names
+            or (output_name != norm_name and output_name in self.source_schema_names)
+        ):
             output_name = f"{norm_name}{counter}"
             counter += 1
             
@@ -774,6 +781,9 @@ class LegacyConverter:
         self.used_names.add(output_name)
         self.fingerprints[fingerprint] = output_name
         self.output_names[mapping_key] = output_name
+        if output_name != norm_name:
+            self.generated_collision_names.add(output_name)
+            self.generated_collision_families[output_name] = norm_name
         return output_name
 
     def _is_valid_example_set(self, dt: Optional[DataType], example_text: Any) -> bool:
@@ -2569,6 +2579,8 @@ class LegacyConverter:
 
         # 1) Explicit split detection: base may already end with digits (Bic11 -> Bic111)
         for name in sorted_names:
+            if name in self.source_schema_names and name not in self.generated_collision_names:
+                continue
             found = _find_split_base(name, all_names_set)
             if not found:
                 continue
@@ -2583,6 +2595,8 @@ class LegacyConverter:
         stem_to_variants: Dict[str, List[Tuple[int, str]]] = {}
         for name in sorted_names:
             if name in variant_to_base:
+                continue
+            if name in self.source_schema_names and name not in self.generated_collision_names:
                 continue
             m = re.search(r'^(.*?)(\d+)$', str(name))
             if not m:
@@ -4531,6 +4545,11 @@ class LegacyConverter:
         names_in_blocks = [n for n, _r in all_blocks]
         stem_map: Dict[str, Dict[str, Any]] = {}
         for nm in names_in_blocks:
+            # Numeric suffixes in names read from Excel are part of the source
+            # name (e.g. Bic8, Bic11), not proof of a generated collision.
+            if nm in self.source_schema_names and nm not in self.generated_collision_names:
+                stem_map.setdefault(str(nm), {"base": True, "nums": []})
+                continue
             m = re.search(r"^(.*?)(\d+)$", str(nm))
             if not m:
                 stem_map.setdefault(str(nm), {"base": True, "nums": []})
@@ -4612,6 +4631,14 @@ class LegacyConverter:
                 self.output_names = {
                     key: rename_map.get(out_name, out_name)
                     for key, out_name in self.output_names.items()
+                }
+                self.generated_collision_names = {
+                    rename_map.get(name, name)
+                    for name in self.generated_collision_names
+                }
+                self.generated_collision_families = {
+                    rename_map.get(name, name): family
+                    for name, family in self.generated_collision_families.items()
                 }
                 self.fingerprints = {
                     fp: rename_map.get(out_name, out_name)

@@ -741,6 +741,97 @@ def test_legacy_converter_schema_compaction_renames_block_root_parent_edges():
     assert [row[5] for row in renamed[0][1][1:]] == ["SolutionPurposeId", "PryRcvgNetAd"]
 
 
+def test_legacy_converter_preserves_source_datatype_names_ending_with_digits():
+    temp_root = _clean_test_temp()
+    input_dir = temp_root / "legacy"
+    output_dir = temp_root / "converted"
+    input_dir.mkdir()
+    output_dir.mkdir()
+    endpoint_file = input_dir / "operation.xlsx"
+    output_index = output_dir / "$index.xlsx"
+
+    bic_regex = r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}"
+    bic11_regex = r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}([A-Z0-9]{3,3}){0,1}"
+    _create_workbook(
+        endpoint_file,
+        {
+            "Data Type": [
+                ["Name", "Description", "Type", "Min", "Max", "PatternEba", "Regex", "Example"],
+                ["Bic", "BIC8 or BIC11", "string", "8", "11", "4!c2!a2!c[3!c]", bic11_regex, "IPSDITM1"],
+                ["Bic8", "BIC8", "string", "8", "8", "4!c2!a2!c", bic_regex, "IPSDITM1"],
+                ["Bic11", "BIC11", "string", "8", "11", "4!c2!a2!c[3!c]", bic11_regex, "IPSDITM1XXX"],
+            ],
+            "Body": [
+                ["Type", "Parent", "Element", "Mandatory", "Description"],
+                ["object", "", "criteria", "M", "Criteria"],
+                ["Bic", "criteria", "bicCode", "M", "BIC code"],
+                ["Bic11", "criteria", "debAccoOwnBic", "O", "Debtor BIC"],
+            ],
+        },
+    )
+    _create_workbook(
+        output_index,
+        {
+            "Schemas": [["Name", "Parent", "Description", "Type", "Items Data Type", "Schema Name"]],
+        },
+    )
+
+    converter = LegacyConverter(str(input_dir), str(output_dir))
+    converter.ordered_filenames = [endpoint_file.name]
+    converter._collect_all_data_types()
+    converter._perform_naming_and_usage_pass()
+
+    workbook = load_workbook(output_index)
+    converter._convert_schemas(workbook)
+
+    rows = list(workbook["Schemas"].iter_rows(values_only=True))
+    deb_row = next(row for row in rows if row and row[0] == "debAccoOwnBic")
+    emitted_schema_names = {row[0] for row in rows if row and row[1] in ("", None)}
+
+    assert deb_row[5] == "Bic11"
+    assert "Bic11" in emitted_schema_names
+    assert "Bic1" not in emitted_schema_names
+
+
+def test_schema_tracer_does_not_compare_source_names_ending_with_digits_as_collisions():
+    logs = []
+    converter = LegacyConverter("in", "out", log_callback=logs.append)
+    converter.tracing_enabled = True
+    converter.source_schema_names.update({"Bic", "Bic8", "Bic11"})
+    converter.global_schemas["Bic"] = DataType(
+        name="Bic",
+        type="string",
+        min_val="8",
+        max_val="11",
+        regex=r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}([A-Z0-9]{3,3}){0,1}",
+    )
+    converter.global_schemas["Bic8"] = DataType(
+        name="Bic8",
+        type="string",
+        min_val="8",
+        max_val="8",
+        regex=r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}",
+    )
+    converter.global_schemas["Bic11"] = DataType(
+        name="Bic11",
+        type="string",
+        min_val="8",
+        max_val="11",
+        regex=r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}([A-Z0-9]{3,3}){0,1}",
+    )
+    converter.schema_usage["Bic"] = {"listA (Body)"}
+    converter.schema_usage["Bic8"] = {"listB (Body)"}
+    converter.schema_usage["Bic11"] = {"listC (Body)"}
+
+    converter._log_usage_summary()
+
+    rendered = "\n".join(logs)
+    assert "Bic8" in rendered
+    assert "Bic11" in rendered
+    assert "- Regex:" not in rendered
+    assert "- Max Length:" not in rendered
+
+
 def test_legacy_converter_literal_array_uses_distinct_item_component_when_named_array_exists():
     converter = LegacyConverter("in", "out")
     converter.global_schemas["AosId"] = DataType(
