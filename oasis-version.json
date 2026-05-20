@@ -1,5 +1,5 @@
 {
-  "version": "3.0.11",
+  "version": "3.0.12",
   "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
-  "release_notes": "Fixes numbered data type handling during legacy template conversion and preserves original data type names such as Bic11."
+  "release_notes": "Manifest for the next OASIS build. This entry is intended to verify the startup update notification before publishing the production executable."
 }
