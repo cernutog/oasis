@@ -2,7 +2,7 @@
   "releases": [
     {
       "version": "3.0.13",
-      "manifest_url": "https://cernutog.github.io/oasis/releases/v3.0.13.json"
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.13.json"
     }
   ]
 }
