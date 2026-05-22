@@ -8,7 +8,7 @@ from pathlib import Path
 # Standard relative imports for package structure
 from . import excel_parser as parser
 from .generator import OASGenerator
-from .preferences import DEFAULT_GENERATION_MODE, normalize_generation_mode
+from .preferences import DEFAULT_GENERATION_MODE, normalize_generation_mode, normalize_x_info_options
 
 
 INDEX_FILENAME = "$index.xlsx"
@@ -131,6 +131,7 @@ def generate_oas(
     gen_31=True,
     gen_swift=False,
     generation_mode=DEFAULT_GENERATION_MODE,
+    x_info_options=None,
     output_dir=None,
     log_callback=print,
 ):
@@ -150,6 +151,7 @@ def generate_oas(
         return
 
     generation_mode = normalize_generation_mode(generation_mode)
+    x_info_options = normalize_x_info_options(x_info_options)
     log_callback(f"Starting generation in: {base_dir}")
     log_callback(f"Generation mode: {generation_mode}")
 
@@ -325,7 +327,12 @@ def generate_oas(
     # 4. Generate OAS 3.0
     if gen_30:
         log_callback("Generating OAS 3.0...")
-        generator_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode, log_callback=log_callback)
+        generator_30 = OASGenerator(
+            version="3.0.0",
+            generation_mode=generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         generator_30.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_30._record_source("tags", "$index.xlsx", "Tags")
@@ -367,7 +374,12 @@ def generate_oas(
     # 5. Generate OAS 3.1
     if gen_31:
         log_callback("Generating OAS 3.1...")
-        generator_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode, log_callback=log_callback)
+        generator_31 = OASGenerator(
+            version="3.1.0",
+            generation_mode=generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         generator_31.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_31._record_source("tags", "$index.xlsx", "Tags")
@@ -400,7 +412,12 @@ def generate_oas(
     if gen_swift:
         # SWIFT OAS 3.0
         log_callback("Generating SWIFT OAS 3.0...")
-        sw_gen_30 = OASGenerator(version="3.0.0", generation_mode=generation_mode, log_callback=log_callback)
+        sw_gen_30 = OASGenerator(
+            version="3.0.0",
+            generation_mode=generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         sw_gen_30.build_info(clean_info)
         if tags_data:
             sw_gen_30.oas["tags"] = tags_data
@@ -438,7 +455,12 @@ def generate_oas(
 
         # SWIFT OAS 3.1
         log_callback("Generating SWIFT OAS 3.1...")
-        sw_gen_31 = OASGenerator(version="3.1.0", generation_mode=generation_mode, log_callback=log_callback)
+        sw_gen_31 = OASGenerator(
+            version="3.1.0",
+            generation_mode=generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         sw_gen_31.build_info(clean_info)
         if tags_data:
             sw_gen_31.oas["tags"] = tags_data

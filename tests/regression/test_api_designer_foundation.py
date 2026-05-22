@@ -24,10 +24,12 @@ from src.oas_output_archive import (
     list_existing_oas_files,
 )
 from src.preferences import (
+    DEFAULT_X_INFO_OPTIONS,
     GENERATION_MODE_MINIMAL,
     GENERATION_MODE_STANDARD,
     PreferencesManager,
 )
+from src.version import FULL_VERSION
 
 
 TEST_TEMP_ROOT = Path(__file__).resolve().parents[1] / "_tmp_api_designer_foundation"
@@ -429,6 +431,81 @@ def test_generation_mode_filters_request_body_examples():
         "x-keep": "visible",
         "content": {"examples": {"OK": {"value": {}}}},
     }
+
+
+def test_x_info_extensions_are_enabled_by_default():
+    defaults = PreferencesManager.DEFAULT_PREFERENCES
+
+    assert defaults["gen_x_info_creation_date"] is True
+    assert defaults["gen_x_info_release"] is True
+    assert defaults["gen_x_info_customization"] is True
+    assert defaults["gen_x_info_oasis_version"] is True
+    assert DEFAULT_X_INFO_OPTIONS == {
+        "creation_date": True,
+        "release": True,
+        "customization": True,
+        "oasis_version": True,
+    }
+
+
+def test_build_info_emits_selected_x_info_extensions():
+    generator = OASGenerator()
+
+    generator.build_info(
+        {
+            "version": "1.0.0",
+            "title": "Payments API",
+            "release": "v20261116",
+            "filename_pattern": "ignored.yaml",
+        }
+    )
+
+    info = generator.oas["info"]
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", info["x-info-creation-date"])
+    assert info["x-info-release"] == "v20261116"
+    assert info["x-info-oasis-version"] == FULL_VERSION
+    assert "release" not in info
+    assert "filename_pattern" not in info
+
+
+def test_build_info_can_disable_x_info_extensions_without_leaking_raw_metadata():
+    generator = OASGenerator(
+        x_info_options={
+            "creation_date": False,
+            "release": False,
+            "oasis_version": False,
+        }
+    )
+
+    generator.build_info(
+        {
+            "version": "1.0.0",
+            "title": "Payments API",
+            "release": "v20261116",
+            "filename_pattern": "ignored.yaml",
+        }
+    )
+
+    info = generator.oas["info"]
+    assert "x-info-creation-date" not in info
+    assert "x-info-release" not in info
+    assert "x-info-oasis-version" not in info
+    assert "release" not in info
+    assert "filename_pattern" not in info
+
+
+def test_swift_customization_x_info_can_be_disabled():
+    generator = OASGenerator(x_info_options={"customization": False})
+    generator.oas = {
+        "openapi": "3.0.0",
+        "info": {"title": "Payments API", "version": "1.0.0"},
+        "paths": {},
+        "components": {"schemas": {}, "responses": {}},
+    }
+
+    generator.apply_swift_customization()
+
+    assert "x-info-customization" not in generator.oas["info"]
 
 
 def test_generation_mode_filters_response_examples_and_optional_placeholders():

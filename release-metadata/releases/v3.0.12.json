@@ -1,12 +1,12 @@
 {
   "version": "3.0.12",
-  "date": "2026-05-20",
+  "date": "2026-05-22",
   "title": "OASIS 3.0.12",
   "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
   "announcement_url": "https://teams.microsoft.com/l/message/19:PoZTEyzxKIuYyz0qebO0A2EkbemwpVOdfUofQ_RnvyE1@thread.tacv2/1779129001804?tenantId=79dc228f-c8f2-4016-8bf0-b990b6c72e98&groupId=908f857d-18e4-434f-a46c-5fbfd537c24e&parentMessageId=1779129001804&teamName=OASIS%20(OAS%20Integration%20Suite)&channelName=Announcements&createdTime=1779129001804",
   "release_notes": [
-    "Fixed numeric data type conversion so names such as Bic11 are no longer treated as split variants.",
-    "Added startup update notifications with hidden service URLs.",
-    "Added What's New release details for users updating from older versions."
+    "Added x-info-oasis-version to generated OAS files so the originating OASIS build can be traced.",
+    "Added OAS Generation preferences to enable or disable x-info-creation-date, x-info-release, x-info-customization, and x-info-oasis-version independently.",
+    "Kept OAS generation metadata controlled by preferences without changing Excel-derived API data."
   ]
 }

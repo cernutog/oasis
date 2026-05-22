@@ -17,6 +17,79 @@ GENERATION_MODES = (
     GENERATION_MODE_API_PORTAL_READY,
 )
 DEFAULT_GENERATION_MODE = GENERATION_MODE_API_PORTAL_READY
+LEGACY_GITHUB_PAGES_UPDATE_MANIFEST_URL = "https://cernutog.github.io/oasis/oasis-version.json"
+DEFAULT_UPDATE_MANIFEST_URL = "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/oasis-version.json"
+X_INFO_EXTENSION_OPTION_KEYS = {
+    "creation_date": "gen_x_info_creation_date",
+    "release": "gen_x_info_release",
+    "customization": "gen_x_info_customization",
+    "oasis_version": "gen_x_info_oasis_version",
+}
+DEFAULT_X_INFO_OPTIONS = {name: True for name in X_INFO_EXTENSION_OPTION_KEYS}
+
+
+def normalize_update_manifest_url(value) -> str:
+    text = str(value or "").strip()
+    if text == LEGACY_GITHUB_PAGES_UPDATE_MANIFEST_URL:
+        return DEFAULT_UPDATE_MANIFEST_URL
+    return text
+
+
+def migrate_saved_preferences(saved: dict) -> dict:
+    migrated = dict(saved)
+
+    # Migration Logic: template_directory -> excel_input_folder
+    if "template_directory" in migrated and not migrated.get("excel_input_folder"):
+        migrated["excel_input_folder"] = migrated["template_directory"]
+
+    if "update_manifest_url" in migrated:
+        migrated["update_manifest_url"] = normalize_update_manifest_url(migrated.get("update_manifest_url"))
+
+    return migrated
+
+
+def validate_preference_value(key: str, value):
+    if key not in PreferencesManager.DEFAULT_PREFERENCES:
+        return False, value, "unknown preference"
+
+    default = PreferencesManager.DEFAULT_PREFERENCES[key]
+    if key == "generation_mode":
+        text = str(value or "").strip()
+        for mode in GENERATION_MODES:
+            if text.lower() == mode.lower():
+                return True, mode, ""
+        return False, value, "expected supported generation mode"
+    if key == "update_manifest_url":
+        return True, normalize_update_manifest_url(value), ""
+
+    if default is None:
+        if value is None or isinstance(value, str):
+            return True, value, ""
+        return False, value, "expected null or string"
+    if isinstance(default, bool):
+        if isinstance(value, bool):
+            return True, value, ""
+        return False, value, "expected boolean"
+    if isinstance(default, int):
+        if isinstance(value, int) and not isinstance(value, bool):
+            return True, value, ""
+        return False, value, "expected integer"
+    if isinstance(default, str):
+        if isinstance(value, str):
+            return True, value, ""
+        return False, value, "expected string"
+    if isinstance(default, list):
+        if isinstance(value, list):
+            return True, value, ""
+        return False, value, "expected list"
+    if isinstance(default, dict):
+        if isinstance(value, dict):
+            return True, value, ""
+        return False, value, "expected object"
+
+    if isinstance(value, type(default)):
+        return True, value, ""
+    return False, value, f"expected {type(default).__name__}"
 
 
 def normalize_generation_mode(value) -> str:
@@ -26,6 +99,24 @@ def normalize_generation_mode(value) -> str:
         if text.lower() == mode.lower():
             return mode
     return DEFAULT_GENERATION_MODE
+
+
+def normalize_x_info_options(value=None) -> dict:
+    """Return supported x-info extension flags with defaults for missing values."""
+    options = dict(DEFAULT_X_INFO_OPTIONS)
+    if isinstance(value, dict):
+        for name in options:
+            if name in value:
+                options[name] = bool(value[name])
+    return options
+
+
+def x_info_options_from_preferences(preferences: dict) -> dict:
+    """Build generator x-info options from persisted preference keys."""
+    return {
+        name: bool(preferences.get(pref_key, True))
+        for name, pref_key in X_INFO_EXTENSION_OPTION_KEYS.items()
+    }
 
 
 class PreferencesManager:
@@ -53,6 +144,10 @@ class PreferencesManager:
         "gen_oas_31": True,
         "gen_oas_swift": False,
         "generation_mode": DEFAULT_GENERATION_MODE,
+        "gen_x_info_creation_date": True,
+        "gen_x_info_release": True,
+        "gen_x_info_customization": True,
+        "gen_x_info_oasis_version": True,
         "excel_gen_attr_diff": True,
         "excel_gen_line_diff": False,
         # File Display
@@ -71,6 +166,9 @@ class PreferencesManager:
         # Interface
         "default_tab": "OAS Generation",  # OAS Generation, Validation, View, Designer when enabled
         "enable_api_designer": False,
+        "update_check_enabled": True,
+        "update_manifest_url": DEFAULT_UPDATE_MANIFEST_URL,
+        "update_download_url": "",
         "linter_engine": "spectral",  # spectral or vacuum
         "ignore_bad_request": True,
         "validation_font_size": 11,
@@ -155,9 +253,7 @@ class PreferencesManager:
                 with open(self._config_path, "r", encoding="utf-8") as f:
                     saved = json.load(f)
                     
-                    # Migration Logic: template_directory -> excel_input_folder
-                    if "template_directory" in saved and not saved.get("excel_input_folder"):
-                         saved["excel_input_folder"] = saved["template_directory"]
+                    saved = migrate_saved_preferences(saved)
                     
                     # Merge with defaults (load all saved keys)
                     for key, value in saved.items():
@@ -203,3 +299,23 @@ class PreferencesManager:
         """Update multiple preferences at once."""
         for key, value in new_prefs.items():
             self.preferences[key] = value
+
+    def apply_overrides(self, overrides: dict) -> tuple[list[str], list[tuple[str, str]]]:
+        """Apply validated manifest-driven preference overrides."""
+        applied = []
+        skipped = []
+        if not isinstance(overrides, dict):
+            return applied, [("<manifest>", "preferences_override must be an object")]
+
+        for key, value in overrides.items():
+            valid, normalized, reason = validate_preference_value(key, value)
+            if not valid:
+                skipped.append((str(key), reason))
+                continue
+            if self.preferences.get(key) != normalized:
+                self.preferences[key] = normalized
+                applied.append(key)
+
+        if applied:
+            self.save()
+        return applied, skipped

@@ -1,6 +1,7 @@
 import webbrowser
 import shutil
 import difflib
+import subprocess
 try:
     import win32com.client
     HAS_COM = True
@@ -16,6 +17,8 @@ import os
 import sys
 import json
 import tempfile
+import queue
+from urllib.parse import parse_qs, urlparse
 
 # Conditional imports to support both development and PyInstaller frozen environments
 try:
@@ -24,10 +27,17 @@ try:
     from .linter import SpectralRunner
     from .charts import SemanticPieChart
     from .redoc_gen import RedocGenerator
-    from .preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
+    from .preferences import (
+        DEFAULT_GENERATION_MODE,
+        GENERATION_MODES,
+        PreferencesManager,
+        normalize_generation_mode,
+        x_info_options_from_preferences,
+    )
     from .preferences_dialog import PreferencesDialog
     from .doc_viewer import DockedDocViewer, get_window_visible_bounds, set_window_visible_bounds
     from .version import VERSION, FULL_VERSION
+    from .update_checker import check_for_update, load_update_release_index
     from .splash_screen import SplashScreen
     from .oas_importer.oas_converter import OASToExcelConverter
     from .oas_importer.oas_comparator import OASComparator
@@ -51,10 +61,17 @@ except ImportError:
     from linter import SpectralRunner
     from charts import SemanticPieChart
     from redoc_gen import RedocGenerator
-    from preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
+    from preferences import (
+        DEFAULT_GENERATION_MODE,
+        GENERATION_MODES,
+        PreferencesManager,
+        normalize_generation_mode,
+        x_info_options_from_preferences,
+    )
     from preferences_dialog import PreferencesDialog
     from doc_viewer import DockedDocViewer, get_window_visible_bounds, set_window_visible_bounds
     from version import VERSION, FULL_VERSION
+    from update_checker import check_for_update, load_update_release_index
     from splash_screen import SplashScreen
     from oas_importer.oas_converter import OASToExcelConverter
     from oas_importer.oas_comparator import OASComparator
@@ -75,6 +92,86 @@ except ImportError:
 
 from chlorophyll import CodeView
 import pygments.lexers
+
+
+def _clamped_center_geometry(
+    dialog_width,
+    dialog_height,
+    parent_x,
+    parent_y,
+    parent_width,
+    parent_height,
+    screen_width,
+    screen_height,
+):
+    if parent_width <= 1 or parent_height <= 1:
+        x = (screen_width // 2) - (dialog_width // 2)
+        y = (screen_height // 2) - (dialog_height // 2)
+    else:
+        x = parent_x + (parent_width // 2) - (dialog_width // 2)
+        y = parent_y + (parent_height // 2) - (dialog_height // 2)
+    max_x = max(screen_width - dialog_width, 0)
+    max_y = max(screen_height - dialog_height, 0)
+    x = min(max(int(x), 0), max_x)
+    y = min(max(int(y), 0), max_y)
+    return f"{dialog_width}x{dialog_height}+{x}+{y}"
+
+
+def _browser_safe_external_url(url):
+    """Prefer embedded web URLs when external links use app-specific protocols."""
+    text = str(url or "").strip()
+    parsed = urlparse(text)
+    if parsed.scheme.lower() == "msteams":
+        params = parse_qs(parsed.query)
+        for key in ("webUrl", "url"):
+            values = params.get(key)
+            if values:
+                candidate = str(values[0] or "").strip()
+                if candidate.startswith(("https://", "http://")):
+                    return candidate
+    return text
+
+
+def _windows_browser_executables():
+    """Return installed browser executables that bypass Windows protocol associations."""
+    candidates = []
+    for env_name, relative_path in (
+        ("ProgramFiles", os.path.join("Microsoft", "Edge", "Application", "msedge.exe")),
+        ("ProgramFiles(x86)", os.path.join("Microsoft", "Edge", "Application", "msedge.exe")),
+        ("ProgramFiles", os.path.join("Google", "Chrome", "Application", "chrome.exe")),
+        ("ProgramFiles(x86)", os.path.join("Google", "Chrome", "Application", "chrome.exe")),
+    ):
+        base_path = os.environ.get(env_name)
+        if base_path:
+            candidates.append(os.path.join(base_path, relative_path))
+    for executable_name in ("msedge", "chrome", "chromium"):
+        executable_path = shutil.which(executable_name)
+        if executable_path:
+            candidates.append(executable_path)
+
+    seen = set()
+    existing = []
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.abspath(candidate))
+        if normalized in seen or not os.path.exists(candidate):
+            continue
+        seen.add(normalized)
+        existing.append(candidate)
+    return existing
+
+
+def _open_announcement_url(url):
+    """Open announcement links in a browser, avoiding Teams desktop protocol capture."""
+    safe_url = _browser_safe_external_url(url)
+    if sys.platform.startswith("win") and safe_url.startswith(("https://", "http://")):
+        for browser_path in _windows_browser_executables():
+            try:
+                subprocess.Popen([browser_path, safe_url])
+                return
+            except OSError:
+                continue
+    webbrowser.open_new_tab(safe_url)
+
 
 # Set Theme
 # Set Theme - HANDLED IN MAIN.PY
@@ -375,6 +472,273 @@ class OASOutputFolderDialog(ctk.CTkToplevel):
     def _open_folder(self):
         if self.folder_path and os.path.exists(self.folder_path):
             os.startfile(self.folder_path)
+
+
+class OASWhatsNewDialog(ctk.CTkToplevel):
+    def __init__(self, parent, releases, on_close=None):
+        super().__init__(parent)
+        self._on_close_callback = on_close
+        self.title("What's New in OASIS")
+        self.resizable(True, True)
+        self.withdraw()
+
+        self.transient(parent)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.after(200, self._set_icon)
+        self._build_ui(releases)
+        self._show_centered(parent)
+
+    def _show_centered(self, parent):
+        try:
+            parent.update_idletasks()
+            self.update_idletasks()
+            geometry = _clamped_center_geometry(
+                dialog_width=max(self.winfo_reqwidth(), 620),
+                dialog_height=max(self.winfo_reqheight(), 430),
+                parent_x=parent.winfo_rootx(),
+                parent_y=parent.winfo_rooty(),
+                parent_width=parent.winfo_width(),
+                parent_height=parent.winfo_height(),
+                screen_width=self.winfo_screenwidth(),
+                screen_height=self.winfo_screenheight(),
+            )
+            self.geometry(geometry)
+        except Exception:
+            self.geometry("620x430")
+        self.deiconify()
+        self.update_idletasks()
+        self.grab_set()
+        self.focus_set()
+
+    def _close(self):
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        try:
+            callback = self._on_close_callback
+        except Exception:
+            callback = None
+        self.destroy()
+        if callback:
+            callback()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self, releases):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=22, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text="What's new",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        scroll = ctk.CTkScrollableFrame(container, fg_color="#F5F5F5")
+        scroll.pack(fill="both", expand=True, pady=(14, 14))
+
+        for release in reversed(releases):
+            header = release.version
+            if release.date:
+                header = f"{header} - {release.date}"
+            if release.title:
+                header = f"{header} - {release.title}"
+
+            ctk.CTkLabel(
+                scroll,
+                text=header,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#0A809E",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=(8, 2))
+
+            notes = release.release_notes or "No release notes available."
+            ctk.CTkLabel(
+                scroll,
+                text=notes,
+                font=ctk.CTkFont(size=12),
+                justify="left",
+                anchor="w",
+                wraplength=540,
+            ).pack(fill="x", padx=8, pady=(0, 10))
+
+        ctk.CTkButton(
+            container,
+            text="Close",
+            width=110,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._close,
+        ).pack(side="right")
+
+
+class OASUpdateAvailableDialog(ctk.CTkToplevel):
+    def __init__(
+        self,
+        parent,
+        current_version,
+        latest_version,
+        download_url,
+        release_notes,
+        announcement_url="",
+        whats_new_callback=None,
+    ):
+        super().__init__(parent)
+        self.download_url = download_url
+        self.announcement_url = announcement_url
+        self.whats_new_callback = whats_new_callback
+        self.title("OASIS Update Available")
+        self.resizable(False, False)
+        self.withdraw()
+
+        self.transient(parent)
+        self.after(200, self._set_icon)
+        self._build_ui(current_version, latest_version, release_notes)
+        self._show_centered(parent)
+
+    def _show_centered(self, parent):
+        try:
+            parent.update_idletasks()
+            self.update_idletasks()
+            width = max(self.winfo_reqwidth(), self.winfo_width(), 520)
+            height = max(self.winfo_reqheight(), self.winfo_height(), 280)
+            geometry = _clamped_center_geometry(
+                dialog_width=width,
+                dialog_height=height,
+                parent_x=parent.winfo_rootx(),
+                parent_y=parent.winfo_rooty(),
+                parent_width=parent.winfo_width(),
+                parent_height=parent.winfo_height(),
+                screen_width=self.winfo_screenwidth(),
+                screen_height=self.winfo_screenheight(),
+            )
+            self.geometry(geometry)
+            self.deiconify()
+            self.update_idletasks()
+            self.lift(parent)
+            self.grab_set()
+            self.focus_set()
+        except Exception:
+            self.geometry(
+                _clamped_center_geometry(
+                    dialog_width=520,
+                    dialog_height=280,
+                    parent_x=0,
+                    parent_y=0,
+                    parent_width=1,
+                    parent_height=1,
+                    screen_width=self.winfo_screenwidth(),
+                    screen_height=self.winfo_screenheight(),
+                )
+            )
+            self.deiconify()
+            self.update_idletasks()
+            self.lift()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self, current_version, latest_version, release_notes):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=22, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text="A new OASIS version is available",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        ctk.CTkLabel(
+            container,
+            text=f"Current version: {current_version}\nAvailable version: {latest_version}",
+            font=ctk.CTkFont(size=13),
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(14, 8))
+
+        if self.whats_new_callback:
+            notes = "Open the download page to get the latest executable. Use What's New to review release details."
+        else:
+            notes = release_notes.strip() if release_notes else "Open the download page to get the latest executable."
+        ctk.CTkLabel(
+            container,
+            text=notes,
+            font=ctk.CTkFont(size=12),
+            wraplength=470,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 18))
+
+        buttons = ctk.CTkFrame(container, fg_color="transparent")
+        buttons.pack(fill="x", side="bottom")
+
+        ctk.CTkButton(
+            buttons,
+            text="Later",
+            width=110,
+            fg_color="#6C757D",
+            hover_color="#5A6268",
+            command=self.destroy,
+        ).pack(side="right", padx=(10, 0))
+
+        ctk.CTkButton(
+            buttons,
+            text="Open Download Page",
+            width=170,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            state="normal" if self.download_url else "disabled",
+            command=self._open_download_page,
+        ).pack(side="right")
+
+        if self.announcement_url:
+            ctk.CTkButton(
+                buttons,
+                text="Open Announcement",
+                width=160,
+                fg_color="#0A809E",
+                hover_color="#076075",
+                command=self._open_announcement,
+            ).pack(side="right", padx=(0, 10))
+
+        if self.whats_new_callback:
+            ctk.CTkButton(
+                buttons,
+                text="What's New",
+                width=120,
+                fg_color="#0A809E",
+                hover_color="#076075",
+                command=self._open_whats_new,
+            ).pack(side="right", padx=(0, 10))
+
+    def _open_download_page(self):
+        if self.download_url:
+            webbrowser.open_new_tab(self.download_url)
+        self.destroy()
+
+    def _open_announcement(self):
+        if self.announcement_url:
+            _open_announcement_url(self.announcement_url)
+
+    def _open_whats_new(self):
+        if self.whats_new_callback:
+            self.whats_new_callback(self)
 
 import customtkinter as ctk
 from customtkinter import ThemeManager  # REQUIRED FOR DIRECT OVERRIDE
@@ -1189,8 +1553,10 @@ class OASGenApp(ctk.CTk):
         # self.val_log_print("Ready.") # Removed - handled by [Init] log
         self.log_visible = False
         
-        # Load file lists on startup (after widgets are ready)
-        self.after(200, self._load_files_on_startup)
+        # Startup tasks run only after the main window is mapped and stable.
+        self._startup_tasks_started = False
+        self._startup_ready_bind_id = None
+        self.after_idle(self._run_startup_tasks_when_ready)
 
 
 
@@ -1236,6 +1602,8 @@ class OASGenApp(ctk.CTk):
 
         # Help Menu
         help_menu = self._create_styled_menu(menubar)
+        help_menu.add_command(label="Check for Updates", command=self.check_for_updates)
+        help_menu.add_separator()
         help_menu.add_command(label="User Guide", command=self.open_user_guide)
         help_menu.add_command(label="About", command=self.show_about_dialog)
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -1357,6 +1725,44 @@ class OASGenApp(ctk.CTk):
             self._on_tab_change()
         except Exception:
             pass
+
+    def _run_startup_tasks_when_ready(self, event=None):
+        """Start deferred startup work after the root window is mapped."""
+        if getattr(self, "_startup_tasks_started", False):
+            return
+        if event is not None and getattr(event, "widget", self) is not self:
+            return
+
+        try:
+            self.update_idletasks()
+            window_ready = (
+                self.winfo_viewable()
+                and self.winfo_width() > 1
+                and self.winfo_height() > 1
+            )
+        except tk.TclError as exc:
+            self.log_app(f"[Init] Could not check startup window readiness: {exc}")
+            return
+
+        if not window_ready:
+            if getattr(self, "_startup_ready_bind_id", None) is None:
+                self._startup_ready_bind_id = self.bind(
+                    "<Visibility>",
+                    self._run_startup_tasks_when_ready,
+                    add="+",
+                )
+            return
+
+        bind_id = getattr(self, "_startup_ready_bind_id", None)
+        if bind_id is not None:
+            try:
+                self.unbind("<Visibility>", bind_id)
+            except Exception:
+                pass
+            self._startup_ready_bind_id = None
+
+        self._startup_tasks_started = True
+        self.after_idle(self._load_files_on_startup)
         
     def _load_files_on_startup(self):
         """Load file lists in Validation and View tabs on startup."""
@@ -1369,10 +1775,199 @@ class OASGenApp(ctk.CTk):
             # Benign info log, don't scare the user
             self.log_app(f"[Init] Default output folder not found (will be created on first generation): {oas_dir}")
         
-        # Apply all preferences (themes, fonts, etc.) on startup
-        self._apply_preferences(self.prefs_manager.get_all())
+        # Apply all preferences (themes, fonts, etc.) on startup.
+        # Preference UI issues must not block startup services such as update checks.
+        try:
+            self._apply_preferences(self.prefs_manager.get_all())
+        except Exception as exc:
+            self.log_app(f"[Init] Could not apply preferences: {exc}")
         self._apply_default_tab()
+        try:
+            self.after_idle(self._schedule_startup_update_check)
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not schedule startup update check: {exc}")
 
+    def check_for_updates(self):
+        self._schedule_startup_update_check(manual=True)
+
+    def _schedule_startup_update_check(self, manual=False):
+        prefs = self.prefs_manager.get_all()
+        if not manual and not prefs.get("update_check_enabled", True):
+            return
+
+        manifest_url = str(prefs.get("update_manifest_url", "") or "").strip()
+        if not manifest_url:
+            if manual:
+                tkinter.messagebox.showinfo(
+                    "OASIS Updates",
+                    "Update manifest URL is not configured.",
+                )
+            return
+
+        fallback_download_url = str(prefs.get("update_download_url", "") or "").strip()
+        self.log_app(f"[Updates] Checking manifest: {manifest_url}")
+        result_queue = queue.Queue(maxsize=1)
+
+        def worker():
+            result = check_for_update(manifest_url, FULL_VERSION, timeout=5.0)
+            result_queue.put(result)
+
+        threading.Thread(target=worker, daemon=True).start()
+        try:
+            self.after(
+                100,
+                lambda: self._drain_update_check_queue(
+                    result_queue,
+                    fallback_download_url,
+                    manifest_url,
+                    manual=manual,
+                ),
+            )
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not schedule update result polling: {exc}")
+
+    def _drain_update_check_queue(self, result_queue, fallback_download_url, manifest_url, manual=False):
+        try:
+            result = result_queue.get_nowait()
+        except queue.Empty:
+            try:
+                self.after(
+                    100,
+                    lambda: self._drain_update_check_queue(
+                        result_queue,
+                        fallback_download_url,
+                        manifest_url,
+                        manual=manual,
+                    ),
+                )
+            except Exception as exc:
+                self.log_app(f"[Updates] Could not schedule update result polling: {exc}")
+            return
+
+        self._handle_update_check_result(result, fallback_download_url, manifest_url, manual=manual)
+
+    def _handle_update_check_result(self, result, fallback_download_url, manifest_url, manual=False):
+        if result.error:
+            self.log_app(f"[Updates] Could not check for updates: {result.error}")
+            if manual:
+                tkinter.messagebox.showerror(
+                    "OASIS Updates",
+                    f"Could not check for updates:\n{result.error}",
+                )
+            return
+
+        self._apply_manifest_preference_overrides(result.preferences_override)
+
+        if not result.update_available:
+            self.log_app("[Updates] No update available.")
+            if manual:
+                tkinter.messagebox.showinfo(
+                    "OASIS Updates",
+                    "OASIS is up to date.",
+                )
+            return
+
+        download_url = result.download_url or fallback_download_url or manifest_url
+        self.log_app(f"[Updates] Update available: {result.latest_version}")
+        has_whats_new = bool(result.release_index_url or result.release_manifest_url)
+        try:
+            OASUpdateAvailableDialog(
+                self,
+                current_version=FULL_VERSION,
+                latest_version=result.latest_version,
+                download_url=download_url,
+                release_notes=result.release_notes,
+                announcement_url=result.announcement_url,
+                whats_new_callback=(lambda owner: self._show_update_whats_new(owner, result)) if has_whats_new else None,
+            )
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not show update dialog: {exc}")
+
+    def _show_update_whats_new(self, owner, result):
+        if not (result.release_index_url or result.release_manifest_url):
+            return
+        try:
+            if not owner.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        self.log_app("[Updates] Loading release index...")
+        result_queue = queue.Queue(maxsize=1)
+
+        def worker():
+            try:
+                releases = load_update_release_index(
+                    release_index_url=result.release_index_url,
+                    release_manifest_url=result.release_manifest_url,
+                    current_version=FULL_VERSION,
+                    latest_version=result.latest_version,
+                    timeout=5.0,
+                )
+                result_queue.put((releases, ""))
+            except Exception as exc:
+                result_queue.put(([], str(exc)))
+
+        threading.Thread(target=worker, daemon=True).start()
+        try:
+            self.after(100, lambda: self._drain_whats_new_queue(owner, result_queue))
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not schedule release history polling: {exc}")
+
+    def _drain_whats_new_queue(self, owner, result_queue):
+        try:
+            if not owner.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        try:
+            releases, error = result_queue.get_nowait()
+        except queue.Empty:
+            try:
+                self.after(100, lambda: self._drain_whats_new_queue(owner, result_queue))
+            except Exception as exc:
+                self.log_app(f"[Updates] Could not schedule release history polling: {exc}")
+            return
+
+        if error:
+            self.log_app(f"[Updates] Could not load release index: {error}")
+            return
+        if not releases:
+            self.log_app("[Updates] No release index details available.")
+            return
+
+        def restore_update_dialog_grab():
+            try:
+                if owner.winfo_exists():
+                    owner.grab_set()
+                    owner.focus_set()
+            except tk.TclError:
+                pass
+
+        try:
+            try:
+                owner.grab_release()
+            except tk.TclError:
+                pass
+            OASWhatsNewDialog(owner, releases, on_close=restore_update_dialog_grab)
+        except Exception as exc:
+            restore_update_dialog_grab()
+            self.log_app(f"[Updates] Could not show release history: {exc}")
+
+    def _apply_manifest_preference_overrides(self, overrides):
+        if not overrides:
+            return
+        try:
+            applied, skipped = self.prefs_manager.apply_overrides(overrides)
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not apply preference overrides: {exc}")
+            return
+
+        for key in applied:
+            self.log_app(f"[Updates] Preference override applied: {key}")
+        for key, reason in skipped:
+            self.log_app(f"[Updates] Preference override skipped: {key} ({reason})")
 
     def _load_custom_theme(self, theme_name):
         """Load a custom TOML theme file and return as dict."""
@@ -1828,8 +2423,7 @@ class OASGenApp(ctk.CTk):
 
         if "app_log_theme" in new_prefs:
             theme = new_prefs["app_log_theme"]
-            if self.log_window:
-                self.log_window.apply_theme(theme)
+            self._apply_log_window_theme(theme)
 
         if "import_log_theme" in new_prefs:
             theme = new_prefs["import_log_theme"]
@@ -1874,6 +2468,19 @@ class OASGenApp(ctk.CTk):
         self.update_file_list()
 
         # [Init] Application Ready moved to _load_files_on_startup to ensure it's last
+
+    def _apply_log_window_theme(self, theme):
+        """Apply the app log theme only when the detached log window is still alive."""
+        log_window = getattr(self, "log_window", None)
+        if log_window is None:
+            return
+        try:
+            if not log_window.winfo_exists():
+                self.log_window = None
+                return
+            log_window.apply_theme(theme)
+        except tk.TclError:
+            self.log_window = None
 
     def toggle_log(self):
         if self.log_visible:
@@ -2084,6 +2691,7 @@ class OASGenApp(ctk.CTk):
         gen_swift = self.var_swift.get()
         generation_mode = normalize_generation_mode(self.var_generation_mode.get())
         self._on_generation_mode_changed(generation_mode)
+        x_info_options = x_info_options_from_preferences(self.prefs_manager.get_all())
 
         if not base_dir:
             self.log_gen("ERROR: Please select a directory.")
@@ -2103,7 +2711,8 @@ class OASGenApp(ctk.CTk):
         self.log_gen("Starting generation process...")
 
         t = threading.Thread(
-            target=self.run_process, args=(base_dir, gen_30, gen_31, gen_swift, generation_mode)
+            target=self.run_process,
+            args=(base_dir, gen_30, gen_31, gen_swift, generation_mode, x_info_options),
         )
         t.start()
 
@@ -2180,7 +2789,7 @@ class OASGenApp(ctk.CTk):
 
         return filter_previous_oas_files(existing_files, expected_filenames)
 
-    def run_process(self, base_dir, gen_30, gen_31, gen_swift, generation_mode=None):
+    def run_process(self, base_dir, gen_30, gen_31, gen_swift, generation_mode=None, x_info_options=None):
         try:
             self.last_generated_files = []
             output_dir = self.entry_oas_folder.get()  # Get OAS output folder
@@ -2199,6 +2808,7 @@ class OASGenApp(ctk.CTk):
                 gen_31=gen_31,
                 gen_swift=gen_swift,
                 generation_mode=generation_mode,
+                x_info_options=x_info_options,
                 output_dir=output_dir,
                 log_callback=gui_logger,
             )

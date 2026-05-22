@@ -42,14 +42,23 @@ from src.preferences import (
     GENERATION_MODE_MINIMAL,
     GENERATION_MODE_STANDARD,
     normalize_generation_mode,
+    normalize_x_info_options,
 )
+from src.version import FULL_VERSION
 
 
 class OASGenerator:
-    def __init__(self, version="3.0.0", generation_mode=DEFAULT_GENERATION_MODE, log_callback=None):
+    def __init__(
+        self,
+        version="3.0.0",
+        generation_mode=DEFAULT_GENERATION_MODE,
+        log_callback=None,
+        x_info_options=None,
+    ):
         self.version = version
         self.generation_mode = normalize_generation_mode(generation_mode)
         self.log_callback = log_callback
+        self.x_info_options = normalize_x_info_options(x_info_options)
         self._schema_parent_diagnostics = set()
         self._schema_parent_issues = []
         self.oas = {
@@ -257,13 +266,15 @@ class OASGenerator:
         for k in ["version", "title", "description", "contact"]:
             data_copy.pop(k, None)
             
-        # Inject Creation Date (YYYY-MM-DD)
-        ordered_info["x-info-creation-date"] = datetime.now().strftime("%Y-%m-%d")
+        if self.x_info_options["creation_date"]:
+            ordered_info["x-info-creation-date"] = datetime.now().strftime("%Y-%m-%d")
         
-        # Move 'release' to 'x-info-release' if present
-        if "release" in data_copy:
-            ordered_info["x-info-release"] = data_copy["release"]
-            del data_copy["release"]
+        release = data_copy.pop("release", None)
+        if self.x_info_options["release"] and release is not None:
+            ordered_info["x-info-release"] = release
+
+        if self.x_info_options["oasis_version"]:
+            ordered_info["x-info-oasis-version"] = FULL_VERSION
             
         # Clean up internal fields if present
         if "filename_pattern" in data_copy:
@@ -1820,7 +1831,11 @@ class OASGenerator:
         
         :param source_filename: Optional filename of the base OAS file to reference in description.
         """
-        _apply_swift_customization(self.oas, source_filename)
+        _apply_swift_customization(
+            self.oas,
+            source_filename,
+            include_x_info_customization=self.x_info_options["customization"],
+        )
 
     def _cleanup_unused_inlined_components(self):
         """

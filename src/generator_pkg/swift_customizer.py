@@ -7,7 +7,11 @@ Contains functions to apply SWIFT-specific customizations to OpenAPI specificati
 import copy
 
 
-def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
+def apply_swift_customization(
+    oas: dict,
+    source_filename: str = None,
+    include_x_info_customization: bool = True,
+) -> None:
     """
     Applies SWIFT-specific customizations (Hardcoded as per exception).
     
@@ -18,7 +22,8 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
     if "info" not in oas:
         oas["info"] = {}
     
-    oas["info"]["x-info-customization"] = "SWIFT"
+    if include_x_info_customization:
+        oas["info"]["x-info-customization"] = "SWIFT"
     
     # If source_filename was passed, we might want to log it or ignore it based on request.
     # User specifically asked to REMOVE "Based on <filename>".

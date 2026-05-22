@@ -234,6 +234,16 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_enable_designer.grid(row=4, column=0, columnspan=2, sticky="w", padx=10, pady=10)
 
+        self.var_update_check = ctk.BooleanVar(value=True)
+        self.chk_update_check = ctk.CTkSwitch(
+            self.tab_gen,
+            text="Check for updates at startup",
+            variable=self.var_update_check,
+            progress_color="#0A809E",
+        )
+        self.chk_update_check.grid(row=5, column=0, columnspan=2, sticky="w", padx=10, pady=(22, 10))
+        self.tab_gen.grid_columnconfigure(1, weight=1)
+
 
         # === 2. OAS GENERATION TAB ===
         self.chk_oas31 = ctk.CTkSwitch(self.tab_output, text="OAS 3.1", progress_color="#0A809E")
@@ -255,6 +265,36 @@ class PreferencesDialog(ctk.CTkToplevel):
             button_color="#0A809E",
         )
         self.cbo_generation_mode.pack(side="left", fill="x", expand=False)
+
+        self._add_section_separator(self.tab_output, "Info Extensions")
+        self.frame_x_info = ctk.CTkFrame(self.tab_output, fg_color="transparent")
+        self.frame_x_info.pack(fill="x", padx=20, pady=(2, 8))
+        self.frame_x_info.grid_columnconfigure(0, weight=1)
+        self.frame_x_info.grid_columnconfigure(1, weight=1)
+        self.chk_x_info_creation_date = ctk.CTkSwitch(
+            self.frame_x_info,
+            text="x-info-creation-date",
+            progress_color="#0A809E",
+        )
+        self.chk_x_info_creation_date.grid(row=0, column=0, sticky="w", pady=6)
+        self.chk_x_info_release = ctk.CTkSwitch(
+            self.frame_x_info,
+            text="x-info-release",
+            progress_color="#0A809E",
+        )
+        self.chk_x_info_release.grid(row=1, column=0, sticky="w", pady=6)
+        self.chk_x_info_customization = ctk.CTkSwitch(
+            self.frame_x_info,
+            text="x-info-customization",
+            progress_color="#0A809E",
+        )
+        self.chk_x_info_customization.grid(row=0, column=1, sticky="w", pady=6)
+        self.chk_x_info_oasis_version = ctk.CTkSwitch(
+            self.frame_x_info,
+            text="x-info-oasis-version",
+            progress_color="#0A809E",
+        )
+        self.chk_x_info_oasis_version.grid(row=1, column=1, sticky="w", pady=6)
 
 
         # === 3. TEMPLATES TAB (merged Excel Generation + Tools) ===
@@ -593,12 +633,21 @@ class PreferencesDialog(ctk.CTkToplevel):
         
         self.var_remember.set(self.prefs_manager.get("remember_paths", False))
         if prefs.get("remember_window_pos", True): self.chk_window_pos.select()
+        self.var_update_check.set(bool(prefs.get("update_check_enabled", True)))
 
         # OAS Generation
         if prefs.get("gen_oas_30", True): self.chk_oas30.select()
         if prefs.get("gen_oas_31", True): self.chk_oas31.select()
         if prefs.get("gen_oas_swift", False): self.chk_swift.select()
         self.cbo_generation_mode.set(normalize_generation_mode(prefs.get("generation_mode", DEFAULT_GENERATION_MODE)))
+        if prefs.get("gen_x_info_creation_date", True): self.chk_x_info_creation_date.select()
+        else: self.chk_x_info_creation_date.deselect()
+        if prefs.get("gen_x_info_release", True): self.chk_x_info_release.select()
+        else: self.chk_x_info_release.deselect()
+        if prefs.get("gen_x_info_customization", True): self.chk_x_info_customization.select()
+        else: self.chk_x_info_customization.deselect()
+        if prefs.get("gen_x_info_oasis_version", True): self.chk_x_info_oasis_version.select()
+        else: self.chk_x_info_oasis_version.deselect()
 
         # Excel Generation
         if prefs.get("excel_gen_attr_diff", True): self.chk_excel_attr_diff.select()
@@ -773,12 +822,17 @@ class PreferencesDialog(ctk.CTkToplevel):
             "file_sort_order": sort_value,
             "remember_paths": self.var_remember.get(),
             "remember_window_pos": bool(self.chk_window_pos.get()),
+            "update_check_enabled": bool(self.var_update_check.get()),
             
             # OAS Generation
             "gen_oas_30": bool(self.chk_oas30.get()),
             "gen_oas_31": bool(self.chk_oas31.get()),
             "gen_oas_swift": bool(self.chk_swift.get()),
             "generation_mode": normalize_generation_mode(self.cbo_generation_mode.get()),
+            "gen_x_info_creation_date": bool(self.chk_x_info_creation_date.get()),
+            "gen_x_info_release": bool(self.chk_x_info_release.get()),
+            "gen_x_info_customization": bool(self.chk_x_info_customization.get()),
+            "gen_x_info_oasis_version": bool(self.chk_x_info_oasis_version.get()),
             
             # Excel Generation
             "excel_gen_attr_diff": bool(self.chk_excel_attr_diff.get()),
@@ -871,11 +925,16 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.cbo_sort.set("Alphabetical")
         self.var_remember.set(False)
         self.chk_window_pos.select()
+        self.var_update_check.set(True)
         
         self.chk_oas30.select()
         self.chk_oas31.select()
         self.chk_swift.deselect()
         self.cbo_generation_mode.set(DEFAULT_GENERATION_MODE)
+        self.chk_x_info_creation_date.select()
+        self.chk_x_info_release.select()
+        self.chk_x_info_customization.select()
+        self.chk_x_info_oasis_version.select()
 
         self.chk_excel_attr_diff.select()
         self.chk_excel_line_diff.deselect()
