@@ -13,6 +13,17 @@ Before every response, action, code edit, build, commit, explanation, or verific
 7. If source data is missing, inconsistent, or ambiguous, report it clearly instead of silently compensating.
 8. Before claiming completion, run the relevant checks or state exactly what could not be verified.
 
+FAST ADMIN PATH
+
+For non-development administrative tasks, such as updating release metadata, removing temporary release files, publishing gh-pages manifests, or simple Git housekeeping:
+
+1. Apply the project preflight, but only for scope, authorization, safety, and source-of-truth checks.
+2. Do not run runtime tests, Spectral, architectural analysis, or broad regression checks unless the change can affect application behavior, generated OAS content, templates, or runtime configuration.
+3. Perform only the minimal file checks needed to avoid touching unintended files.
+4. Verify with git diff/status and, if pushed, a final remote/tree/status check.
+5. Keep user updates short and avoid exploratory detours.
+6. If the administrative task reveals a possible behavior or data issue, stop treating it as Fast Admin Path and switch back to the full engineering preflight.
+
 1. The user prompting requests is the project master. In case of doubt, before exploring possibilities, ask directly for information. In many cases he can give you the information you need.
 Don't take long sequences of actions without interacting with him. Sometimes he wishes to give hints, recommendations, help, but you are too selfishly busy in finding a solution. Stop frequenty and ask.
 

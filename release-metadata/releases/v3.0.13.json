@@ -1,0 +1,12 @@
+{
+  "version": "3.0.13",
+  "date": "2026-05-22",
+  "title": "OASIS 3.0.13",
+  "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
+  "release_notes": [
+    "Added x-info-oasis-version to generated OAS files so the originating OASIS build can be traced.",
+    "Added OAS Generation preferences to enable or disable x-info-creation-date, x-info-release, x-info-customization, and x-info-oasis-version independently.",
+    "Polished manual update-check dialogs so success and error messages use the OASIS dialog style and stay centered on the application window.",
+    "Kept release update metadata focused on published releases only."
+  ]
+}

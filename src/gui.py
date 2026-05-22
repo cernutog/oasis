@@ -740,6 +740,88 @@ class OASUpdateAvailableDialog(ctk.CTkToplevel):
         if self.whats_new_callback:
             self.whats_new_callback(self)
 
+
+class OASUpdateMessageDialog(ctk.CTkToplevel):
+    def __init__(self, parent, title, heading, message, is_error=False):
+        super().__init__(parent)
+        self.title(title)
+        self.resizable(False, False)
+        self.withdraw()
+        self.transient(parent)
+        self.after(200, self._set_icon)
+        self._build_ui(heading, message, is_error)
+        self._show_centered(parent)
+
+    def _show_centered(self, parent):
+        try:
+            parent.update_idletasks()
+            self.update_idletasks()
+            width = max(self.winfo_reqwidth(), self.winfo_width(), 420)
+            height = max(self.winfo_reqheight(), self.winfo_height(), 190)
+            geometry = _clamped_center_geometry(
+                dialog_width=width,
+                dialog_height=height,
+                parent_x=parent.winfo_rootx(),
+                parent_y=parent.winfo_rooty(),
+                parent_width=parent.winfo_width(),
+                parent_height=parent.winfo_height(),
+                screen_width=self.winfo_screenwidth(),
+                screen_height=self.winfo_screenheight(),
+            )
+            self.geometry(geometry)
+        except Exception:
+            self.geometry("420x190")
+        self.deiconify()
+        self.update_idletasks()
+        self.lift(parent)
+        self.grab_set()
+        self.focus_set()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _close(self):
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
+
+    def _build_ui(self, heading, message, is_error):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=22, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text=heading,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#D83B3B" if is_error else "#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        ctk.CTkLabel(
+            container,
+            text=message,
+            font=ctk.CTkFont(size=12),
+            wraplength=370,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(14, 20))
+
+        ctk.CTkButton(
+            container,
+            text="OK",
+            width=110,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._close,
+        ).pack(side="right")
+
 import customtkinter as ctk
 from customtkinter import ThemeManager  # REQUIRED FOR DIRECT OVERRIDE
 import tkinter as tk
@@ -1798,9 +1880,11 @@ class OASGenApp(ctk.CTk):
         manifest_url = str(prefs.get("update_manifest_url", "") or "").strip()
         if not manifest_url:
             if manual:
-                tkinter.messagebox.showinfo(
-                    "OASIS Updates",
-                    "Update manifest URL is not configured.",
+                OASUpdateMessageDialog(
+                    self,
+                    title="OASIS Updates",
+                    heading="Update check is not configured",
+                    message="The update manifest URL is not configured.",
                 )
             return
 
@@ -1850,9 +1934,12 @@ class OASGenApp(ctk.CTk):
         if result.error:
             self.log_app(f"[Updates] Could not check for updates: {result.error}")
             if manual:
-                tkinter.messagebox.showerror(
-                    "OASIS Updates",
-                    f"Could not check for updates:\n{result.error}",
+                OASUpdateMessageDialog(
+                    self,
+                    title="OASIS Updates",
+                    heading="Could not check for updates",
+                    message=str(result.error),
+                    is_error=True,
                 )
             return
 
@@ -1861,9 +1948,11 @@ class OASGenApp(ctk.CTk):
         if not result.update_available:
             self.log_app("[Updates] No update available.")
             if manual:
-                tkinter.messagebox.showinfo(
-                    "OASIS Updates",
-                    "OASIS is up to date.",
+                OASUpdateMessageDialog(
+                    self,
+                    title="OASIS Updates",
+                    heading="OASIS is up to date",
+                    message=f"Current version: {FULL_VERSION}",
                 )
             return
 
