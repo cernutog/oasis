@@ -1,0 +1,12 @@
+{
+  "releases": [
+    {
+      "version": "3.0.13",
+      "manifest_url": "https://cernutog.github.io/oasis/releases/v3.0.13.json"
+    },
+    {
+      "version": "3.0.12",
+      "manifest_url": "https://cernutog.github.io/oasis/releases/v3.0.12.json"
+    }
+  ]
+}
