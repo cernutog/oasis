@@ -513,7 +513,6 @@ class OASToExcelConverter:
                     
                 row_idx += 1
             
-        writer.add_schema_name_hyperlinks()
         self._autofit_columns(ws, max_cols=2)
 
 
