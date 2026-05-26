@@ -42,7 +42,7 @@ try:
     from .oas_importer.oas_converter import OASToExcelConverter
     from .oas_importer.oas_comparator import OASComparator
     from .legacy_converter import LegacyConverter
-    from .legacy_converter_dialog import LegacyConverterDialog
+    from .legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
     from .legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from .legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from .oas_diff_dialog import OASDiffDialog
@@ -76,7 +76,7 @@ except ImportError:
     from oas_importer.oas_converter import OASToExcelConverter
     from oas_importer.oas_comparator import OASComparator
     from legacy_converter import LegacyConverter
-    from legacy_converter_dialog import LegacyConverterDialog
+    from legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
     from legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from oas_diff_dialog import OASDiffDialog
@@ -1764,6 +1764,7 @@ class OASGenApp(ctk.CTk):
             self.file_menu.entryconfig("Select Template Folder...", state="disabled")
             
         if current_tab == "Validation":
+            self.update_file_list()
             self.run_validation()
         elif current_tab == "View":
             self.after(75, self._focus_yaml_viewer)
@@ -2915,8 +2916,8 @@ class OASGenApp(ctk.CTk):
         files_to_show = []
         candidates = set()  # Use set to avoid duplicates
 
-        # Always read from OAS folder
-        oas_dir = self.entry_oas_folder.get()
+        # Always read from Validation OAS folder when populating Validation files.
+        oas_dir = self.entry_val_oas_folder.get()
         if os.path.exists(oas_dir):
             for f in os.listdir(oas_dir):
                 if f.endswith(".yaml") or f.endswith(".json"):
@@ -5234,6 +5235,11 @@ class ImportDialog(ctk.CTkToplevel):
             self._show_error("Error", "Invalid Output Folder")
             return
 
+        metadata_overrides = self._prompt_import_metadata_if_needed(src_path)
+        if metadata_overrides is None:
+            self._log("Import cancelled.")
+            return
+
         # Check for non-empty output folder
         if os.path.exists(dst_folder) and os.listdir(dst_folder):
             choice = self._show_clean_folder_dialog(dst_folder)
@@ -5266,9 +5272,67 @@ class ImportDialog(ctk.CTkToplevel):
                 return
 
         self.btn_import.configure(state="disabled")
-        threading.Thread(target=self._run_oas_import, args=(src_path, dst_folder)).start()
+        threading.Thread(
+            target=self._run_oas_import,
+            args=(src_path, dst_folder, metadata_overrides),
+        ).start()
 
-    def _run_oas_import(self, src_path, dst_folder):
+    def _get_import_metadata_defaults(self, src_path):
+        defaults = {
+            "contact_name": "",
+            "contact_url": "",
+            "release": "",
+            "filename_pattern": "",
+        }
+
+        if self.prefs_manager:
+            defaults.update(
+                {
+                    "contact_name": str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip(),
+                    "contact_url": str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip(),
+                    "release": str(self.prefs_manager.get("tools_legacy_release", "") or "").strip(),
+                    "filename_pattern": str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip(),
+                }
+            )
+
+        try:
+            info = OASToExcelConverter(src_path).parser.get_info()
+        except Exception as exc:
+            self._log(f"[Metadata] Could not read OAS info metadata: {exc}")
+            return defaults, True
+
+        for key in ("contact_name", "contact_url", "release"):
+            if info.get(key):
+                defaults[key] = str(info.get(key) or "").strip()
+
+        source_pattern = str(info.get("filename_pattern", "") or "").strip()
+        if source_pattern:
+            defaults["filename_pattern"] = source_pattern
+
+        return defaults, not bool(source_pattern)
+
+    def _prompt_import_metadata_if_needed(self, src_path):
+        defaults, needs_filename_pattern = self._get_import_metadata_defaults(src_path)
+        if not needs_filename_pattern:
+            return defaults
+
+        dialog = LegacyConversionMetadataDialog(self, initial_values=defaults)
+        self.wait_window(dialog)
+        result = dialog.result
+        if result is None:
+            return None
+
+        if self.prefs_manager and result.get("save_in_preferences"):
+            self.prefs_manager.set("tools_legacy_contact_name", result.get("contact_name", ""))
+            self.prefs_manager.set("tools_legacy_contact_url", result.get("contact_url", ""))
+            self.prefs_manager.set("tools_legacy_release", result.get("release", ""))
+            self.prefs_manager.set("tools_legacy_filename_pattern", result.get("filename_pattern", ""))
+            self.prefs_manager.save()
+            self._log("Saved import metadata to preferences.")
+
+        return result
+
+    def _run_oas_import(self, src_path, dst_folder, metadata_overrides=None):
         try:
             self._log("Starting Import...")
             self._log(f"Source: {src_path}")
@@ -5277,7 +5341,10 @@ class ImportDialog(ctk.CTkToplevel):
             converter = OASToExcelConverter(src_path, log_callback=self._log)
 
             self._log("Generating Index File...")
-            converter.generate_index_file(os.path.join(dst_folder, "$index.xlsx"))
+            converter.generate_index_file(
+                os.path.join(dst_folder, "$index.xlsx"),
+                info_overrides=metadata_overrides,
+            )
 
             self._log("Generating Endpoint Files (this may take time)...")
             files = converter.generate_all_endpoint_files(dst_folder)

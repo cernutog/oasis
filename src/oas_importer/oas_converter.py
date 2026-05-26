@@ -146,7 +146,11 @@ class OASToExcelConverter:
         self.log(f"Generated {len(generated_files)} endpoint files.")
         return generated_files
     
-    def generate_index_file(self, output_path: str) -> str:
+    def generate_index_file(
+        self,
+        output_path: str,
+        info_overrides: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Generate the $index.xlsx file with API metadata.
         
@@ -169,7 +173,7 @@ class OASToExcelConverter:
         writer.load_template()
         
         # 1. General Description sheet
-        self._fill_general_description(writer)
+        self._fill_general_description(writer, info_overrides=info_overrides)
         
         # 2. Paths sheet
         self._fill_paths_sheet(writer)
@@ -193,7 +197,11 @@ class OASToExcelConverter:
         self.log(f"Generated Master Index: {output_path}")
         return output_path
     
-    def _fill_general_description(self, writer: TemplateExcelWriter) -> None:
+    def _fill_general_description(
+        self,
+        writer: TemplateExcelWriter,
+        info_overrides: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """
         Fill General Description sheet with API info.
         
@@ -209,6 +217,8 @@ class OASToExcelConverter:
         Row 10: filename pattern | value (B)
         """
         info = self.parser.get_info()
+        if info_overrides:
+            info.update({k: v for k, v in info_overrides.items() if v is not None})
         ws = writer.workbook['General Description']
         
         from .template_writer import DEFAULT_ALIGNMENT
@@ -243,9 +253,9 @@ class OASToExcelConverter:
         
         # Row 9: release
         set_cell(9, 2, info.get('release', ''))
-        
 
-        
+        # Row 10: filename pattern
+        set_cell(10, 2, info.get('filename_pattern', ''))
 
     
     def _fill_paths_sheet(self, writer: TemplateExcelWriter) -> None:

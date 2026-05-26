@@ -26,6 +26,7 @@
 - Reapplied focused OAS import fixes for reusable requestBody `$ref` metadata and schema-name hyperlinks after reverting the broader failed cleanup attempt.
 - Added regression coverage for converter output, Excel parsing, OAS generation, OAS import metadata, and schema hyperlinks.
 - Added generation-time compatibility for already converted legacy templates where `Body!B1` contains `M` or `O` and `Body!C1` contains the requestBody description.
+- Fixed Validation tab file discovery so entering the tab refreshes the OAS file list from the Validation folder, and added OAS import metadata prompting to populate release and filename pattern before writing `$index.xlsx`.
 
 ### 2026-05-11 - Build v3.0.6: Regex-Driven Example Semantics
 

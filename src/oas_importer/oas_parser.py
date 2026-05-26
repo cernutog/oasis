@@ -153,6 +153,11 @@ class OASParser:
                 result['contact_name'] = contact['name']
             if 'url' in contact:
                 result['contact_url'] = contact['url']
+
+        if info.get('x-info-release'):
+            result['release'] = info.get('x-info-release')
+        if info.get('x-info-filename-pattern'):
+            result['filename_pattern'] = info.get('x-info-filename-pattern')
         
         # License
         if 'license' in info:
