@@ -1,0 +1,13 @@
+{
+  "version": "3.0.14",
+  "date": "2026-05-27",
+  "title": "OASIS 3.0.14",
+  "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
+  "release_notes": [
+    "Restored the Body template metadata contract so B1 contains the request body description and C1 contains the mandatory flag.",
+    "Added compatibility for legacy Body templates where B1 contains M or O and C1 contains the description.",
+    "Fixed OAS template import so request body descriptions and required flags are preserved correctly.",
+    "Prompted for missing release and filename pattern metadata during OAS-to-template import and persisted the values into $index.xlsx.",
+    "Refreshed Validation file discovery from the selected OAS folder so newly generated OAS files are immediately selectable."
+  ]
+}
