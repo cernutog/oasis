@@ -25,6 +25,7 @@
 - Updated Excel parsing so generated OAS requestBody metadata is derived from the Body sheet without heuristics or fallback source data.
 - Reapplied focused OAS import fixes for reusable requestBody `$ref` metadata and schema-name hyperlinks after reverting the broader failed cleanup attempt.
 - Added regression coverage for converter output, Excel parsing, OAS generation, OAS import metadata, and schema hyperlinks.
+- Added generation-time compatibility for already converted legacy templates where `Body!B1` contains `M` or `O` and `Body!C1` contains the requestBody description.
 
 ### 2026-05-11 - Build v3.0.6: Regex-Driven Example Semantics
 

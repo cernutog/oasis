@@ -64,15 +64,24 @@ def load_excel_sheet(file_path, sheet_name):
                                 df.attrs["response_description"] = str(desc).strip()
                                 break
                     
-                    # Specific metadata for "Body" sheet: B1=description, C1=required.
+                    # Specific metadata for "Body" sheet.
+                    # Official layout: B1=description, C1=required.
+                    # Legacy converted layout: B1=required, C1=description.
                     if sheet_name == "Body":
                         try:
                             b1_val = df_raw.iloc[0, 1]
                             c1_val = df_raw.iloc[0, 2]
-                            if pd.notna(b1_val):
-                                df.attrs["body_description"] = str(b1_val).strip()
-                            if pd.notna(c1_val):
-                                df.attrs["body_required"] = str(c1_val).strip()
+                            b1_text = str(b1_val).strip() if pd.notna(b1_val) else ""
+                            c1_text = str(c1_val).strip() if pd.notna(c1_val) else ""
+                            if b1_text.upper() in {"M", "O"}:
+                                df.attrs["body_required"] = b1_text
+                                if c1_text:
+                                    df.attrs["body_description"] = c1_text
+                            else:
+                                if b1_text:
+                                    df.attrs["body_description"] = b1_text
+                                if c1_text:
+                                    df.attrs["body_required"] = c1_text
                         except Exception:
                             pass
                 except Exception:

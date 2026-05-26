@@ -73,6 +73,96 @@ def test_excel_parser_reads_body_description_from_b1_and_required_from_c1():
         os.remove(tmp_path)
 
 
+def test_excel_parser_reads_legacy_body_required_from_b1_and_description_from_c1():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Body"
+    ws["B1"] = "M"
+    ws["C1"] = "Command details request body."
+    ws.append([""])
+    ws.append(
+        [
+            "Name",
+            "Parent",
+            "Description",
+            "Type",
+            "Items Data Type \n(Array only)",
+            "Schema Name\n(if Type = schema)",
+            "Format",
+            "Mandatory",
+        ]
+    )
+    ws.append(
+        [
+            "content",
+            "application/json",
+            "",
+            "schema",
+            "",
+            "CommandDetailsRequest",
+            "",
+            "M",
+        ]
+    )
+
+    with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        wb.save(tmp_path)
+        df = load_excel_sheet(tmp_path, "Body")
+        assert df is not None
+        assert df.attrs.get("body_description") == "Command details request body."
+        assert df.attrs.get("body_required") == "M"
+    finally:
+        os.remove(tmp_path)
+
+
+def test_excel_parser_reads_legacy_optional_body_from_b1():
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Body"
+    ws["B1"] = "O"
+    ws["C1"] = "Optional command details request body."
+    ws.append([""])
+    ws.append(
+        [
+            "Name",
+            "Parent",
+            "Description",
+            "Type",
+            "Items Data Type \n(Array only)",
+            "Schema Name\n(if Type = schema)",
+            "Format",
+            "Mandatory",
+        ]
+    )
+    ws.append(
+        [
+            "content",
+            "application/json",
+            "",
+            "schema",
+            "",
+            "CommandDetailsRequest",
+            "",
+            "O",
+        ]
+    )
+
+    with NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp_path = tmp.name
+
+    try:
+        wb.save(tmp_path)
+        df = load_excel_sheet(tmp_path, "Body")
+        assert df is not None
+        assert df.attrs.get("body_description") == "Optional command details request body."
+        assert df.attrs.get("body_required") == "O"
+    finally:
+        os.remove(tmp_path)
+
+
 def test_generator_sets_request_body_description_and_required_from_body_metadata():
     body_df = pd.DataFrame(
         [
