@@ -94,6 +94,47 @@ from chlorophyll import CodeView
 import pygments.lexers
 
 
+def clean_oas_import_output_folder(dst_folder, choice):
+    """Clean OAS import output files, failing loudly if any stale file remains."""
+    if choice not in {"clear_all", "clear_excel"}:
+        return []
+
+    removed = []
+    failures = []
+
+    if choice == "clear_all":
+        candidates = [os.path.join(dst_folder, filename) for filename in os.listdir(dst_folder)]
+    else:
+        import glob
+        candidates = []
+        for pattern in ("*.xlsx", "*.xlsm"):
+            candidates.extend(glob.glob(os.path.join(dst_folder, pattern)))
+
+    for file_path in candidates:
+        try:
+            if os.path.isfile(file_path) or os.path.islink(file_path):
+                if choice == "clear_all":
+                    os.unlink(file_path)
+                else:
+                    os.remove(file_path)
+            elif os.path.isdir(file_path) and choice == "clear_all":
+                shutil.rmtree(file_path)
+            else:
+                continue
+            removed.append(file_path)
+        except Exception as exc:
+            failures.append(f"{file_path}: {exc}")
+
+    if failures:
+        raise PermissionError(
+            "Cannot clean output folder. Close any open Excel files and retry. "
+            + "Failed path(s): "
+            + "; ".join(failures)
+        )
+
+    return removed
+
+
 def _clamped_center_geometry(
     dialog_width,
     dialog_height,
@@ -5243,24 +5284,10 @@ class ImportDialog(ctk.CTkToplevel):
             try:
                 if choice == "clear_all":
                     self._log(f"Cleaning ALL files in {dst_folder}...")
-                    for filename in os.listdir(dst_folder):
-                        file_path = os.path.join(dst_folder, filename)
-                        try:
-                            if os.path.isfile(file_path) or os.path.islink(file_path):
-                                os.unlink(file_path)
-                            elif os.path.isdir(file_path):
-                                shutil.rmtree(file_path)
-                        except Exception as e:
-                            print(f"Failed to delete {file_path}. Reason: {e}")
+                    clean_oas_import_output_folder(dst_folder, choice)
                 elif choice == "clear_excel":
                     self._log(f"Cleaning Excel files in {dst_folder}...")
-                    import glob
-                    for pat in ["*.xlsx", "*.xlsm"]:
-                        for f in glob.glob(os.path.join(dst_folder, pat)):
-                            try:
-                                os.remove(f)
-                            except Exception as e:
-                                print(f"Failed to delete {f}: {e}")
+                    clean_oas_import_output_folder(dst_folder, choice)
             except Exception as e:
                 self._show_error("Error", f"Failed to clean directory: {e}")
                 return

@@ -1,5 +1,17 @@
 # Implementation History - Custom Extension Formatting
 
+## Handoff - OAS Importer Request Body Metadata Regression (2026-05-26)
+
+- **Resolved issue**: Creating templates from OAS could produce endpoint workbooks where `requestBody.description` was missing from the Body sheet header and `requestBody.required: true` was rendered as optional (`O`) instead of mandatory (`M`) for `create-account-assessment-vop.260526.xlsx`.
+- **User evidence**: Source OAS contains `requestBody.description: Structure of a FPAD account assessment VOP request.` and `required: true`; generated workbook shown by the user still has `Body!B1` blank and `Body!C1 = O`.
+- **Code changes**:
+  - `src/oas_importer/oas_parser.py`: `_parse_operation()` now delegates request bodies to `_parse_request_body()`, which resolves top-level `requestBody.$ref` and preserves sibling overrides.
+  - `src/oas_importer/oas_converter.py`: endpoint generation reads request body description/required and passes them to `writer.fill_body_sheet(...)`; schema sheet generation calls `writer.add_schema_name_hyperlinks(...)`.
+  - `src/oas_importer/template_writer.py`: added schema-name hyperlink support for the Schemas sheet.
+- **Follow-up fix in this session**: The OAS import dialog no longer silently continues when cleanup cannot remove existing `.xlsx`/`.xlsm` files. Failed cleanup now raises a clear error naming the locked/stale path, preventing a false successful import over a stale workbook.
+- **Verification performed**: Regression tests `tests/regression/test_oas_importer_template_metadata.py`, `tests/regression/test_oas_importer_excel_metadata.py`, and `tests/regression/test_oas_importer_cleanup.py` pass with project-local pytest temp/cache settings.
+- **Important constraint**: Do not introduce fallback metadata or hard-coded values. For OAS-to-template conversion the input OAS is the source of truth; generated Excel must directly preserve request body description and required flag.
+
 ## Development Environment
 
 **IMPORTANT**: This project requires Python 3.13 for compatibility with all dependencies.
