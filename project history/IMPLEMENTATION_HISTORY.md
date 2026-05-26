@@ -18,6 +18,14 @@
 
 ## Lessons Learned
 
+### 2026-05-26 - Restore Body Metadata Template Contract
+
+- Restored the official Body sheet metadata contract: `Body!B1` stores requestBody description and `Body!C1` stores the required marker.
+- Updated the legacy converter to write the requestBody required marker to `C1`, leaving `B1` available for descriptions.
+- Updated Excel parsing so generated OAS requestBody metadata is derived from the Body sheet without heuristics or fallback source data.
+- Reapplied focused OAS import fixes for reusable requestBody `$ref` metadata and schema-name hyperlinks after reverting the broader failed cleanup attempt.
+- Added regression coverage for converter output, Excel parsing, OAS generation, OAS import metadata, and schema hyperlinks.
+
 ### 2026-05-11 - Build v3.0.6: Regex-Driven Example Semantics
 
 - Made regex constraints a primary semantic signal for repaired examples, so date/time-like patterns produce realistic date-time values even when field names are ambiguous or misspelled.

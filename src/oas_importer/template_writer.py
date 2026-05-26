@@ -226,6 +226,37 @@ class TemplateExcelWriter:
                              if s.isdigit()]
             if response_sheets:
                 del self.workbook['Response']
+
+    def add_schema_name_hyperlinks(
+        self,
+        sheet_name: str = "Schemas",
+        name_col: int = 1,
+        parent_col: int = 2,
+        schema_col: int = 6,
+    ) -> None:
+        """Link schema reference cells to root schema rows in the same sheet."""
+        if self.workbook is None:
+            self.load_template()
+
+        if sheet_name not in self.workbook.sheetnames:
+            return
+
+        ws = self.workbook[sheet_name]
+        root_rows: Dict[str, int] = {}
+
+        for row_idx in range(2, ws.max_row + 1):
+            name = ws.cell(row=row_idx, column=name_col).value
+            parent = ws.cell(row=row_idx, column=parent_col).value
+            if name and not str(parent or "").strip():
+                root_rows[str(name).strip()] = row_idx
+
+        for row_idx in range(2, ws.max_row + 1):
+            cell = ws.cell(row=row_idx, column=schema_col)
+            schema_name = str(cell.value).strip() if cell.value is not None else ""
+            target_row = root_rows.get(schema_name)
+            if target_row:
+                cell.hyperlink = f"#{sheet_name}!A{target_row}"
+                cell.font = Font(color="0563C1", underline="single")
     
     def save(self, filepath: str) -> None:
         """
