@@ -25,6 +25,7 @@ from src.oas_output_archive import (
 )
 from src.preferences import (
     DEFAULT_X_INFO_OPTIONS,
+    GENERATION_MODE_API_PORTAL_READY,
     GENERATION_MODE_MINIMAL,
     GENERATION_MODE_STANDARD,
     PreferencesManager,
@@ -506,6 +507,60 @@ def test_swift_customization_x_info_can_be_disabled():
     generator.apply_swift_customization()
 
     assert "x-info-customization" not in generator.oas["info"]
+
+
+def test_swift_production_policy_removes_400_examples_in_api_portal_ready_mode():
+    generator = OASGenerator(generation_mode=GENERATION_MODE_API_PORTAL_READY)
+    generator.oas = {
+        "openapi": "3.1.0",
+        "info": {"title": "Payments API", "version": "1.0.0"},
+        "paths": {
+            "/payments": {
+                "post": {
+                    "responses": {
+                        "400": {"$ref": "#/components/responses/BadRequestResponse"}
+                    }
+                }
+            }
+        },
+        "components": {
+            "schemas": {
+                "ErrorResponse": {"type": "object"},
+                "PaymentError": {"type": "object"},
+            },
+            "responses": {
+                "BadRequestResponse": {
+                    "description": "Bad Request",
+                    "content": {
+                        "application/json": {
+                            "schema": {"$ref": "#/components/schemas/PaymentError"},
+                            "examples": {
+                                "OK": {"value": {"code": "OK"}},
+                                "Bad Request": {"value": {"code": "INVALID"}},
+                            },
+                            "x-sandbox-note": "debug only",
+                        }
+                    },
+                }
+            },
+        },
+    }
+
+    generator.apply_swift_customization()
+    swift_oas = yaml.safe_load(generator.get_yaml())
+    path_media = swift_oas["paths"]["/payments"]["post"]["responses"]["400"]["content"][
+        "application/json"
+    ]
+    component_media = swift_oas["components"]["responses"]["BadRequestResponse"]["content"][
+        "application/json"
+    ]
+
+    assert "example" not in path_media
+    assert "examples" not in path_media
+    assert "example" not in component_media
+    assert "examples" not in component_media
+    assert "x-sandbox-note" not in path_media
+    assert "x-sandbox-note" not in component_media
 
 
 def test_generation_mode_filters_response_examples_and_optional_placeholders():

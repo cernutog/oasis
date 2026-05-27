@@ -7,6 +7,21 @@ Contains functions to apply SWIFT-specific customizations to OpenAPI specificati
 import copy
 
 
+def _remove_response_content_examples(response: dict) -> None:
+    if not isinstance(response, dict):
+        return
+
+    content = response.get("content")
+    if not isinstance(content, dict):
+        return
+
+    for media_obj in content.values():
+        if not isinstance(media_obj, dict):
+            continue
+        media_obj.pop("example", None)
+        media_obj.pop("examples", None)
+
+
 def apply_swift_customization(
     oas: dict,
     source_filename: str = None,
@@ -128,6 +143,7 @@ def apply_swift_customization(
             }
 
     # 5. PATHS MODIFICATIONS
+    component_responses_used_as_400 = set()
     if "paths" in oas:
         for path_url, methods in oas["paths"].items():
             for method, op in methods.items():
@@ -149,6 +165,7 @@ def apply_swift_customization(
                                 "responses" in comps
                                 and ref_name in comps["responses"]
                             ):
+                                component_responses_used_as_400.add(ref_name)
                                 resp = copy.deepcopy(comps["responses"][ref_name])
                                 op["responses"][code] = resp
 
@@ -173,11 +190,7 @@ def apply_swift_customization(
                                         {"$ref": "#/components/schemas/Errors"},
                                     ]
                                 }
-                                # Remove examples from 400 responses (SWIFT requirement)
-                                if "example" in resp["content"]["application/json"]:
-                                    del resp["content"]["application/json"]["example"]
-                                if "examples" in resp["content"]["application/json"]:
-                                    del resp["content"]["application/json"]["examples"]
+                            _remove_response_content_examples(resp)
 
                         # 5.3 Inject Headers to Responses (X-Request-ID)
                         if "$ref" not in resp:
@@ -186,6 +199,9 @@ def apply_swift_customization(
                             resp["headers"]["X-Request-ID"] = {
                                 "$ref": "#/components/headers/X-Request-ID"
                             }
+
+    for response_name in component_responses_used_as_400:
+        _remove_response_content_examples(comps.get("responses", {}).get(response_name))
 
     # 6. CLEANUP (Remove x-sandbox extensions)
     clean_sandbox_extensions(oas)
