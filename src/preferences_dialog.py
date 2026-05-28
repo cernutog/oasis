@@ -299,29 +299,42 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_x_info_oasis_version.grid(row=1, column=1, sticky="w", pady=6)
 
         # === 3. TEMPLATES TAB (merged Excel Generation + Tools) ===
+        self.tab_templates.grid_columnconfigure(0, weight=1)
+        self.tab_templates.grid_rowconfigure(0, weight=1)
+
         self.templates_tabview = ctk.CTkTabview(
             self.tab_templates,
+            fg_color="transparent",
             segmented_button_selected_color="#0A809E",
             segmented_button_selected_hover_color="#076075",
         )
-        self.templates_tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        self.templates_tabview.grid(row=0, column=0, sticky="nsew", padx=6, pady=0)
         self.tab_templates_general = self.templates_tabview.add("General")
         self.tab_templates_swift = self.templates_tabview.add("SWIFT Servers")
+        self.tab_templates_general.grid_columnconfigure(0, weight=1)
+        self.tab_templates_swift.grid_columnconfigure(0, weight=1)
+        self.tab_templates_swift.grid_rowconfigure(0, weight=1)
+
+        self.scroll_templates_general = ctk.CTkScrollableFrame(
+            self.tab_templates_general,
+            fg_color="transparent",
+        )
+        self.scroll_templates_general.pack(fill="both", expand=True, padx=0, pady=0)
 
         self._build_swift_servers_preferences_tab()
 
         # --- Section: Create Template from OAS ---
-        self._add_section_separator(self.tab_templates_general, "Create Template from OAS")
+        self._add_section_separator(self.scroll_templates_general, "Create Template from OAS")
 
-        self.chk_excel_attr_diff = ctk.CTkSwitch(self.tab_templates_general, text="Attribute Diff", progress_color="#0A809E")
+        self.chk_excel_attr_diff = ctk.CTkSwitch(self.scroll_templates_general, text="Attribute Diff", progress_color="#0A809E")
         self.chk_excel_attr_diff.pack(anchor="w", padx=20, pady=(3, 6))
 
-        self.chk_excel_line_diff = ctk.CTkSwitch(self.tab_templates_general, text="Line Diff", progress_color="#0A809E")
+        self.chk_excel_line_diff = ctk.CTkSwitch(self.scroll_templates_general, text="Line Diff", progress_color="#0A809E")
         self.chk_excel_line_diff.pack(anchor="w", padx=20, pady=(3, 6))
 
         # --- Section: Legacy Tools ---
-        self._add_section_separator(self.tab_templates_general, "Legacy Tools")
-        self.frame_legacy_switches = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
+        self._add_section_separator(self.scroll_templates_general, "Legacy Tools")
+        self.frame_legacy_switches = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
         self.frame_legacy_switches.pack(fill="x", padx=20, pady=(0, 4))
         self.frame_legacy_switches.grid_columnconfigure(0, weight=1)
         self.frame_legacy_switches.grid_columnconfigure(1, weight=1)
@@ -384,25 +397,25 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_legacy_example_tracing.pack(anchor="w", pady=(3, 6))
 
-        self.frame_legacy_contact_name = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
+        self.frame_legacy_contact_name = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
         self.frame_legacy_contact_name.pack(fill="x", padx=20, pady=(8, 4))
         ctk.CTkLabel(self.frame_legacy_contact_name, text="Contact name:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_contact_name = ctk.CTkEntry(self.frame_legacy_contact_name)
         self.entry_legacy_contact_name.pack(side="left", fill="x", expand=True)
 
-        self.frame_legacy_contact_url = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
+        self.frame_legacy_contact_url = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
         self.frame_legacy_contact_url.pack(fill="x", padx=20, pady=(3, 6))
         ctk.CTkLabel(self.frame_legacy_contact_url, text="Contact URL:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_contact_url = ctk.CTkEntry(self.frame_legacy_contact_url)
         self.entry_legacy_contact_url.pack(side="left", fill="x", expand=True)
 
-        self.frame_legacy_release = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
+        self.frame_legacy_release = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
         self.frame_legacy_release.pack(fill="x", padx=20, pady=(3, 4))
         ctk.CTkLabel(self.frame_legacy_release, text="Release:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_release = ctk.CTkEntry(self.frame_legacy_release)
         self.entry_legacy_release.pack(side="left", fill="x", expand=True)
 
-        self.frame_legacy_filename_pattern = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
+        self.frame_legacy_filename_pattern = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
         self.frame_legacy_filename_pattern.pack(fill="x", padx=20, pady=(3, 6))
         ctk.CTkLabel(self.frame_legacy_filename_pattern, text="Filename pattern:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_filename_pattern = ctk.CTkEntry(self.frame_legacy_filename_pattern)
