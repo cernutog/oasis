@@ -101,84 +101,6 @@ class OASConfirmationDialog(ctk.CTkToplevel):
         self.destroy()
 
 
-class SwiftServiceEditorDialog(ctk.CTkToplevel):
-    def __init__(self, parent, service_name="", servers=None):
-        super().__init__(parent)
-        self.result = None
-        self.title("SWIFT Service")
-        self.geometry("620x430")
-        self.minsize(560, 360)
-        self.transient(parent)
-        self.grab_set()
-
-        container = ctk.CTkFrame(self, fg_color="transparent")
-        container.pack(fill="both", expand=True, padx=20, pady=20)
-
-        ctk.CTkLabel(container, text="Service name:").pack(anchor="w")
-        self.entry_name = ctk.CTkEntry(container)
-        self.entry_name.pack(fill="x", pady=(4, 14))
-        self.entry_name.insert(0, service_name)
-
-        ctk.CTkLabel(
-            container,
-            text="Servers, one per line: URL | description",
-            anchor="w",
-        ).pack(anchor="w")
-        self.text_servers = ctk.CTkTextbox(container, height=190, wrap="word")
-        self.text_servers.pack(fill="both", expand=True, pady=(4, 16))
-        server_lines = []
-        for server in servers or []:
-            url = str(server.get("url", "") or "").strip()
-            desc = str(server.get("description", "") or "").strip()
-            if url or desc:
-                server_lines.append(f"{url} | {desc}" if desc else url)
-        self.text_servers.insert("1.0", "\n".join(server_lines))
-
-        buttons = ctk.CTkFrame(container, fg_color="transparent")
-        buttons.pack(fill="x")
-        ctk.CTkButton(
-            buttons,
-            text="Cancel",
-            width=110,
-            fg_color="gray50",
-            hover_color="gray40",
-            command=self._on_cancel,
-        ).pack(side="right", padx=(10, 0))
-        ctk.CTkButton(
-            buttons,
-            text="Save",
-            width=110,
-            fg_color="#0A809E",
-            hover_color="#076075",
-            command=self._on_save,
-        ).pack(side="right")
-
-        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
-
-    def _on_save(self):
-        name = self.entry_name.get().strip()
-        if not name:
-            return
-
-        servers = []
-        for line in self.text_servers.get("1.0", "end").splitlines():
-            raw = line.strip()
-            if not raw:
-                continue
-            if "|" in raw:
-                url, desc = raw.split("|", 1)
-            else:
-                url, desc = raw, ""
-            servers.append({"url": url.strip(), "description": desc.strip()})
-
-        self.result = {"name": name, "servers": servers}
-        self.destroy()
-
-    def _on_cancel(self):
-        self.result = None
-        self.destroy()
-
-
 class PreferencesDialog(ctk.CTkToplevel):
     """Non-modal dialog for editing user preferences."""
 
@@ -376,44 +298,30 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_x_info_oasis_version.grid(row=1, column=1, sticky="w", pady=6)
 
-        self._add_section_separator(self.tab_output, "SWIFT Services")
-        self.frame_swift_services = ctk.CTkFrame(self.tab_output, fg_color="transparent")
-        self.frame_swift_services.pack(fill="both", expand=True, padx=20, pady=(2, 8))
-        self.scroll_swift_services = ctk.CTkScrollableFrame(self.frame_swift_services, height=120)
-        self.scroll_swift_services.pack(fill="both", expand=True)
-        swift_buttons = ctk.CTkFrame(self.frame_swift_services, fg_color="transparent")
-        swift_buttons.pack(fill="x", pady=(8, 0))
-        ctk.CTkButton(
-            swift_buttons,
-            text="Add",
-            width=80,
-            fg_color="#0A809E",
-            hover_color="#076075",
-            command=self._on_add_swift_service,
-        ).pack(side="left")
-        ctk.CTkButton(
-            swift_buttons,
-            text="Clear",
-            width=80,
-            fg_color="gray50",
-            hover_color="gray40",
-            command=self._on_clear_swift_services,
-        ).pack(side="left", padx=(8, 0))
-
-
         # === 3. TEMPLATES TAB (merged Excel Generation + Tools) ===
-        # --- Section: Create Template from OAS ---
-        self._add_section_separator(self.tab_templates, "Create Template from OAS")
+        self.templates_tabview = ctk.CTkTabview(
+            self.tab_templates,
+            segmented_button_selected_color="#0A809E",
+            segmented_button_selected_hover_color="#076075",
+        )
+        self.templates_tabview.pack(fill="both", expand=True, padx=10, pady=10)
+        self.tab_templates_general = self.templates_tabview.add("General")
+        self.tab_templates_swift = self.templates_tabview.add("SWIFT Servers")
 
-        self.chk_excel_attr_diff = ctk.CTkSwitch(self.tab_templates, text="Attribute Diff", progress_color="#0A809E")
+        self._build_swift_servers_preferences_tab()
+
+        # --- Section: Create Template from OAS ---
+        self._add_section_separator(self.tab_templates_general, "Create Template from OAS")
+
+        self.chk_excel_attr_diff = ctk.CTkSwitch(self.tab_templates_general, text="Attribute Diff", progress_color="#0A809E")
         self.chk_excel_attr_diff.pack(anchor="w", padx=20, pady=(3, 6))
 
-        self.chk_excel_line_diff = ctk.CTkSwitch(self.tab_templates, text="Line Diff", progress_color="#0A809E")
+        self.chk_excel_line_diff = ctk.CTkSwitch(self.tab_templates_general, text="Line Diff", progress_color="#0A809E")
         self.chk_excel_line_diff.pack(anchor="w", padx=20, pady=(3, 6))
 
         # --- Section: Legacy Tools ---
-        self._add_section_separator(self.tab_templates, "Legacy Tools")
-        self.frame_legacy_switches = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self._add_section_separator(self.tab_templates_general, "Legacy Tools")
+        self.frame_legacy_switches = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
         self.frame_legacy_switches.pack(fill="x", padx=20, pady=(0, 4))
         self.frame_legacy_switches.grid_columnconfigure(0, weight=1)
         self.frame_legacy_switches.grid_columnconfigure(1, weight=1)
@@ -476,25 +384,25 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_legacy_example_tracing.pack(anchor="w", pady=(3, 6))
 
-        self.frame_legacy_contact_name = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_contact_name = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
         self.frame_legacy_contact_name.pack(fill="x", padx=20, pady=(8, 4))
         ctk.CTkLabel(self.frame_legacy_contact_name, text="Contact name:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_contact_name = ctk.CTkEntry(self.frame_legacy_contact_name)
         self.entry_legacy_contact_name.pack(side="left", fill="x", expand=True)
 
-        self.frame_legacy_contact_url = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_contact_url = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
         self.frame_legacy_contact_url.pack(fill="x", padx=20, pady=(3, 6))
         ctk.CTkLabel(self.frame_legacy_contact_url, text="Contact URL:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_contact_url = ctk.CTkEntry(self.frame_legacy_contact_url)
         self.entry_legacy_contact_url.pack(side="left", fill="x", expand=True)
 
-        self.frame_legacy_release = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_release = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
         self.frame_legacy_release.pack(fill="x", padx=20, pady=(3, 4))
         ctk.CTkLabel(self.frame_legacy_release, text="Release:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_release = ctk.CTkEntry(self.frame_legacy_release)
         self.entry_legacy_release.pack(side="left", fill="x", expand=True)
 
-        self.frame_legacy_filename_pattern = ctk.CTkFrame(self.tab_templates, fg_color="transparent")
+        self.frame_legacy_filename_pattern = ctk.CTkFrame(self.tab_templates_general, fg_color="transparent")
         self.frame_legacy_filename_pattern.pack(fill="x", padx=20, pady=(3, 6))
         ctk.CTkLabel(self.frame_legacy_filename_pattern, text="Filename pattern:", width=140, anchor="w").pack(side="left")
         self.entry_legacy_filename_pattern = ctk.CTkEntry(self.frame_legacy_filename_pattern)
@@ -715,6 +623,33 @@ class PreferencesDialog(ctk.CTkToplevel):
         # Failsafe: Pack tabview AFTER buttons to prevent container-stretch overlapping
         self.tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
 
+    def _build_swift_servers_preferences_tab(self):
+        self.swift_server_rows = []
+
+        toolbar = ctk.CTkFrame(self.tab_templates_swift, fg_color="transparent")
+        toolbar.pack(fill="x", padx=12, pady=(14, 8))
+        ctk.CTkButton(
+            toolbar,
+            text="Add",
+            width=80,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._on_add_swift_server_row,
+        ).pack(side="left")
+
+        header = ctk.CTkFrame(self.tab_templates_swift, fg_color="transparent")
+        header.pack(fill="x", padx=12, pady=(0, 4))
+        header.grid_columnconfigure(0, weight=2)
+        header.grid_columnconfigure(1, weight=4)
+        header.grid_columnconfigure(2, weight=4)
+        header.grid_columnconfigure(3, weight=0)
+        ctk.CTkLabel(header, text="Service", anchor="w", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        ctk.CTkLabel(header, text="URL", anchor="w", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        ctk.CTkLabel(header, text="Description", anchor="w", font=ctk.CTkFont(weight="bold")).grid(row=0, column=2, sticky="ew", padx=(0, 8))
+
+        self.scroll_swift_servers = ctk.CTkScrollableFrame(self.tab_templates_swift, height=340)
+        self.scroll_swift_servers.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+
     # Removed _browse_master
 
     def _load_current_values(self):
@@ -752,8 +687,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         else: self.chk_x_info_customization.deselect()
         if prefs.get("gen_x_info_oasis_version", True): self.chk_x_info_oasis_version.select()
         else: self.chk_x_info_oasis_version.deselect()
-        self.current_swift_services = normalize_swift_services(prefs.get("swift_services", {}))
-        self._refresh_swift_services_list()
+        self._load_swift_server_rows(prefs.get("swift_services", {}))
 
         # Excel Generation
         if prefs.get("excel_gen_attr_diff", True): self.chk_excel_attr_diff.select()
@@ -846,59 +780,91 @@ class PreferencesDialog(ctk.CTkToplevel):
             ctk.CTkButton(row, text="Edit", width=40, height=20, fg_color="#0A809E", hover_color="#076075",
                           command=lambda k=key, v=value: self._on_edit_var(k, v)).pack(side="right", padx=2)
 
-    def _refresh_swift_services_list(self):
-        for child in self.scroll_swift_services.winfo_children():
+    def _load_swift_server_rows(self, services):
+        for child in self.scroll_swift_servers.winfo_children():
             child.destroy()
+        self.swift_server_rows = []
 
-        for name, service in sorted(self.current_swift_services.items()):
+        normalized = normalize_swift_services(services)
+        for service_name, service in sorted(normalized.items()):
             servers = service.get("servers", [])
-            row = ctk.CTkFrame(self.scroll_swift_services, fg_color="transparent")
-            row.pack(fill="x", pady=1)
-            ctk.CTkLabel(row, text=name, width=150, anchor="w", font=ctk.CTkFont(weight="bold")).pack(side="left", padx=5)
-            ctk.CTkLabel(row, text=f"{len(servers)} server(s)", anchor="w").pack(side="left", padx=5, fill="x", expand=True)
-            ctk.CTkButton(
-                row,
-                text="X",
-                width=25,
-                height=20,
-                fg_color="#D04040",
-                hover_color="#B03030",
-                command=lambda k=name: self._on_delete_swift_service(k),
-            ).pack(side="right", padx=2)
-            ctk.CTkButton(
-                row,
-                text="Edit",
-                width=40,
-                height=20,
-                fg_color="#0A809E",
-                hover_color="#076075",
-                command=lambda k=name: self._on_edit_swift_service(k),
-            ).pack(side="right", padx=2)
+            if not servers:
+                self._add_swift_server_row(service_name=service_name)
+            for server in servers:
+                self._add_swift_server_row(
+                    service_name=service_name,
+                    url=server.get("url", ""),
+                    description=server.get("description", ""),
+                )
 
-    def _on_add_swift_service(self):
-        dialog = SwiftServiceEditorDialog(self)
-        self.wait_window(dialog)
-        if dialog.result:
-            self.current_swift_services[dialog.result["name"]] = {"servers": dialog.result["servers"]}
-            self._refresh_swift_services_list()
+    def _add_swift_server_row(self, service_name="", url="", description=""):
+        row_frame = ctk.CTkFrame(self.scroll_swift_servers, fg_color="transparent")
+        row_frame.pack(fill="x", pady=2)
+        row_frame.grid_columnconfigure(0, weight=2)
+        row_frame.grid_columnconfigure(1, weight=4)
+        row_frame.grid_columnconfigure(2, weight=4)
+        row_frame.grid_columnconfigure(3, weight=0)
 
-    def _on_edit_swift_service(self, name):
-        service = self.current_swift_services.get(name, {})
-        dialog = SwiftServiceEditorDialog(self, service_name=name, servers=service.get("servers", []))
-        self.wait_window(dialog)
-        if dialog.result:
-            if dialog.result["name"] != name:
-                self.current_swift_services.pop(name, None)
-            self.current_swift_services[dialog.result["name"]] = {"servers": dialog.result["servers"]}
-            self._refresh_swift_services_list()
+        entry_service = ctk.CTkEntry(row_frame)
+        entry_service.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        entry_service.insert(0, service_name)
 
-    def _on_delete_swift_service(self, name):
-        self.current_swift_services.pop(name, None)
-        self._refresh_swift_services_list()
+        entry_url = ctk.CTkEntry(row_frame)
+        entry_url.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        entry_url.insert(0, url)
 
-    def _on_clear_swift_services(self):
-        self.current_swift_services = {}
-        self._refresh_swift_services_list()
+        entry_description = ctk.CTkEntry(row_frame)
+        entry_description.grid(row=0, column=2, sticky="ew", padx=(0, 8))
+        entry_description.insert(0, description)
+
+        row_data = {
+            "frame": row_frame,
+            "service": entry_service,
+            "url": entry_url,
+            "description": entry_description,
+        }
+        ctk.CTkButton(
+            row_frame,
+            text="X",
+            width=28,
+            height=28,
+            fg_color="#D04040",
+            hover_color="#B03030",
+            command=lambda data=row_data: self._on_delete_swift_server_row(data),
+        ).grid(row=0, column=3, sticky="e")
+        self.swift_server_rows.append(row_data)
+
+    def _on_add_swift_server_row(self):
+        self._add_swift_server_row()
+
+    def _on_delete_swift_server_row(self, row_data):
+        if row_data in self.swift_server_rows:
+            self.swift_server_rows.remove(row_data)
+        row_data["frame"].destroy()
+
+    def _collect_swift_services_from_rows(self):
+        services = {}
+        for row in self.swift_server_rows:
+            service_name = row["service"].get().strip()
+            url = row["url"].get().strip()
+            description = row["description"].get().strip()
+
+            if not service_name and not url and not description:
+                continue
+            if not service_name:
+                dialog = OASConfirmationDialog(
+                    self,
+                    "Invalid SWIFT Server",
+                    "Every SWIFT server row with URL or Description must have a Service.",
+                )
+                self.wait_window(dialog)
+                return None
+
+            service = services.setdefault(service_name, {"servers": []})
+            if url or description:
+                service["servers"].append({"url": url, "description": description})
+
+        return services
 
     def _on_add_var(self):
 
@@ -963,6 +929,10 @@ class PreferencesDialog(ctk.CTkToplevel):
 
     def save_preferences(self):
         """Save values to manager and close."""
+        swift_services = self._collect_swift_services_from_rows()
+        if swift_services is None:
+            return
+
         sort_display = self.cbo_sort.get()
         sort_value = "alphabetical"
         for display, value in self.SORT_OPTIONS:
@@ -993,7 +963,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             "gen_x_info_release": bool(self.chk_x_info_release.get()),
             "gen_x_info_customization": bool(self.chk_x_info_customization.get()),
             "gen_x_info_oasis_version": bool(self.chk_x_info_oasis_version.get()),
-            "swift_services": normalize_swift_services(self.current_swift_services),
+            "swift_services": normalize_swift_services(swift_services),
             
             # Excel Generation
             "excel_gen_attr_diff": bool(self.chk_excel_attr_diff.get()),
@@ -1096,8 +1066,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.chk_x_info_release.select()
         self.chk_x_info_customization.select()
         self.chk_x_info_oasis_version.select()
-        self.current_swift_services = {}
-        self._refresh_swift_services_list()
+        self._load_swift_server_rows({})
 
         self.chk_excel_attr_diff.select()
         self.chk_excel_line_diff.deselect()
