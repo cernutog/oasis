@@ -188,6 +188,7 @@ class PreferencesManager:
         "tools_legacy_contact_url": "",
         "tools_legacy_release": "",
         "tools_legacy_filename_pattern": "",
+        "swift_services": {},
         
         # OAS Diff Settings
         "diff_old_spec": "",

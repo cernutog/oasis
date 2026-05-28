@@ -1824,9 +1824,9 @@ class OASGenerator:
 
         return new_d
 
-    def apply_swift_customization(self, source_filename=None):
+    def apply_swift_customization(self, source_filename=None, swift_servers=None):
         """
-        Applies SWIFT-specific customizations (Hardcoded as per exception).
+        Applies SWIFT-specific customizations.
         Delegates to extracted swift_customizer module.
         
         :param source_filename: Optional filename of the base OAS file to reference in description.
@@ -1835,6 +1835,7 @@ class OASGenerator:
             self.oas,
             source_filename,
             include_x_info_customization=self.x_info_options["customization"],
+            swift_servers=swift_servers,
         )
 
     def _cleanup_unused_inlined_components(self):

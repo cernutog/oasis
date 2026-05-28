@@ -19,6 +19,7 @@ from src.generator_pkg.yaml_output import RawNumericValue, OASDumper, SafeLoader
 from .oas_parser import OASParser, OperationInfo
 from .schema_flattener import SchemaFlattener, FlatRow
 from .template_writer import TemplateExcelWriter
+from src.swift_services import ensure_swift_server_rows_in_workbook
 
 
 
@@ -213,8 +214,10 @@ class OASToExcelConverter:
         Row 6: info contact url | value (B)
         Row 7: servers url | value (B) | servers description | value (D)
         Row 8: servers url | value (B) | servers description | value (D)
-        Row 9: release | value (B)
-        Row 10: filename pattern | value (B)
+        Row 9: swift servers url | value (B) | swift servers description | value (D)
+        Row 10: swift servers url | value (B) | swift servers description | value (D)
+        Row 11: release | value (B)
+        Row 12: filename pattern | value (B)
         """
         info = self.parser.get_info()
         if info_overrides:
@@ -250,12 +253,17 @@ class OASToExcelConverter:
             row = 7 + idx  # Row 7 for first server, row 8 for second
             set_cell(row, 2, server.get('url', ''))  # Col B: url
             set_cell(row, 4, server.get('description', ''))  # Col D: description
-        
-        # Row 9: release
-        set_cell(9, 2, info.get('release', ''))
 
-        # Row 10: filename pattern
-        set_cell(10, 2, info.get('filename_pattern', ''))
+        ensure_swift_server_rows_in_workbook(
+            writer.workbook,
+            info.get("swift_servers", []),
+        )
+        
+        # Row 11: release
+        set_cell(11, 2, info.get('release', ''))
+
+        # Row 12: filename pattern
+        set_cell(12, 2, info.get('filename_pattern', ''))
 
     
     def _fill_paths_sheet(self, writer: TemplateExcelWriter) -> None:

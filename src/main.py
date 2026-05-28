@@ -162,6 +162,7 @@ def generate_oas(
     log_callback(f"Parsing index: {os.path.basename(index_path)}")
     df_info = parser.load_excel_sheet(index_path, "General Description")
     info_data, inline_servers = parser.parse_info(df_info)
+    swift_servers_data = info_data.get("swift_servers", [])
 
     df_tags = parser.load_excel_sheet(index_path, "Tags")
     tags_data = parser.parse_tags(df_tags)
@@ -321,7 +322,7 @@ def generate_oas(
 
     # Prepare Clean Info (Exclude internal fields)
     clean_info = info_data.copy()
-    for internal_key in ["filename_pattern"]:
+    for internal_key in ["filename_pattern", "swift_servers"]:
         clean_info.pop(internal_key, None)
 
     # 4. Generate OAS 3.0
@@ -437,7 +438,10 @@ def generate_oas(
 
         # APPLY CUSTOMIZATION
         # Pass the filename of the corresponding standard OAS
-        sw_gen_30.apply_swift_customization(source_filename=build_filename("3.0"))
+        sw_gen_30.apply_swift_customization(
+            source_filename=build_filename("3.0"),
+            swift_servers=swift_servers_data,
+        )
 
         # Ensure OAS output folder exists
         os.makedirs(gen_dir, exist_ok=True)
@@ -474,7 +478,10 @@ def generate_oas(
 
         # APPLY CUSTOMIZATION
         # Pass the filename of the corresponding standard OAS
-        sw_gen_31.apply_swift_customization(source_filename=build_filename("3.1"))
+        sw_gen_31.apply_swift_customization(
+            source_filename=build_filename("3.1"),
+            swift_servers=swift_servers_data,
+        )
 
         out_sw_31 = Path(gen_dir) / build_filename("3.1", "SWIFT")
         log_callback(f"Writing OAS 3.1 (SWIFT) to: {out_sw_31.as_posix()}")

@@ -26,9 +26,10 @@ def apply_swift_customization(
     oas: dict,
     source_filename: str = None,
     include_x_info_customization: bool = True,
+    swift_servers: list[dict] | None = None,
 ) -> None:
     """
-    Applies SWIFT-specific customizations (Hardcoded as per exception).
+    Applies SWIFT-specific customizations.
     
     :param oas: The OAS dictionary to modify in-place.
     :param source_filename: Optional filename of the base OAS file to reference in description.
@@ -44,16 +45,7 @@ def apply_swift_customization(
     # User specifically asked to REMOVE "Based on <filename>".
 
     # 1. SERVERS
-    oas["servers"] = [
-        {
-            "url": "https://api.swiftnet.sipn.swift.com/ebacl-fpad/v1",
-            "description": "Live environment",
-        },
-        {
-            "url": "https://api-test.swiftnet.sipn.swift.com/ebacl-fpad-pilot/v1",
-            "description": "Test environment",
-        },
-    ]
+    oas["servers"] = copy.deepcopy(swift_servers or [])
 
     # 2. GLOBAL SECURITY
     oas["security"] = [{"oauthBearerToken": []}]

@@ -43,6 +43,12 @@ try:
     from .oas_importer.oas_comparator import OASComparator
     from .legacy_converter import LegacyConverter
     from .legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
+    from .swift_services import (
+        get_swift_service_servers,
+        has_swift_server_rows,
+        normalize_swift_services,
+        update_index_swift_servers,
+    )
     from .legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from .legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from .oas_diff_dialog import OASDiffDialog
@@ -77,6 +83,12 @@ except ImportError:
     from oas_importer.oas_comparator import OASComparator
     from legacy_converter import LegacyConverter
     from legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
+    from swift_services import (
+        get_swift_service_servers,
+        has_swift_server_rows,
+        normalize_swift_services,
+        update_index_swift_servers,
+    )
     from legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from oas_diff_dialog import OASDiffDialog
@@ -472,6 +484,106 @@ class OASOutputFolderDialog(ctk.CTkToplevel):
     def _open_folder(self):
         if self.folder_path and os.path.exists(self.folder_path):
             os.startfile(self.folder_path)
+
+
+class SwiftTemplateUpdateDialog(ctk.CTkToplevel):
+    def __init__(self, parent, swift_services):
+        super().__init__(parent)
+        self.swift_services = normalize_swift_services(swift_services)
+        self.result = None
+        self.title("Update Template for SWIFT")
+        self.geometry("620x260")
+        self.resizable(False, False)
+
+        self.update_idletasks()
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() // 2) - 310
+            y = parent.winfo_y() + (parent.winfo_height() // 2) - 130
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except Exception:
+            pass
+
+        self.transient(parent)
+        self.grab_set()
+        self.after(200, self._set_icon)
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text="The selected template does not contain SWIFT server rows.",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        ctk.CTkLabel(
+            container,
+            text="Choose the service to write into $index.xlsx. Leave it empty to add the rows without server values.",
+            font=ctk.CTkFont(size=13),
+            justify="left",
+            wraplength=560,
+        ).pack(anchor="w", pady=(8, 18))
+
+        row = ctk.CTkFrame(container, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 20))
+        ctk.CTkLabel(row, text="SWIFT service:", width=120, anchor="w").pack(side="left")
+        self.cbo_service = ctk.CTkComboBox(
+            row,
+            values=[""] + sorted(self.swift_services.keys()),
+            button_color="#0A809E",
+        )
+        self.cbo_service.pack(side="left", fill="x", expand=True)
+        self.cbo_service.set("")
+
+        buttons = ctk.CTkFrame(container, fg_color="transparent")
+        buttons.pack(fill="x", side="bottom")
+        ctk.CTkButton(
+            buttons,
+            text="Cancel",
+            width=110,
+            fg_color="gray50",
+            hover_color="gray40",
+            command=self._on_cancel,
+        ).pack(side="right", padx=(10, 0))
+        ctk.CTkButton(
+            buttons,
+            text="Update Template",
+            width=150,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._on_confirm,
+        ).pack(side="right")
+
+    def _on_confirm(self):
+        service_name = self.cbo_service.get().strip()
+        self.result = {
+            "swift_service": service_name,
+            "swift_servers": get_swift_service_servers(self.swift_services, service_name),
+        }
+        configured_servers = self.swift_services.get(service_name, {}).get("servers", [])
+        if len(configured_servers) > 2:
+            self.result["swift_server_warning"] = (
+                f"WARNING: SWIFT service '{service_name}' has {len(configured_servers)} configured servers; "
+                "only the first 2 were written to the template."
+            )
+        self.destroy()
+
+    def _on_cancel(self):
+        self.result = None
+        self.destroy()
 
 
 class OASWhatsNewDialog(ctk.CTkToplevel):
@@ -2793,6 +2905,10 @@ class OASGenApp(ctk.CTk):
                 self.log_gen(error)
             return
 
+        if gen_swift and not self._ensure_swift_template_rows(base_dir):
+            self.log_gen("Generation cancelled.")
+            return
+
         if not self._prepare_oas_output_folder(base_dir, gen_30, gen_31, gen_swift):
             self.log_gen("Generation cancelled.")
             return
@@ -2805,6 +2921,37 @@ class OASGenApp(ctk.CTk):
             args=(base_dir, gen_30, gen_31, gen_swift, generation_mode, x_info_options),
         )
         t.start()
+
+    def _ensure_swift_template_rows(self, base_dir):
+        index_path = os.path.join(base_dir, "$index.xlsx")
+        try:
+            if has_swift_server_rows(index_path):
+                return True
+        except Exception as exc:
+            self.log_gen(f"ERROR: Could not inspect $index.xlsx for SWIFT server rows: {exc}")
+            return False
+
+        dialog = SwiftTemplateUpdateDialog(
+            self,
+            self.prefs_manager.get("swift_services", {}) if self.prefs_manager else {},
+        )
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return False
+
+        warning = str(dialog.result.get("swift_server_warning", "") or "").strip()
+        if warning:
+            self.log_gen(warning)
+
+        try:
+            backup_path = f"{index_path}.bak_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            shutil.copy2(index_path, backup_path)
+            update_index_swift_servers(index_path, dialog.result.get("swift_servers", []) or [])
+            self.log_gen(f"Updated $index.xlsx with SWIFT server rows. Backup: {backup_path}")
+            return True
+        except Exception as exc:
+            self.log_gen(f"ERROR: Could not update $index.xlsx with SWIFT server rows: {exc}")
+            return False
 
     def _prepare_oas_output_folder(self, base_dir, gen_30, gen_31, gen_swift):
         output_dir = self.entry_oas_folder.get()
@@ -5283,6 +5430,7 @@ class ImportDialog(ctk.CTkToplevel):
             "contact_url": "",
             "release": "",
             "filename_pattern": "",
+            "swift_service": "",
         }
 
         if self.prefs_manager:
@@ -5313,14 +5461,24 @@ class ImportDialog(ctk.CTkToplevel):
 
     def _prompt_import_metadata_if_needed(self, src_path):
         defaults, needs_filename_pattern = self._get_import_metadata_defaults(src_path)
-        if not needs_filename_pattern:
-            return defaults
 
-        dialog = LegacyConversionMetadataDialog(self, initial_values=defaults)
+        swift_services = {}
+        if self.prefs_manager:
+            swift_services = self.prefs_manager.get("swift_services", {})
+
+        dialog = LegacyConversionMetadataDialog(
+            self,
+            initial_values=defaults,
+            swift_services=swift_services,
+        )
         self.wait_window(dialog)
         result = dialog.result
         if result is None:
             return None
+
+        warning = str(result.get("swift_server_warning", "") or "").strip()
+        if warning:
+            self._log(warning)
 
         if self.prefs_manager and result.get("save_in_preferences"):
             self.prefs_manager.set("tools_legacy_contact_name", result.get("contact_name", ""))

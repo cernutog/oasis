@@ -7,6 +7,7 @@ from .legacy_converter import (
     EXAMPLE_TRACE_IMPOSSIBLE_MARKER,
     LegacyConverter,
 )
+from .swift_services import get_swift_service_servers, normalize_swift_services
 
 class CleanFolderDialog(ctk.CTkToplevel):
     def __init__(self, parent, folder_path):
@@ -90,9 +91,10 @@ class CleanFolderDialog(ctk.CTkToplevel):
 class LegacyConversionMetadataDialog(ctk.CTkToplevel):
     """Allows per-run override of legacy metadata sourced from preferences."""
 
-    def __init__(self, parent, initial_values=None):
+    def __init__(self, parent, initial_values=None, swift_services=None):
         super().__init__(parent)
         self.initial_values = dict(initial_values or {})
+        self.swift_services = normalize_swift_services(swift_services)
         self.result = None
         self.var_save_preferences = ctk.BooleanVar(value=False)
 
@@ -147,6 +149,17 @@ class LegacyConversionMetadataDialog(ctk.CTkToplevel):
             justify="left",
             wraplength=720,
         ).pack(anchor="w", pady=(6, 16))
+
+        service_row = ctk.CTkFrame(content, fg_color="transparent")
+        service_row.pack(fill="x", pady=6)
+        ctk.CTkLabel(service_row, text="SWIFT service:", width=140, anchor="w").pack(side="left")
+        self.cbo_swift_service = ctk.CTkComboBox(
+            service_row,
+            values=[""] + sorted(self.swift_services.keys()),
+            button_color="#0A809E",
+        )
+        self.cbo_swift_service.pack(side="left", fill="x", expand=True)
+        self.cbo_swift_service.set(str(self.initial_values.get("swift_service", "") or ""))
 
         self.entries = {}
         fields = [
@@ -204,6 +217,15 @@ class LegacyConversionMetadataDialog(ctk.CTkToplevel):
             key: entry.get().strip()
             for key, entry in self.entries.items()
         }
+        swift_service = self.cbo_swift_service.get().strip()
+        values["swift_service"] = swift_service
+        values["swift_servers"] = get_swift_service_servers(self.swift_services, swift_service)
+        configured_servers = self.swift_services.get(swift_service, {}).get("servers", [])
+        if len(configured_servers) > 2:
+            values["swift_server_warning"] = (
+                f"WARNING: SWIFT service '{swift_service}' has {len(configured_servers)} configured servers; "
+                "only the first 2 were written to the template."
+            )
         values["save_in_preferences"] = bool(self.var_save_preferences.get())
         return values
 
@@ -507,6 +529,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 "contact_url": "",
                 "release": "",
                 "filename_pattern": "",
+                "swift_service": "",
             }
 
         return {
@@ -514,14 +537,21 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             "contact_url": str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip(),
             "release": str(self.prefs_manager.get("tools_legacy_release", "") or "").strip(),
             "filename_pattern": str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip(),
+            "swift_service": "",
         }
 
     def _prompt_conversion_metadata_overrides(self):
         defaults = self._get_conversion_metadata_defaults()
-        if not any(defaults.values()):
-            return defaults
 
-        dialog = LegacyConversionMetadataDialog(self, initial_values=defaults)
+        swift_services = {}
+        if self.prefs_manager:
+            swift_services = self.prefs_manager.get("swift_services", {})
+
+        dialog = LegacyConversionMetadataDialog(
+            self,
+            initial_values=defaults,
+            swift_services=swift_services,
+        )
         self.wait_window(dialog)
         return dialog.result
 
@@ -630,6 +660,10 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             contact_url = str(overrides.get("contact_url", "") or "").strip()
             release = str(overrides.get("release", "") or "").strip()
             filename_pattern = str(overrides.get("filename_pattern", "") or "").strip()
+            swift_servers = list(overrides.get("swift_servers", []) or [])
+            swift_warning = str(overrides.get("swift_server_warning", "") or "").strip()
+            if swift_warning:
+                self._log(swift_warning)
 
             if self.prefs_manager and overrides.get("save_in_preferences"):
                 self.prefs_manager.set("tools_legacy_contact_name", contact_name)
@@ -650,6 +684,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 contact_url=contact_url,
                 release=release,
                 filename_pattern=filename_pattern,
+                swift_servers=swift_servers,
                 fill_fix_examples=fill_fix_examples,
                 example_seed_values_path=example_seed_values_path,
                 example_semantic_rules_path=example_semantic_rules_path,

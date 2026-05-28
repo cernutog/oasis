@@ -10,7 +10,7 @@ from openpyxl import Workbook, load_workbook
 
 from src.api_designer.models import Change, ChangeStep, create_empty_workspace
 from src.api_designer.persistence import FileSystemDesignerRepository
-from src.excel_parser import parse_paths_index
+from src.excel_parser import parse_info, parse_paths_index
 from src.generator import OASGenerator
 from src.legacy_converter import DataType, LegacyConverter
 from src.legacy_converter_dialog import LegacyConverterDialog
@@ -29,6 +29,10 @@ from src.preferences import (
     GENERATION_MODE_MINIMAL,
     GENERATION_MODE_STANDARD,
     PreferencesManager,
+)
+from src.swift_services import (
+    ensure_swift_server_rows_in_workbook,
+    get_swift_service_servers,
 )
 from src.version import FULL_VERSION
 
@@ -507,6 +511,85 @@ def test_swift_customization_x_info_can_be_disabled():
     generator.apply_swift_customization()
 
     assert "x-info-customization" not in generator.oas["info"]
+
+
+def test_swift_customization_uses_servers_from_template_without_fpad_fallback():
+    generator = OASGenerator()
+    generator.oas = {
+        "openapi": "3.0.0",
+        "info": {"title": "Payments API", "version": "1.0.0"},
+        "servers": [{"url": "/standard"}],
+        "paths": {},
+        "components": {"schemas": {}, "responses": {}},
+    }
+    swift_servers = [{"url": "https://swift.example.test/service", "description": "Custom"}]
+
+    generator.apply_swift_customization(swift_servers=swift_servers)
+
+    assert generator.oas["servers"] == swift_servers
+
+
+def test_parse_info_keeps_swift_servers_separate_from_standard_servers():
+    df_info = pd.DataFrame(
+        [
+            ["servers url", "/standard", "servers description", "Standard"],
+            ["swift servers url", "/swift", "swift servers description", "SWIFT"],
+        ]
+    )
+
+    info, servers = parse_info(df_info)
+
+    assert servers == [{"url": "/standard", "description": "Standard"}]
+    assert info["swift_servers"] == [{"url": "/swift", "description": "SWIFT"}]
+
+
+def test_swift_service_catalog_truncates_to_template_capacity_and_warns():
+    warnings = []
+    services = {
+        "FPAD": {
+            "servers": [
+                {"url": "/one", "description": "One"},
+                {"url": "/two", "description": "Two"},
+                {"url": "/three", "description": "Three"},
+            ]
+        }
+    }
+
+    servers = get_swift_service_servers(services, "FPAD", warnings.append)
+
+    assert servers == [
+        {"url": "/one", "description": "One"},
+        {"url": "/two", "description": "Two"},
+    ]
+    assert warnings
+
+
+def test_ensure_swift_server_rows_inserts_rows_before_release():
+    workbook = Workbook()
+    ws = workbook.active
+    ws.title = "General Description"
+    ws.append(["General Description"])
+    ws.append(["info description", "API"])
+    ws.append(["info version", "1.0"])
+    ws.append(["info title", "Title"])
+    ws.append(["info contact name", "Contact"])
+    ws.append(["info contact url", "https://example.test"])
+    ws.append(["servers url", "/standard", "servers description", "Standard"])
+    ws.append(["servers url", "", "servers description", ""])
+    ws.append(["release", "v1"])
+    ws.append(["filename pattern", "api.yaml"])
+
+    ensure_swift_server_rows_in_workbook(
+        workbook,
+        [{"url": "/swift", "description": "SWIFT"}],
+    )
+
+    assert ws.cell(row=9, column=1).value == "swift servers url"
+    assert ws.cell(row=9, column=2).value == "/swift"
+    assert ws.cell(row=9, column=4).value == "SWIFT"
+    assert ws.cell(row=10, column=1).value == "swift servers url"
+    assert ws.cell(row=11, column=1).value == "release"
+    assert ws.cell(row=12, column=1).value == "filename pattern"
 
 
 def test_swift_production_policy_removes_400_examples_in_api_portal_ready_mode():

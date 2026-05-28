@@ -21,6 +21,11 @@ from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 import yaml
 
+try:
+    from .swift_services import ensure_swift_server_rows_in_workbook
+except ImportError:
+    from swift_services import ensure_swift_server_rows_in_workbook
+
 
 EXAMPLE_TRACE_IMPOSSIBLE_MARKER = "[[OASIS_EXAMPLE_TRACE_IMPOSSIBLE]]"
 EXAMPLE_TRACE_COMPLEX_MARKER = "[[OASIS_EXAMPLE_TRACE_COMPLEX]]"
@@ -208,6 +213,7 @@ class LegacyConverter:
         contact_url: str = "",
         release: str = "",
         filename_pattern: str = "",
+        swift_servers: Optional[List[Dict[str, str]]] = None,
         fill_fix_examples: bool = True,
         example_seed_values_path: Optional[Any] = None,
         example_semantic_rules_path: Optional[Any] = None,
@@ -229,6 +235,7 @@ class LegacyConverter:
         self.contact_url = str(contact_url or "").strip()
         self.release = str(release or "").strip()
         self.filename_pattern = str(filename_pattern or "").strip()
+        self.swift_servers = list(swift_servers or [])
         self.fill_fix_examples = bool(fill_fix_examples)
         self.example_seed_values_path = Path(example_seed_values_path) if example_seed_values_path else None
         self.example_semantic_rules_path = Path(example_semantic_rules_path) if example_semantic_rules_path else None
@@ -4078,6 +4085,7 @@ class LegacyConverter:
     def _convert_general_description(self, wb, xl_legacy):
         """Convert General Description sheet."""
         ws = wb["General Description"]
+        ensure_swift_server_rows_in_workbook(wb, self.swift_servers)
         
         # Read legacy key-value format
         df = pd.read_excel(xl_legacy, sheet_name="General Description", dtype=str, header=None)
@@ -4115,8 +4123,8 @@ class LegacyConverter:
             "info title": (4, 2),
             "info contact name": (5, 2),
             "info contact url": (6, 2),
-            "release": (9, 2),
-            "filename pattern": (10, 2)
+            "release": (11, 2),
+            "filename pattern": (12, 2)
         }
         
         for key, (row, col) in mappings.items():
@@ -4130,9 +4138,9 @@ class LegacyConverter:
         if self.contact_url:
             ws.cell(row=6, column=2).value = self.contact_url
         if self.release:
-            ws.cell(row=9, column=2).value = self.release
+            ws.cell(row=11, column=2).value = self.release
         if self.filename_pattern:
-            ws.cell(row=10, column=2).value = self.filename_pattern
+            ws.cell(row=12, column=2).value = self.filename_pattern
 
         # Servers
         if "servers url" in kv_map:
@@ -4143,6 +4151,7 @@ class LegacyConverter:
                 r = server_rows[i]
                 ws.cell(row=r, column=2).value = url
                 ws.cell(row=r, column=4).value = desc
+
     
     def _convert_paths(self, wb, xl_legacy):
         """Convert Paths sheet."""

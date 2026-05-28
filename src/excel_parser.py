@@ -3,6 +3,11 @@ import os
 import difflib
 import re
 
+try:
+    from .swift_services import SWIFT_SERVER_URL_KEY, read_swift_servers_from_general_description
+except ImportError:
+    from swift_services import SWIFT_SERVER_URL_KEY, read_swift_servers_from_general_description
+
 
 def load_excel_sheet(file_path, sheet_name):
     """
@@ -142,6 +147,7 @@ def parse_info(df_info):
     """
     info = {"title": "API Specification", "version": "1.0.0"}  # Default
     servers = []
+    info["swift_servers"] = read_swift_servers_from_general_description(df_info)
 
     if df_info is not None:
         # Expecting col 0 to be key, col 1 to be val
@@ -175,7 +181,7 @@ def parse_info(df_info):
                 info["filename_pattern"] = str(val)
 
             # Servers (Inline)
-            if "servers" in key and "url" in key:
+            if key == "servers url":
                 server_obj = {"url": val}
                 # Check if description exists in column D (index 3)
                 if len(row) > 3:
@@ -183,6 +189,8 @@ def parse_info(df_info):
                     if pd.notna(desc_val) and str(desc_val).strip():
                         server_obj["description"] = str(desc_val).strip()
                 servers.append(server_obj)
+            elif key == SWIFT_SERVER_URL_KEY:
+                continue
 
     return info, servers
 
