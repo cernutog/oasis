@@ -397,29 +397,26 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_legacy_example_tracing.pack(anchor="w", pady=(3, 6))
 
-        self.frame_legacy_contact_name = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
-        self.frame_legacy_contact_name.pack(fill="x", padx=20, pady=(8, 4))
-        ctk.CTkLabel(self.frame_legacy_contact_name, text="Contact name:", width=140, anchor="w").pack(side="left")
-        self.entry_legacy_contact_name = ctk.CTkEntry(self.frame_legacy_contact_name)
-        self.entry_legacy_contact_name.pack(side="left", fill="x", expand=True)
+        self.frame_legacy_metadata = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
+        self.frame_legacy_metadata.pack(fill="x", padx=20, pady=(8, 4))
+        self.frame_legacy_metadata.grid_columnconfigure(1, weight=1)
+        self.frame_legacy_metadata.grid_columnconfigure(3, weight=1)
 
-        self.frame_legacy_contact_url = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
-        self.frame_legacy_contact_url.pack(fill="x", padx=20, pady=(3, 6))
-        ctk.CTkLabel(self.frame_legacy_contact_url, text="Contact URL:", width=140, anchor="w").pack(side="left")
-        self.entry_legacy_contact_url = ctk.CTkEntry(self.frame_legacy_contact_url)
-        self.entry_legacy_contact_url.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Contact name:", width=105, anchor="w").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.entry_legacy_contact_name = ctk.CTkEntry(self.frame_legacy_metadata)
+        self.entry_legacy_contact_name.grid(row=0, column=1, sticky="ew", padx=(0, 14), pady=3)
 
-        self.frame_legacy_release = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
-        self.frame_legacy_release.pack(fill="x", padx=20, pady=(3, 4))
-        ctk.CTkLabel(self.frame_legacy_release, text="Release:", width=140, anchor="w").pack(side="left")
-        self.entry_legacy_release = ctk.CTkEntry(self.frame_legacy_release)
-        self.entry_legacy_release.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Release:", width=105, anchor="w").grid(row=0, column=2, sticky="w", padx=(0, 8), pady=3)
+        self.entry_legacy_release = ctk.CTkEntry(self.frame_legacy_metadata)
+        self.entry_legacy_release.grid(row=0, column=3, sticky="ew", pady=3)
 
-        self.frame_legacy_filename_pattern = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
-        self.frame_legacy_filename_pattern.pack(fill="x", padx=20, pady=(3, 6))
-        ctk.CTkLabel(self.frame_legacy_filename_pattern, text="Filename pattern:", width=140, anchor="w").pack(side="left")
-        self.entry_legacy_filename_pattern = ctk.CTkEntry(self.frame_legacy_filename_pattern)
-        self.entry_legacy_filename_pattern.pack(side="left", fill="x", expand=True)
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Contact URL:", width=105, anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
+        self.entry_legacy_contact_url = ctk.CTkEntry(self.frame_legacy_metadata)
+        self.entry_legacy_contact_url.grid(row=1, column=1, sticky="ew", padx=(0, 14), pady=3)
+
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Filename pattern:", width=105, anchor="w").grid(row=1, column=2, sticky="w", padx=(0, 8), pady=3)
+        self.entry_legacy_filename_pattern = ctk.CTkEntry(self.frame_legacy_metadata)
+        self.entry_legacy_filename_pattern.grid(row=1, column=3, sticky="ew", pady=3)
 
 
         # === 4. VALIDATION TAB ===
