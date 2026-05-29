@@ -412,11 +412,11 @@ class PreferencesDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(self.frame_legacy_metadata, text="Contact URL:", width=105, anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
         self.entry_legacy_contact_url = ctk.CTkEntry(self.frame_legacy_metadata)
-        self.entry_legacy_contact_url.grid(row=1, column=1, sticky="ew", padx=(0, 14), pady=3)
+        self.entry_legacy_contact_url.grid(row=1, column=1, columnspan=3, sticky="ew", pady=3)
 
-        ctk.CTkLabel(self.frame_legacy_metadata, text="Filename pattern:", width=105, anchor="w").grid(row=1, column=2, sticky="w", padx=(0, 8), pady=3)
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Filename pattern:", width=105, anchor="w").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
         self.entry_legacy_filename_pattern = ctk.CTkEntry(self.frame_legacy_metadata)
-        self.entry_legacy_filename_pattern.grid(row=1, column=3, sticky="ew", pady=3)
+        self.entry_legacy_filename_pattern.grid(row=2, column=1, columnspan=3, sticky="ew", pady=3)
 
 
         # === 4. VALIDATION TAB ===
