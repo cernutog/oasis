@@ -3,6 +3,6 @@
   "date": "2026-06-03",
   "title": "OASIS 3.0.15",
   "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
-  "announcement_url": "",
+  "announcement_url": "https://teams.microsoft.com/l/message/19:PoZTEyzxKIuYyz0qebO0A2EkbemwpVOdfUofQ_RnvyE1@thread.tacv2/1780530820214?tenantId=79dc228f-c8f2-4016-8bf0-b990b6c72e98&groupId=908f857d-18e4-434f-a46c-5fbfd537c24e&parentMessageId=1780530820214&teamName=OASIS%20(OAS%20Integration%20Suite)&channelName=Announcements&createdTime=1780530820214",
   "release_notes": "FIXES\n\n\u00b7 SWIFT OAS generation removes Bad Request examples and sandbox extensions from SWIFT outputs, including API Portal-ready mode.\n\nNEW FEATURES\n\n\u00b7 Preferences include configurable SWIFT server entries by service.\n\n\u00b7 Default SWIFT server entries are provided for B2B, CGS, CGS-DKK, COR, FPAD, R2P, RT1, and SCT.\n\n\u00b7 Template Metadata includes Service selection for Legacy Template Converter and Create Template from OAS; when saved, the selected Service is reused with the other metadata.\n\n\u00b7 Generated templates include the selected SWIFT server rows in $index.xlsx.\n\n\u00b7 OAS generation can detect templates without SWIFT server rows and add them automatically after Service selection."
 }
