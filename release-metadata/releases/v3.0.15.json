@@ -4,16 +4,5 @@
   "title": "OASIS 3.0.15",
   "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
   "announcement_url": "",
-  "release_notes": [
-    "\u25cf SWIFT OAS: Bad Request examples are removed from SWIFT output.",
-    "\u25cf SWIFT OAS: cleanup is applied to both OAS 3.0 and OAS 3.1 files.",
-    "\u25cf Preferences: SWIFT servers can be configured by service.",
-    "\u25cf Default SWIFT servers added for B2B, CGS, CGS-DKK, COR, FPAD, R2P, RT1, and SCT.",
-    "\u25cf Template Metadata: Service selection added for conversions and OAS import.",
-    "\u25cf Generated templates receive the selected SWIFT server rows in $index.xlsx.",
-    "\u25cf OAS generation can update templates that do not yet contain SWIFT server rows.",
-    "\u25cf Create Template from OAS now saves and reuses the selected Service metadata.",
-    "\u25cf Inserted SWIFT server rows keep the expected $index.xlsx styling.",
-    "\u25cf Conversion and template import logs are less noisy."
-  ]
+  "release_notes": "[Fix] SWIFT OAS: Bad Request examples and sandbox extensions are removed from both SWIFT outputs, also in API Portal-ready mode.\n\n[Feature] Preferences: SWIFT servers can be configured by service.\n\n[Feature] Default SWIFT servers added for B2B, CGS, CGS-DKK, COR, FPAD, R2P, RT1, and SCT.\n\n[Feature] Template Metadata: Service selection added for conversions and OAS import.\n\n[Improvement] Generated templates receive the selected SWIFT server rows in $index.xlsx.\n\n[Improvement] OAS generation can update templates that do not yet contain SWIFT server rows.\n\n[Fix] Create Template from OAS now saves and reuses the selected Service metadata.\n\n[Fix] Inserted SWIFT server rows keep the expected $index.xlsx styling.\n\n[Improvement] Conversion and template import logs are less noisy."
 }
