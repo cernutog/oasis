@@ -1,0 +1,16 @@
+{
+  "version": "3.0.15",
+  "date": "2026-06-03",
+  "title": "OASIS 3.0.15",
+  "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
+  "announcement_url": "https://teams.microsoft.com/l/message/19:PoZTEyzxKIuYyz0qebO0A2EkbemwpVOdfUofQ_RnvyE1@thread.tacv2/1779842742833?tenantId=79dc228f-c8f2-4016-8bf0-b990b6c72e98&groupId=908f857d-18e4-434f-a46c-5fbfd537c24e&parentMessageId=1779842742833&teamName=OASIS%20(OAS%20Integration%20Suite)&channelName=Announcements&createdTime=1779842742833",
+  "release_notes": [
+    "Added configurable SWIFT server rows for template generation, legacy template conversion, and OAS-to-template import.",
+    "Preloaded default SWIFT server configuration for B2B, CGS, CGS-DKK, COR, FPAD, R2P, RT1, and SCT without forcing preference overrides for existing users.",
+    "Improved the Preferences dialog SWIFT Servers tab with editable rows, row deletion, adjustable column widths, and persisted layout settings.",
+    "Fixed Create Template from OAS metadata handling so the service selection is preserved with the other conversion metadata.",
+    "Improved $index.xlsx SWIFT server row creation so inserted rows keep the expected template styling and merged-cell layout.",
+    "Suppressed openpyxl Data Validation warnings during legacy template conversion while keeping unrelated workbook warnings visible.",
+    "Removed noisy schema flattener debug output from normal application runs."
+  ]
+}
