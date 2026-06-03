@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from copy import deepcopy
+from copy import copy, deepcopy
 from pathlib import Path
 from typing import Any, Callable
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter, range_boundaries
 
 
 SWIFT_SERVICES_PREFERENCE_KEY = "swift_services"
 SWIFT_SERVER_URL_KEY = "swift servers url"
-SWIFT_SERVER_DESCRIPTION_KEY = "swift servers description"
+SWIFT_SERVER_DESCRIPTION_KEY = "servers description"
 MAX_TEMPLATE_SWIFT_SERVERS = 2
 
 
@@ -54,7 +55,7 @@ def get_swift_service_servers(
     servers = deepcopy(service.get("servers", []))
     if len(servers) > MAX_TEMPLATE_SWIFT_SERVERS and log_callback:
         log_callback(
-            f"WARNING: SWIFT service '{service_name}' has {len(servers)} configured servers; "
+            f"WARNING: Service '{service_name}' has {len(servers)} configured servers; "
             f"only the first {MAX_TEMPLATE_SWIFT_SERVERS} were written to the template."
         )
     return servers[:MAX_TEMPLATE_SWIFT_SERVERS]
@@ -104,6 +105,7 @@ def ensure_swift_server_rows_in_workbook(workbook, servers: list[dict[str, str]]
         return
 
     ws = workbook["General Description"]
+    style_source_rows = _find_server_style_rows(ws)
     swift_rows = [
         row_idx
         for row_idx in range(1, ws.max_row + 1)
@@ -112,14 +114,14 @@ def ensure_swift_server_rows_in_workbook(workbook, servers: list[dict[str, str]]
 
     if not swift_rows:
         insert_at = _find_swift_insert_row(ws)
-        ws.insert_rows(insert_at, MAX_TEMPLATE_SWIFT_SERVERS)
+        _insert_rows_preserving_merged_ranges(ws, insert_at, MAX_TEMPLATE_SWIFT_SERVERS)
         for offset in range(MAX_TEMPLATE_SWIFT_SERVERS):
             row_idx = insert_at + offset
             _label_swift_row(ws, row_idx)
             swift_rows.append(row_idx)
     elif len(swift_rows) < MAX_TEMPLATE_SWIFT_SERVERS:
         insert_at = swift_rows[-1] + 1
-        ws.insert_rows(insert_at, MAX_TEMPLATE_SWIFT_SERVERS - len(swift_rows))
+        _insert_rows_preserving_merged_ranges(ws, insert_at, MAX_TEMPLATE_SWIFT_SERVERS - len(swift_rows))
         swift_rows = swift_rows + [
             insert_at + offset
             for offset in range(MAX_TEMPLATE_SWIFT_SERVERS - len(swift_rows))
@@ -128,11 +130,17 @@ def ensure_swift_server_rows_in_workbook(workbook, servers: list[dict[str, str]]
             _label_swift_row(ws, row_idx)
     else:
         swift_rows = swift_rows[:MAX_TEMPLATE_SWIFT_SERVERS]
-        for row_idx in swift_rows:
-            _label_swift_row(ws, row_idx)
 
-    values = list(servers or [])[:MAX_TEMPLATE_SWIFT_SERVERS]
+    _unmerge_ranges_intersecting_rows(ws, swift_rows)
+
     for idx, row_idx in enumerate(swift_rows):
+        _copy_server_row_style(ws, style_source_rows, idx, row_idx)
+        _label_swift_row(ws, row_idx)
+
+    values = list(servers)[:MAX_TEMPLATE_SWIFT_SERVERS] if servers is not None else None
+    for idx, row_idx in enumerate(swift_rows):
+        if values is None:
+            continue
         server = values[idx] if idx < len(values) else {}
         ws.cell(row=row_idx, column=2).value = server.get("url", "")
         ws.cell(row=row_idx, column=4).value = server.get("description", "")
@@ -158,3 +166,49 @@ def _find_swift_insert_row(ws) -> int:
 def _label_swift_row(ws, row_idx: int) -> None:
     ws.cell(row=row_idx, column=1).value = SWIFT_SERVER_URL_KEY
     ws.cell(row=row_idx, column=3).value = SWIFT_SERVER_DESCRIPTION_KEY
+
+
+def _insert_rows_preserving_merged_ranges(ws, insert_at: int, amount: int) -> None:
+    shifted_ranges = []
+    for merged_range in list(ws.merged_cells.ranges):
+        min_col, min_row, max_col, max_row = range_boundaries(str(merged_range))
+        if min_row >= insert_at:
+            ws.unmerge_cells(str(merged_range))
+            shifted_ranges.append(
+                f"{get_column_letter(min_col)}{min_row + amount}:"
+                f"{get_column_letter(max_col)}{max_row + amount}"
+            )
+
+    ws.insert_rows(insert_at, amount)
+
+    for shifted_range in shifted_ranges:
+        ws.merge_cells(shifted_range)
+
+
+def _unmerge_ranges_intersecting_rows(ws, rows: list[int]) -> None:
+    target_rows = set(rows)
+    for merged_range in list(ws.merged_cells.ranges):
+        _min_col, min_row, _max_col, max_row = range_boundaries(str(merged_range))
+        if any(min_row <= row <= max_row for row in target_rows):
+            ws.unmerge_cells(str(merged_range))
+
+
+def _find_server_style_rows(ws) -> list[int]:
+    rows = [
+        row_idx
+        for row_idx in range(1, ws.max_row + 1)
+        if str(ws.cell(row=row_idx, column=1).value or "").strip().lower() == "servers url"
+    ]
+    return rows[-MAX_TEMPLATE_SWIFT_SERVERS:]
+
+
+def _copy_server_row_style(ws, source_rows: list[int], source_index: int, target_row: int) -> None:
+    if not source_rows:
+        return
+
+    source_row = source_rows[min(source_index, len(source_rows) - 1)]
+    ws.row_dimensions[target_row].height = ws.row_dimensions[source_row].height
+    for col_idx in range(1, max(ws.max_column, 4) + 1):
+        source_cell = ws.cell(row=source_row, column=col_idx)
+        target_cell = ws.cell(row=target_row, column=col_idx)
+        target_cell._style = copy(source_cell._style)

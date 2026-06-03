@@ -214,8 +214,8 @@ class OASToExcelConverter:
         Row 6: info contact url | value (B)
         Row 7: servers url | value (B) | servers description | value (D)
         Row 8: servers url | value (B) | servers description | value (D)
-        Row 9: swift servers url | value (B) | swift servers description | value (D)
-        Row 10: swift servers url | value (B) | swift servers description | value (D)
+        Row 9: swift servers url | value (B) | servers description | value (D)
+        Row 10: swift servers url | value (B) | servers description | value (D)
         Row 11: release | value (B)
         Row 12: filename pattern | value (B)
         """

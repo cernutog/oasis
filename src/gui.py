@@ -43,6 +43,7 @@ try:
     from .oas_importer.oas_comparator import OASComparator
     from .legacy_converter import LegacyConverter
     from .legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
+    from .conversion_metadata_preferences import load_metadata_preferences, save_metadata_preferences
     from .swift_services import (
         get_swift_service_servers,
         has_swift_server_rows,
@@ -83,6 +84,7 @@ except ImportError:
     from oas_importer.oas_comparator import OASComparator
     from legacy_converter import LegacyConverter
     from legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
+    from conversion_metadata_preferences import load_metadata_preferences, save_metadata_preferences
     from swift_services import (
         get_swift_service_servers,
         has_swift_server_rows,
@@ -539,7 +541,7 @@ class SwiftTemplateUpdateDialog(ctk.CTkToplevel):
 
         row = ctk.CTkFrame(container, fg_color="transparent")
         row.pack(fill="x", pady=(0, 20))
-        ctk.CTkLabel(row, text="SWIFT service:", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row, text="Service:", width=120, anchor="w").pack(side="left")
         self.cbo_service = ctk.CTkComboBox(
             row,
             values=[""] + sorted(self.swift_services.keys()),
@@ -576,7 +578,7 @@ class SwiftTemplateUpdateDialog(ctk.CTkToplevel):
         configured_servers = self.swift_services.get(service_name, {}).get("servers", [])
         if len(configured_servers) > 2:
             self.result["swift_server_warning"] = (
-                f"WARNING: SWIFT service '{service_name}' has {len(configured_servers)} configured servers; "
+                f"WARNING: Service '{service_name}' has {len(configured_servers)} configured servers; "
                 "only the first 2 were written to the template."
             )
         self.destroy()
@@ -2433,6 +2435,7 @@ class OASGenApp(ctk.CTk):
 
     def open_preferences(self):
         """Open the preferences dialog."""
+        self.prefs_manager.load()
         dialog = PreferencesDialog(
             self, self.prefs_manager, on_save_callback=self._apply_preferences
         )
@@ -2629,11 +2632,21 @@ class OASGenApp(ctk.CTk):
 
         if "import_log_theme" in new_prefs:
             theme = new_prefs["import_log_theme"]
-            if self.import_dialog and hasattr(self.import_dialog, 'import_log_area'):
+            import_dialog = getattr(self, "import_dialog", None)
+            try:
+                import_dialog_exists = bool(import_dialog and import_dialog.winfo_exists())
+            except (tk.TclError, AttributeError):
+                import_dialog_exists = False
+            import_log_area = getattr(import_dialog, "import_log_area", None) if import_dialog_exists else None
+            try:
+                import_log_exists = bool(import_log_area and import_log_area.winfo_exists())
+            except (tk.TclError, AttributeError):
+                import_log_exists = False
+            if import_log_exists:
                 if theme == "Dark":
-                    self.import_dialog.import_log_area.configure(fg_color="#1e1e1e", text_color="#d4d4d4")
+                    import_log_area.configure(fg_color="#1e1e1e", text_color="#d4d4d4")
                 else:
-                    self.import_dialog.import_log_area.configure(fg_color="#ffffff", text_color="#333333")
+                    import_log_area.configure(fg_color="#ffffff", text_color="#333333")
 
         if "spectral_log_theme" in new_prefs:
             theme = new_prefs["spectral_log_theme"]
@@ -5425,23 +5438,7 @@ class ImportDialog(ctk.CTkToplevel):
         ).start()
 
     def _get_import_metadata_defaults(self, src_path):
-        defaults = {
-            "contact_name": "",
-            "contact_url": "",
-            "release": "",
-            "filename_pattern": "",
-            "swift_service": "",
-        }
-
-        if self.prefs_manager:
-            defaults.update(
-                {
-                    "contact_name": str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip(),
-                    "contact_url": str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip(),
-                    "release": str(self.prefs_manager.get("tools_legacy_release", "") or "").strip(),
-                    "filename_pattern": str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip(),
-                }
-            )
+        defaults = load_metadata_preferences(self.prefs_manager)
 
         try:
             info = OASToExcelConverter(src_path).parser.get_info()
@@ -5470,6 +5467,12 @@ class ImportDialog(ctk.CTkToplevel):
             self,
             initial_values=defaults,
             swift_services=swift_services,
+            window_title="Template Creation Metadata",
+            heading="Create Template from OAS Metadata",
+            description=(
+                "These values come from Preferences. You can keep them or change them "
+                "just for this template creation."
+            ),
         )
         self.wait_window(dialog)
         result = dialog.result
@@ -5481,11 +5484,7 @@ class ImportDialog(ctk.CTkToplevel):
             self._log(warning)
 
         if self.prefs_manager and result.get("save_in_preferences"):
-            self.prefs_manager.set("tools_legacy_contact_name", result.get("contact_name", ""))
-            self.prefs_manager.set("tools_legacy_contact_url", result.get("contact_url", ""))
-            self.prefs_manager.set("tools_legacy_release", result.get("release", ""))
-            self.prefs_manager.set("tools_legacy_filename_pattern", result.get("filename_pattern", ""))
-            self.prefs_manager.save()
+            save_metadata_preferences(self.prefs_manager, result)
             self._log("Saved import metadata to preferences.")
 
         return result
@@ -5803,7 +5802,19 @@ class ImportDialog(ctk.CTkToplevel):
                 self.prefs_manager.save()
             except:
                 pass
+        self._clear_parent_import_dialog()
         self.destroy()
+
+    def _clear_parent_import_dialog(self):
+        try:
+            if getattr(self.parent, "import_dialog", None) is self:
+                self.parent.import_dialog = None
+        except Exception:
+            pass
+
+    def destroy(self):
+        self._clear_parent_import_dialog()
+        super().destroy()
 
 
 

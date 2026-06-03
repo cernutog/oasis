@@ -130,14 +130,6 @@ class V3Parser:
         for i in range(header_row_idx + 1, len(df)):
             row = df.iloc[i]
             
-            # DEBUG INJECTION
-            if "listAlerts" in filename and ("Data Type" in sheet_name or "Body" in sheet_name):
-                d_name = str(row.iloc[col_map["name"]]).strip() if col_map["name"] != -1 else ""
-                d_parent = str(row.iloc[col_map["parent"]]).strip() if col_map["parent"] != -1 else ""
-                d_item = str(row.iloc[col_map["items_type"]]).strip() if col_map["items_type"] != -1 else "n/a"
-                d_type = str(row.iloc[col_map["type"]]).strip() if col_map["type"] != -1 else "n/a"
-                print(f"DEBUG PARSER: Row {i}: Name='{d_name}', Parent='{d_parent}', Type='{d_type}', ItemType='{d_item}'")
-
             name = str(row.iloc[col_map["name"]]).strip() if col_map["name"] != -1 else ""
             if not name or name.lower() == "nan": continue
             

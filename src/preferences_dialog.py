@@ -24,6 +24,50 @@ def resource_path(relative_path):
         base_path = os.path.abspath(".")
     return os.path.join(base_path, relative_path)
 
+
+class AutoHideScrollableFrame(ctk.CTkScrollableFrame):
+    """Scrollable frame that shows its scrollbar only when content overflows."""
+
+    def _create_grid(self):
+        super()._create_grid()
+        if hasattr(self, "_scrollbar"):
+            self._scrollbar_grid_info = self._scrollbar.grid_info()
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._scrollbar_grid_info = self._scrollbar.grid_info()
+        if self._orientation == "vertical":
+            self._parent_canvas.configure(yscrollcommand=self._set_vertical_scrollbar)
+        elif self._orientation == "horizontal":
+            self._parent_canvas.configure(xscrollcommand=self._set_horizontal_scrollbar)
+        self.bind("<Configure>", self._on_autohide_configure, add="+")
+        self._parent_canvas.bind("<Configure>", self._on_autohide_configure, add="+")
+        self.after_idle(self._update_scrollbar_visibility)
+
+    def _set_vertical_scrollbar(self, first, last):
+        self._scrollbar.set(first, last)
+        self._toggle_scrollbar(float(first) > 0.0 or float(last) < 1.0)
+
+    def _set_horizontal_scrollbar(self, first, last):
+        self._scrollbar.set(first, last)
+        self._toggle_scrollbar(float(first) > 0.0 or float(last) < 1.0)
+
+    def _toggle_scrollbar(self, should_show):
+        if should_show:
+            if not self._scrollbar.winfo_ismapped():
+                self._scrollbar.grid(**self._scrollbar_grid_info)
+        else:
+            if self._scrollbar.winfo_ismapped():
+                self._scrollbar.grid_remove()
+
+    def _on_autohide_configure(self, _event=None):
+        self.after_idle(self._update_scrollbar_visibility)
+
+    def _update_scrollbar_visibility(self):
+        self._parent_canvas.configure(scrollregion=self._parent_canvas.bbox("all"))
+        first, last = self._parent_canvas.yview() if self._orientation == "vertical" else self._parent_canvas.xview()
+        self._toggle_scrollbar(first > 0.0 or last < 1.0)
+
 def ask_confirmation(parent, title, message):
     """Refactored to use Custom Dialog."""
     dialog = OASConfirmationDialog(parent, title, message)
@@ -123,6 +167,9 @@ class PreferencesDialog(ctk.CTkToplevel):
     ]
     TAB_OPTIONS = ["OAS Generation", "Validation", "View"]
     DESIGNER_TAB_OPTION = "Designer"
+    SWIFT_COLUMN_DEFAULTS = {"service": 90, "url": 300, "description": 180}
+    SWIFT_COLUMN_MIN_WIDTHS = {"service": 75, "url": 240, "description": 150}
+    SWIFT_COLUMN_MAX_TOTAL = 570
 
     def __init__(self, parent, prefs_manager, on_save_callback=None):
         super().__init__(parent)
@@ -130,10 +177,17 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.prefs_manager = prefs_manager
         self.on_save_callback = on_save_callback
         self.result = None  # Will be True if saved, False/None if cancelled
+        self.swift_column_widths = dict(self.SWIFT_COLUMN_DEFAULTS)
+        self.swift_column_widgets = []
+        if hasattr(self.prefs_manager, "load"):
+            self.prefs_manager.load()
 
         # Window setup
         self.title("Preferences")
-        self.geometry("720x560")
+        dialog_width = 780
+        dialog_height = 640
+        self.geometry(f"{dialog_width}x{dialog_height}")
+        self.minsize(720, 560)
         self.resizable(True, True) 
 
         # Non-modal: only transient
@@ -142,9 +196,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         # Center on parent
         self.update_idletasks()
         try:
-            x = parent.winfo_x() + (parent.winfo_width() - 720) // 2
-            y = parent.winfo_y() + (parent.winfo_height() - 560) // 2
-            self.geometry(f"720x560+{int(x)}+{int(y)}")
+            x = parent.winfo_x() + (parent.winfo_width() - dialog_width) // 2
+            y = parent.winfo_y() + (parent.winfo_height() - dialog_height) // 2
+            self.geometry(f"{dialog_width}x{dialog_height}+{int(x)}+{int(y)}")
 
         except:
              pass
@@ -315,7 +369,7 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.tab_templates_swift.grid_columnconfigure(0, weight=1)
         self.tab_templates_swift.grid_rowconfigure(0, weight=1)
 
-        self.scroll_templates_general = ctk.CTkScrollableFrame(
+        self.scroll_templates_general = AutoHideScrollableFrame(
             self.tab_templates_general,
             fg_color="transparent",
         )
@@ -400,23 +454,22 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.frame_legacy_metadata = ctk.CTkFrame(self.scroll_templates_general, fg_color="transparent")
         self.frame_legacy_metadata.pack(fill="x", padx=20, pady=(8, 4))
         self.frame_legacy_metadata.grid_columnconfigure(1, weight=1)
-        self.frame_legacy_metadata.grid_columnconfigure(3, weight=1)
 
         ctk.CTkLabel(self.frame_legacy_metadata, text="Contact name:", width=105, anchor="w").grid(row=0, column=0, sticky="w", padx=(0, 8), pady=3)
         self.entry_legacy_contact_name = ctk.CTkEntry(self.frame_legacy_metadata)
-        self.entry_legacy_contact_name.grid(row=0, column=1, sticky="ew", padx=(0, 14), pady=3)
+        self.entry_legacy_contact_name.grid(row=0, column=1, sticky="ew", pady=3)
 
-        ctk.CTkLabel(self.frame_legacy_metadata, text="Release:", width=105, anchor="w").grid(row=0, column=2, sticky="w", padx=(0, 8), pady=3)
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Release:", width=105, anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
         self.entry_legacy_release = ctk.CTkEntry(self.frame_legacy_metadata)
-        self.entry_legacy_release.grid(row=0, column=3, sticky="ew", pady=3)
+        self.entry_legacy_release.grid(row=1, column=1, sticky="ew", pady=3)
 
-        ctk.CTkLabel(self.frame_legacy_metadata, text="Contact URL:", width=105, anchor="w").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Contact URL:", width=105, anchor="w").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
         self.entry_legacy_contact_url = ctk.CTkEntry(self.frame_legacy_metadata)
-        self.entry_legacy_contact_url.grid(row=1, column=1, columnspan=3, sticky="ew", pady=3)
+        self.entry_legacy_contact_url.grid(row=2, column=1, sticky="ew", pady=3)
 
-        ctk.CTkLabel(self.frame_legacy_metadata, text="Filename pattern:", width=105, anchor="w").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
+        ctk.CTkLabel(self.frame_legacy_metadata, text="Filename pattern:", width=105, anchor="w").grid(row=3, column=0, sticky="w", padx=(0, 8), pady=3)
         self.entry_legacy_filename_pattern = ctk.CTkEntry(self.frame_legacy_metadata)
-        self.entry_legacy_filename_pattern.grid(row=2, column=1, columnspan=3, sticky="ew", pady=3)
+        self.entry_legacy_filename_pattern.grid(row=3, column=1, sticky="ew", pady=3)
 
 
         # === 4. VALIDATION TAB ===
@@ -635,30 +688,44 @@ class PreferencesDialog(ctk.CTkToplevel):
 
     def _build_swift_servers_preferences_tab(self):
         self.swift_server_rows = []
+        self.swift_server_add_frame = None
+        self.btn_add_swift_server = None
 
-        toolbar = ctk.CTkFrame(self.tab_templates_swift, fg_color="transparent")
-        toolbar.pack(fill="x", padx=12, pady=(14, 8))
-        ctk.CTkButton(
-            toolbar,
-            text="Add",
-            width=80,
-            fg_color="#0A809E",
-            hover_color="#076075",
-            command=self._on_add_swift_server_row,
-        ).pack(side="left")
+        self.swift_header = ctk.CTkFrame(self.tab_templates_swift, fg_color="transparent")
+        self.swift_header.pack(fill="x", padx=(18, 12), pady=(14, 4))
+        self.swift_header_service = ctk.CTkLabel(
+            self.swift_header,
+            text="Service",
+            anchor="w",
+            font=ctk.CTkFont(weight="bold"),
+        )
+        self.swift_header_url = ctk.CTkLabel(
+            self.swift_header,
+            text="URL",
+            anchor="w",
+            font=ctk.CTkFont(weight="bold"),
+        )
+        self.swift_header_description = ctk.CTkLabel(
+            self.swift_header,
+            text="Description",
+            anchor="w",
+            font=ctk.CTkFont(weight="bold"),
+        )
+        self.swift_handle_service_url = self._create_swift_column_handle(self.swift_header, "service_url")
+        self.swift_handle_url_description = self._create_swift_column_handle(self.swift_header, "url_description")
+        self._configure_swift_columns(self.swift_header)
+        self.swift_header_service.grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        self.swift_handle_service_url.grid(row=0, column=1, padx=(0, 4), pady=5)
+        self.swift_header_url.grid(row=0, column=2, sticky="ew", padx=(0, 4))
+        self.swift_handle_url_description.grid(row=0, column=3, padx=(0, 4), pady=5)
+        self.swift_header_description.grid(row=0, column=4, sticky="ew", padx=(0, 4))
 
-        header = ctk.CTkFrame(self.tab_templates_swift, fg_color="transparent")
-        header.pack(fill="x", padx=12, pady=(0, 4))
-        header.grid_columnconfigure(0, weight=2)
-        header.grid_columnconfigure(1, weight=4)
-        header.grid_columnconfigure(2, weight=4)
-        header.grid_columnconfigure(3, weight=0)
-        ctk.CTkLabel(header, text="Service", anchor="w", font=ctk.CTkFont(weight="bold")).grid(row=0, column=0, sticky="ew", padx=(0, 8))
-        ctk.CTkLabel(header, text="URL", anchor="w", font=ctk.CTkFont(weight="bold")).grid(row=0, column=1, sticky="ew", padx=(0, 8))
-        ctk.CTkLabel(header, text="Description", anchor="w", font=ctk.CTkFont(weight="bold")).grid(row=0, column=2, sticky="ew", padx=(0, 8))
-
-        self.scroll_swift_servers = ctk.CTkScrollableFrame(self.tab_templates_swift, height=340)
+        self.scroll_swift_servers = AutoHideScrollableFrame(self.tab_templates_swift, height=340)
         self.scroll_swift_servers.pack(fill="both", expand=True, padx=12, pady=(0, 12))
+        self.swift_rows_container = ctk.CTkFrame(self.scroll_swift_servers, fg_color="transparent")
+        self.swift_rows_container.pack(fill="x")
+        self._configure_swift_columns(self.swift_rows_container)
+        self.swift_grid_row = 0
 
     # Removed _browse_master
 
@@ -697,6 +764,10 @@ class PreferencesDialog(ctk.CTkToplevel):
         else: self.chk_x_info_customization.deselect()
         if prefs.get("gen_x_info_oasis_version", True): self.chk_x_info_oasis_version.select()
         else: self.chk_x_info_oasis_version.deselect()
+        self.swift_column_widths = self._sanitize_swift_column_widths(
+            prefs.get("swift_servers_column_widths", self.SWIFT_COLUMN_DEFAULTS)
+        )
+        self._apply_swift_column_widths()
         self._load_swift_server_rows(prefs.get("swift_services", {}))
 
         # Excel Generation
@@ -791,9 +862,14 @@ class PreferencesDialog(ctk.CTkToplevel):
                           command=lambda k=key, v=value: self._on_edit_var(k, v)).pack(side="right", padx=2)
 
     def _load_swift_server_rows(self, services):
-        for child in self.scroll_swift_servers.winfo_children():
+        for child in self.swift_rows_container.winfo_children():
             child.destroy()
         self.swift_server_rows = []
+        self.swift_server_add_frame = None
+        self.btn_add_swift_server = None
+        self.swift_grid_row = 0
+        self._configure_swift_columns(self.swift_rows_container)
+        self.scroll_swift_servers._parent_canvas.yview_moveto(0)
 
         normalized = normalize_swift_services(services)
         for service_name, service in sorted(normalized.items()):
@@ -806,43 +882,168 @@ class PreferencesDialog(ctk.CTkToplevel):
                     url=server.get("url", ""),
                     description=server.get("description", ""),
                 )
+        self._pack_swift_server_add_button()
+
+    def _sanitize_swift_column_widths(self, widths):
+        sanitized = dict(self.SWIFT_COLUMN_DEFAULTS)
+        if isinstance(widths, dict):
+            for key in sanitized:
+                try:
+                    sanitized[key] = int(widths.get(key, sanitized[key]))
+                except (TypeError, ValueError):
+                    pass
+        for key, min_width in self.SWIFT_COLUMN_MIN_WIDTHS.items():
+            sanitized[key] = max(min_width, sanitized[key])
+        overflow = sum(sanitized.values()) - self.SWIFT_COLUMN_MAX_TOTAL
+        for key in ("description", "url", "service"):
+            if overflow <= 0:
+                break
+            reducible = sanitized[key] - self.SWIFT_COLUMN_MIN_WIDTHS[key]
+            reduction = min(overflow, reducible)
+            sanitized[key] -= reduction
+            overflow -= reduction
+        return sanitized
+
+    def _configure_swift_columns(self, frame):
+        frame.grid_columnconfigure(0, weight=0, minsize=self.swift_column_widths["service"])
+        frame.grid_columnconfigure(1, weight=0, minsize=6)
+        frame.grid_columnconfigure(2, weight=1, minsize=self.swift_column_widths["url"])
+        frame.grid_columnconfigure(3, weight=0, minsize=6)
+        frame.grid_columnconfigure(4, weight=0, minsize=self.swift_column_widths["description"])
+        frame.grid_columnconfigure(5, weight=0, minsize=34)
+
+    def _apply_swift_column_widths(self):
+        if hasattr(self, "swift_header"):
+            self._configure_swift_columns(self.swift_header)
+            self.swift_header_service.configure(width=self.swift_column_widths["service"])
+            self.swift_header_url.configure(width=self.swift_column_widths["url"])
+            self.swift_header_description.configure(width=self.swift_column_widths["description"])
+        if hasattr(self, "swift_rows_container"):
+            self._configure_swift_columns(self.swift_rows_container)
+        for row in self.swift_server_rows:
+            row["service"].configure(width=self.swift_column_widths["service"])
+            row["url"].configure(width=self.swift_column_widths["url"])
+            row["description"].configure(width=self.swift_column_widths["description"])
+
+    def _create_swift_column_handle(self, parent, handle_name):
+        handle = ctk.CTkFrame(parent, width=4, height=18, fg_color="#9AA3AA")
+        handle.configure(cursor="sb_h_double_arrow")
+        handle.bind("<ButtonPress-1>", lambda event, name=handle_name: self._start_swift_column_resize(event, name))
+        handle.bind("<B1-Motion>", self._drag_swift_column_resize)
+        handle.bind("<ButtonRelease-1>", self._finish_swift_column_resize)
+        return handle
+
+    def _start_swift_column_resize(self, event, handle_name):
+        self._swift_resize_state = {
+            "handle": handle_name,
+            "x": event.x_root,
+            "widths": dict(self.swift_column_widths),
+        }
+
+    def _drag_swift_column_resize(self, event):
+        state = getattr(self, "_swift_resize_state", None)
+        if not state:
+            return
+        delta = event.x_root - state["x"]
+        widths = dict(state["widths"])
+        if state["handle"] == "service_url":
+            left_key, right_key = "service", "url"
+        else:
+            left_key, right_key = "url", "description"
+        left = max(self.SWIFT_COLUMN_MIN_WIDTHS[left_key], widths[left_key] + delta)
+        right = max(self.SWIFT_COLUMN_MIN_WIDTHS[right_key], widths[right_key] - delta)
+        total = widths[left_key] + widths[right_key]
+        if left + right > total:
+            if widths[left_key] + delta < self.SWIFT_COLUMN_MIN_WIDTHS[left_key]:
+                left = self.SWIFT_COLUMN_MIN_WIDTHS[left_key]
+                right = total - left
+            else:
+                right = self.SWIFT_COLUMN_MIN_WIDTHS[right_key]
+                left = total - right
+        widths[left_key] = left
+        widths[right_key] = right
+        self.swift_column_widths = self._sanitize_swift_column_widths(widths)
+        self._apply_swift_column_widths()
+
+    def _finish_swift_column_resize(self, _event):
+        self._swift_resize_state = None
+
+    def _pack_swift_server_add_button(self):
+        if self.swift_server_add_frame is None:
+            self.swift_server_add_frame = ctk.CTkFrame(self.swift_rows_container, fg_color="transparent", height=34)
+            self.swift_server_add_frame.pack_propagate(False)
+            self.btn_add_swift_server = ctk.CTkButton(
+                self.swift_server_add_frame,
+                text="Add",
+                width=80,
+                fg_color="#0A809E",
+                hover_color="#076075",
+                command=self._on_add_swift_server_row,
+            )
+            self.btn_add_swift_server.pack(side="left")
+        else:
+            self.swift_server_add_frame.grid_forget()
+        self.swift_server_add_frame.grid(
+            row=self.swift_grid_row,
+            column=0,
+            columnspan=6,
+            sticky="ew",
+            pady=(8, 2),
+        )
 
     def _add_swift_server_row(self, service_name="", url="", description=""):
-        row_frame = ctk.CTkFrame(self.scroll_swift_servers, fg_color="transparent")
-        row_frame.pack(fill="x", pady=2)
-        row_frame.grid_columnconfigure(0, weight=2)
-        row_frame.grid_columnconfigure(1, weight=4)
-        row_frame.grid_columnconfigure(2, weight=4)
-        row_frame.grid_columnconfigure(3, weight=0)
+        if self.swift_server_add_frame is not None:
+            self.swift_server_add_frame.grid_forget()
+        row_index = self.swift_grid_row
 
-        entry_service = ctk.CTkEntry(row_frame)
-        entry_service.grid(row=0, column=0, sticky="ew", padx=(0, 8))
+        entry_service = ctk.CTkEntry(self.swift_rows_container, width=self.swift_column_widths["service"])
+        entry_service.grid(row=row_index, column=0, sticky="ew", padx=(0, 4), pady=2)
         entry_service.insert(0, service_name)
 
-        entry_url = ctk.CTkEntry(row_frame)
-        entry_url.grid(row=0, column=1, sticky="ew", padx=(0, 8))
+        row_spacer_service_url = ctk.CTkFrame(self.swift_rows_container, width=4, height=28, fg_color="transparent")
+        row_spacer_service_url.grid(row=row_index, column=1, sticky="ns", padx=(0, 4), pady=2)
+
+        entry_url = ctk.CTkEntry(self.swift_rows_container, width=self.swift_column_widths["url"])
+        entry_url.grid(row=row_index, column=2, sticky="ew", padx=(0, 4), pady=2)
         entry_url.insert(0, url)
 
-        entry_description = ctk.CTkEntry(row_frame)
-        entry_description.grid(row=0, column=2, sticky="ew", padx=(0, 8))
+        row_spacer_url_description = ctk.CTkFrame(self.swift_rows_container, width=4, height=28, fg_color="transparent")
+        row_spacer_url_description.grid(row=row_index, column=3, sticky="ns", padx=(0, 4), pady=2)
+
+        entry_description = ctk.CTkEntry(self.swift_rows_container, width=self.swift_column_widths["description"])
+        entry_description.grid(row=row_index, column=4, sticky="ew", padx=(0, 4), pady=2)
         entry_description.insert(0, description)
 
         row_data = {
-            "frame": row_frame,
+            "frame": entry_service,
             "service": entry_service,
             "url": entry_url,
             "description": entry_description,
+            "spacer_service_url": row_spacer_service_url,
+            "spacer_url_description": row_spacer_url_description,
         }
-        ctk.CTkButton(
-            row_frame,
+        delete_button = ctk.CTkButton(
+            self.swift_rows_container,
             text="X",
             width=28,
             height=28,
             fg_color="#D04040",
             hover_color="#B03030",
             command=lambda data=row_data: self._on_delete_swift_server_row(data),
-        ).grid(row=0, column=3, sticky="e")
+        )
+        delete_button.grid(row=row_index, column=5, sticky="w", pady=2)
+        row_data["delete"] = delete_button
+        row_data["widgets"] = [
+            entry_service,
+            row_spacer_service_url,
+            entry_url,
+            row_spacer_url_description,
+            entry_description,
+            delete_button,
+        ]
         self.swift_server_rows.append(row_data)
+        self.swift_grid_row += 1
+        self._pack_swift_server_add_button()
 
     def _on_add_swift_server_row(self):
         self._add_swift_server_row()
@@ -850,7 +1051,21 @@ class PreferencesDialog(ctk.CTkToplevel):
     def _on_delete_swift_server_row(self, row_data):
         if row_data in self.swift_server_rows:
             self.swift_server_rows.remove(row_data)
-        row_data["frame"].destroy()
+        for widget in row_data.get("widgets", []):
+            widget.destroy()
+        self._regrid_swift_server_rows()
+
+    def _regrid_swift_server_rows(self):
+        self.swift_grid_row = 0
+        for row in self.swift_server_rows:
+            row["service"].grid(row=self.swift_grid_row, column=0, sticky="ew", padx=(0, 4), pady=2)
+            row["spacer_service_url"].grid(row=self.swift_grid_row, column=1, sticky="ns", padx=(0, 4), pady=2)
+            row["url"].grid(row=self.swift_grid_row, column=2, sticky="ew", padx=(0, 4), pady=2)
+            row["spacer_url_description"].grid(row=self.swift_grid_row, column=3, sticky="ns", padx=(0, 4), pady=2)
+            row["description"].grid(row=self.swift_grid_row, column=4, sticky="ew", padx=(0, 4), pady=2)
+            row["delete"].grid(row=self.swift_grid_row, column=5, sticky="w", pady=2)
+            self.swift_grid_row += 1
+        self._pack_swift_server_add_button()
 
     def _collect_swift_services_from_rows(self):
         services = {}
@@ -974,6 +1189,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             "gen_x_info_customization": bool(self.chk_x_info_customization.get()),
             "gen_x_info_oasis_version": bool(self.chk_x_info_oasis_version.get()),
             "swift_services": normalize_swift_services(swift_services),
+            "swift_servers_column_widths": dict(self.swift_column_widths),
             
             # Excel Generation
             "excel_gen_attr_diff": bool(self.chk_excel_attr_diff.get()),

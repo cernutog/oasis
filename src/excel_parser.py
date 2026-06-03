@@ -201,9 +201,6 @@ def parse_paths_index(df_paths):
     """
     operations = []
     if df_paths is not None:
-        # Print columns to help debugging
-        # print(f"DEBUG Paths cols: {df_paths.columns.tolist()}")
-
         # Ensure we locate the correct columns even if named 'Unnamed'
         # Heuristic: Find which column contains '/v1' to identify Path column
         path_col = None

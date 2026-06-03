@@ -10,8 +10,10 @@ import re
 import copy
 import textwrap
 import math
+import warnings
 from pathlib import Path
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional, Any
 import pandas as pd
@@ -29,6 +31,7 @@ except ImportError:
 
 EXAMPLE_TRACE_IMPOSSIBLE_MARKER = "[[OASIS_EXAMPLE_TRACE_IMPOSSIBLE]]"
 EXAMPLE_TRACE_COMPLEX_MARKER = "[[OASIS_EXAMPLE_TRACE_COMPLEX]]"
+OPENPYXL_DATA_VALIDATION_EXTENSION_WARNING = "Data Validation extension is not supported and will be removed"
 
 
 @dataclass
@@ -487,6 +490,27 @@ class LegacyConverter:
         self.log(f"Conversion complete. Output: {self.output_dir.as_posix()}")
         return True
 
+    def _open_excel_file(self, path):
+        """Open an Excel workbook for reading without surfacing openpyxl's noisy validation warning."""
+        with self._suppress_openpyxl_data_validation_warning():
+            return pd.ExcelFile(path)
+
+    def _read_excel_sheet(self, *args, **kwargs):
+        """Read an Excel sheet without surfacing openpyxl's noisy validation warning."""
+        with self._suppress_openpyxl_data_validation_warning():
+            return pd.read_excel(*args, **kwargs)
+
+    @contextmanager
+    def _suppress_openpyxl_data_validation_warning(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=re.escape(OPENPYXL_DATA_VALIDATION_EXTENSION_WARNING),
+                category=UserWarning,
+                module=r"openpyxl\.worksheet\._reader",
+            )
+            yield
+
 
     def _collect_all_data_types(self):
         """Collect all data types from all endpoint 'Data Type' sheets."""
@@ -508,11 +532,11 @@ class LegacyConverter:
         """Collect data types from a single file's 'Data Type' sheet."""
         xl = None
         try:
-            xl = pd.ExcelFile(file_path)
+            xl = self._open_excel_file(file_path)
             if "Data Type" not in xl.sheet_names:
                 return
 
-            df = pd.read_excel(xl, sheet_name="Data Type", dtype=str, header=None)
+            df = self._read_excel_sheet(xl, sheet_name="Data Type", dtype=str, header=None)
             header_keywords = ["name", "type", "description"]
             header_row_idx = self._find_header_row(df, header_keywords)
 
@@ -3289,13 +3313,13 @@ class LegacyConverter:
         
         xl_idx = None
         try:
-            xl_idx = pd.ExcelFile(index_file)
+            xl_idx = self._open_excel_file(index_file)
             
             # 1. Load Schemas for definition details AND build reference graph
             # schema_refs: name -> set of schema names directly referenced (via Schema Name or Items Data Type cols)
             schema_refs: Dict[str, set] = {}
             if "Schemas" in xl_idx.sheet_names:
-                df_s = pd.read_excel(xl_idx, sheet_name="Schemas", dtype=str, header=None)
+                df_s = self._read_excel_sheet(xl_idx, sheet_name="Schemas", dtype=str, header=None)
                 header_idx = self._find_header_row(df_s, ["name", "type"])
                 if header_idx != -1:
                     header_vals = [str(c).strip().lower() for c in df_s.iloc[header_idx]]
@@ -3398,7 +3422,7 @@ class LegacyConverter:
             ep_files = []
             op_id_norms: set = set()  # lowercased operationId stems
             if "Paths" in xl_idx.sheet_names:
-                df_p = pd.read_excel(xl_idx, sheet_name="Paths", dtype=str, header=None)
+                df_p = self._read_excel_sheet(xl_idx, sheet_name="Paths", dtype=str, header=None)
                 h_idx = self._find_header_row(df_p, ["excel file", "operationid"])
                 if h_idx != -1:
                     h_vals = [str(c).strip().lower() for c in df_p.iloc[h_idx]]
@@ -3428,7 +3452,7 @@ class LegacyConverter:
                 
                 xl_ep = None
                 try:
-                    xl_ep = pd.ExcelFile(fpath)
+                    xl_ep = self._open_excel_file(fpath)
 
                     # --- Wrapper usage seeding fallback ---
                     # Some endpoint artifacts do not reliably carry the wrapper name in each sheet.
@@ -3466,7 +3490,7 @@ class LegacyConverter:
                     # Load inline component schemas from this endpoint's Schemas sheet
                     # (register definitions only; usages are resolved transitively below)
                     if "Schemas" in xl_ep.sheet_names:
-                        df_ep_s = pd.read_excel(xl_ep, sheet_name="Schemas", dtype=str, header=None)
+                        df_ep_s = self._read_excel_sheet(xl_ep, sheet_name="Schemas", dtype=str, header=None)
                         h_ep = self._find_header_row(df_ep_s, ["name", "type"])
                         if h_ep != -1:
                             h_ep_vals = [str(c).strip().lower() for c in df_ep_s.iloc[h_ep]]
@@ -3487,7 +3511,7 @@ class LegacyConverter:
                     for sheet_name in xl_ep.sheet_names:
                         if sheet_name in ["General Description", "Paths", "Tags", "Schemas"]: continue
 
-                        df = pd.read_excel(xl_ep, sheet_name=sheet_name, dtype=str, header=None)
+                        df = self._read_excel_sheet(xl_ep, sheet_name=sheet_name, dtype=str, header=None)
 
                         # Find a 'schema name' or 'data type' column.
                         schema_col = -1
@@ -3651,11 +3675,11 @@ class LegacyConverter:
         xl = None
         out: Dict[str, DataType] = {}
         try:
-            xl = pd.ExcelFile(workbook_path)
+            xl = self._open_excel_file(workbook_path)
             if "Schemas" not in xl.sheet_names:
                 return out
 
-            df = pd.read_excel(xl, sheet_name="Schemas", dtype=str, header=None)
+            df = self._read_excel_sheet(xl, sheet_name="Schemas", dtype=str, header=None)
             header_idx = self._find_header_row(df, ["name", "type"])
             if header_idx == -1:
                 return out
@@ -3941,9 +3965,9 @@ class LegacyConverter:
         self.missing_index_files = []
         xl = None
         try:
-            xl = pd.ExcelFile(index_path)
+            xl = self._open_excel_file(index_path)
             if "Paths" in xl.sheet_names:
-                df = pd.read_excel(xl, sheet_name="Paths", dtype=str, header=None)
+                df = self._read_excel_sheet(xl, sheet_name="Paths", dtype=str, header=None)
                 header_row_idx = self._find_header_row(df, ["excel file", "operationid"])
                 if header_row_idx == -1: return
                 
@@ -4005,7 +4029,7 @@ class LegacyConverter:
         xl_legacy = None
         try:
             wb = load_workbook(output_path)
-            xl_legacy = pd.ExcelFile(legacy_path)
+            xl_legacy = self._open_excel_file(legacy_path)
 
             # 1. General Description
             self._convert_general_description(wb, xl_legacy)
@@ -4088,7 +4112,7 @@ class LegacyConverter:
         ensure_swift_server_rows_in_workbook(wb, self.swift_servers)
         
         # Read legacy key-value format
-        df = pd.read_excel(xl_legacy, sheet_name="General Description", dtype=str, header=None)
+        df = self._read_excel_sheet(xl_legacy, sheet_name="General Description", dtype=str, header=None)
         
         # Build key-value map
         kv_map = {}
@@ -4157,7 +4181,7 @@ class LegacyConverter:
         """Convert Paths sheet."""
         ws = wb["Paths"]
         
-        df = pd.read_excel(xl_legacy, sheet_name="Paths", dtype=str)
+        df = self._read_excel_sheet(xl_legacy, sheet_name="Paths", dtype=str)
         header_row_idx = self._find_header_row(df, ["excel file", "path"])
         
         if header_row_idx == -1:
@@ -4287,12 +4311,12 @@ class LegacyConverter:
                 ep_files.append((p, p.name))
                 seen.add(p.name)
         for ep_file, ep_fname in ep_files:
-            xl = pd.ExcelFile(ep_file)
+            xl = self._open_excel_file(ep_file)
             
             # 1.1 Params
             for sheet_name in ["Path", "Header"]:
                 if sheet_name in xl.sheet_names:
-                    df = pd.read_excel(xl, sheet_name=sheet_name, dtype=str, header=None)
+                    df = self._read_excel_sheet(xl, sheet_name=sheet_name, dtype=str, header=None)
                     # Legacy templates use "Type"/"Element" headers; converted use "Name"/"Type"
                     header_row_idx = self._find_header_row(df, ["name", "type", "element", "constraint"])
                     if header_row_idx != -1:
@@ -4792,7 +4816,7 @@ class LegacyConverter:
         xl = None
         try:
             wb = load_workbook(output_path)
-            xl = pd.ExcelFile(legacy_path)
+            xl = self._open_excel_file(legacy_path)
 
             # Use FILENAME as wrapper base (matching old tool behaviour),
             # NOT the operationId from the index which may differ.
@@ -4852,12 +4876,12 @@ class LegacyConverter:
         
         # Path parameters
         if "Path" in xl.sheet_names:
-            df = pd.read_excel(xl, sheet_name="Path", dtype=str)
+            df = self._read_excel_sheet(xl, sheet_name="Path", dtype=str)
             params.extend(self._parse_params(df, "path"))
         
         # Header parameters
         if "Header" in xl.sheet_names:
-            df = pd.read_excel(xl, sheet_name="Header", dtype=str)
+            df = self._read_excel_sheet(xl, sheet_name="Header", dtype=str)
             params.extend(self._parse_params(df, "header"))
             
         ep_filename = wb.properties.title if hasattr(wb, 'properties') and wb.properties.title else None
@@ -4927,7 +4951,7 @@ class LegacyConverter:
             # Extract description from legacy title
             desc = ""
             try:
-                df = pd.read_excel(xl, sheet_name=code, dtype=str, header=None)
+                df = self._read_excel_sheet(xl, sheet_name=code, dtype=str, header=None)
                 if not df.empty:
                     title_row = df.iloc[0].dropna().tolist()
                     for val in title_row:
@@ -5179,7 +5203,7 @@ class LegacyConverter:
     
     def _read_legacy_structure(self, xl, sheet_name: str) -> List[Tuple]:
         """Read legacy Body/Response structure: (name, parent, description, type, mandatory)."""
-        df = pd.read_excel(xl, sheet_name=sheet_name, dtype=str, header=None)
+        df = self._read_excel_sheet(xl, sheet_name=sheet_name, dtype=str, header=None)
         
         # Representative keywords for header detection
         header_keywords = ["name", "element", "type", "parent", "data type", "description", "mandatory"]
@@ -6298,7 +6322,7 @@ class LegacyConverter:
             return []
 
         try:
-            df = pd.read_excel(xl_legacy, sheet_name=sheet_name, dtype=str, header=None)
+            df = self._read_excel_sheet(xl_legacy, sheet_name=sheet_name, dtype=str, header=None)
         except Exception:
             return []
 

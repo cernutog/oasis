@@ -5,6 +5,7 @@ Handles loading, saving, and providing default values for user preferences.
 
 import os
 import json
+from copy import deepcopy
 from pathlib import Path
 
 
@@ -26,6 +27,104 @@ X_INFO_EXTENSION_OPTION_KEYS = {
     "oasis_version": "gen_x_info_oasis_version",
 }
 DEFAULT_X_INFO_OPTIONS = {name: True for name in X_INFO_EXTENSION_OPTION_KEYS}
+DEFAULT_SWIFT_SERVICES = {
+    "B2B": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-b2b/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-b2b-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "CGS": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-cgs/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-cgs-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "CGS-DKK": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-cgs-dkk/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-cgs-dkk-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "COR": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-cor/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-cor-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "FPAD": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-fpad/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-fpad-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "R2P": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-r2p/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-r2p-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "RT1": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-rt1/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-rt1-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "SCT": {
+        "servers": [
+            {
+                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-sct/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-sct-pilot/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+}
 
 
 def normalize_update_manifest_url(value) -> str:
@@ -188,7 +287,9 @@ class PreferencesManager:
         "tools_legacy_contact_url": "",
         "tools_legacy_release": "",
         "tools_legacy_filename_pattern": "",
-        "swift_services": {},
+        "tools_legacy_swift_service": "",
+        "swift_services": DEFAULT_SWIFT_SERVICES,
+        "swift_servers_column_widths": {"service": 90, "url": 300, "description": 180},
         
         # OAS Diff Settings
         "diff_old_spec": "",
@@ -215,7 +316,7 @@ class PreferencesManager:
     }
 
     def __init__(self):
-        self.preferences = dict(self.DEFAULT_PREFERENCES)
+        self.preferences = deepcopy(self.DEFAULT_PREFERENCES)
         self._config_path = self._get_config_path()
         self.load()
         self.cleanup_orphans() # Auto-cleanup on load
@@ -289,12 +390,12 @@ class PreferencesManager:
 
     def reset_to_defaults(self):
         """Reset all preferences to default values."""
-        self.preferences = dict(self.DEFAULT_PREFERENCES)
+        self.preferences = deepcopy(self.DEFAULT_PREFERENCES)
         self.save()
 
     def get_all(self) -> dict:
         """Get all preferences as a dictionary."""
-        return dict(self.preferences)
+        return deepcopy(self.preferences)
 
     def update(self, new_prefs: dict):
         """Update multiple preferences at once."""

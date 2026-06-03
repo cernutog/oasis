@@ -7,6 +7,7 @@ from .legacy_converter import (
     EXAMPLE_TRACE_IMPOSSIBLE_MARKER,
     LegacyConverter,
 )
+from .conversion_metadata_preferences import load_metadata_preferences, save_metadata_preferences
 from .swift_services import get_swift_service_servers, normalize_swift_services
 
 class CleanFolderDialog(ctk.CTkToplevel):
@@ -91,14 +92,25 @@ class CleanFolderDialog(ctk.CTkToplevel):
 class LegacyConversionMetadataDialog(ctk.CTkToplevel):
     """Allows per-run override of legacy metadata sourced from preferences."""
 
-    def __init__(self, parent, initial_values=None, swift_services=None):
+    def __init__(
+        self,
+        parent,
+        initial_values=None,
+        swift_services=None,
+        window_title="Conversion Metadata",
+        heading="Legacy Conversion Metadata",
+        description="These values come from Preferences. You can keep them or change them just for this conversion.",
+    ):
         super().__init__(parent)
         self.initial_values = dict(initial_values or {})
         self.swift_services = normalize_swift_services(swift_services)
+        self.window_title = window_title
+        self.heading = heading
+        self.description = description
         self.result = None
         self.var_save_preferences = ctk.BooleanVar(value=False)
 
-        self.title("Conversion Metadata")
+        self.title(self.window_title)
         self.geometry("780x430")
         self.minsize(720, 380)
         self.resizable(True, True)
@@ -137,14 +149,14 @@ class LegacyConversionMetadataDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             content,
-            text="Legacy Conversion Metadata",
+            text=self.heading,
             text_color="#0A809E",
             font=ctk.CTkFont(size=22, weight="bold"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             content,
-            text="These values come from Preferences. You can keep them or change them just for this conversion.",
+            text=self.description,
             font=ctk.CTkFont(size=13),
             justify="left",
             wraplength=720,
@@ -152,7 +164,7 @@ class LegacyConversionMetadataDialog(ctk.CTkToplevel):
 
         service_row = ctk.CTkFrame(content, fg_color="transparent")
         service_row.pack(fill="x", pady=6)
-        ctk.CTkLabel(service_row, text="SWIFT service:", width=140, anchor="w").pack(side="left")
+        ctk.CTkLabel(service_row, text="Service:", width=140, anchor="w").pack(side="left")
         self.cbo_swift_service = ctk.CTkComboBox(
             service_row,
             values=[""] + sorted(self.swift_services.keys()),
@@ -223,7 +235,7 @@ class LegacyConversionMetadataDialog(ctk.CTkToplevel):
         configured_servers = self.swift_services.get(swift_service, {}).get("servers", [])
         if len(configured_servers) > 2:
             values["swift_server_warning"] = (
-                f"WARNING: SWIFT service '{swift_service}' has {len(configured_servers)} configured servers; "
+                f"WARNING: Service '{swift_service}' has {len(configured_servers)} configured servers; "
                 "only the first 2 were written to the template."
             )
         values["save_in_preferences"] = bool(self.var_save_preferences.get())
@@ -288,8 +300,6 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 self.entry_src.insert(0, last_src)
             if last_dst:
                 self.entry_dst.insert(0, last_dst)
-        else:
-            print("DEBUG: remember_paths is False or prefs_manager is None")
 
     def _on_close(self):
         """Save settings and close window."""
@@ -446,7 +456,6 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 self.prefs_manager.set("last_legacy_src", p)
                 self.prefs_manager.set("last_legacy_dst", self.entry_dst.get())
                 self.prefs_manager.save()
-                print(f"DEBUG: Saved src='{p}', dst='{self.entry_dst.get()}'")
 
     def _browse_dst(self):
         initial = self._get_initial_dir(self.entry_dst, "last_legacy_dst")
@@ -462,7 +471,6 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
                 self.prefs_manager.set("last_legacy_dst", p)
                 self.prefs_manager.save()
-                print(f"DEBUG: Saved dst='{p}'")
 
 
     def _open_output_folder(self):
@@ -523,22 +531,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             self.log_area.insert("end", text)
 
     def _get_conversion_metadata_defaults(self):
-        if not self.prefs_manager:
-            return {
-                "contact_name": "",
-                "contact_url": "",
-                "release": "",
-                "filename_pattern": "",
-                "swift_service": "",
-            }
-
-        return {
-            "contact_name": str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip(),
-            "contact_url": str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip(),
-            "release": str(self.prefs_manager.get("tools_legacy_release", "") or "").strip(),
-            "filename_pattern": str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip(),
-            "swift_service": "",
-        }
+        return load_metadata_preferences(self.prefs_manager)
 
     def _prompt_conversion_metadata_overrides(self):
         defaults = self._get_conversion_metadata_defaults()
@@ -666,11 +659,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 self._log(swift_warning)
 
             if self.prefs_manager and overrides.get("save_in_preferences"):
-                self.prefs_manager.set("tools_legacy_contact_name", contact_name)
-                self.prefs_manager.set("tools_legacy_contact_url", contact_url)
-                self.prefs_manager.set("tools_legacy_release", release)
-                self.prefs_manager.set("tools_legacy_filename_pattern", filename_pattern)
-                self.prefs_manager.save()
+                save_metadata_preferences(self.prefs_manager, overrides)
                 self._log("Saved conversion metadata to preferences.")
 
             converter = LegacyConverter(

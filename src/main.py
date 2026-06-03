@@ -344,8 +344,6 @@ def generate_oas(
         if security_req:
             generator_30.oas["security"] = security_req
 
-        generator_30.build_paths(paths_list, operations_details)
-
         # Add Security Schemes to Components
         if security_schemes:
             if "securitySchemes" not in components_data:
@@ -427,7 +425,6 @@ def generate_oas(
         if security_req:
             sw_gen_30.oas["security"] = security_req
 
-        sw_gen_30.build_paths(paths_list, operations_details)
         if security_schemes:
             if "securitySchemes" not in components_data:
                 components_data["securitySchemes"] = {}

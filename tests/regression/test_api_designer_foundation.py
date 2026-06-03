@@ -3,10 +3,12 @@ import datetime
 import os
 import re
 import shutil
+import warnings
 
 import yaml
 import pandas as pd
 from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 
 from src.api_designer.models import Change, ChangeStep, create_empty_workspace
 from src.api_designer.persistence import FileSystemDesignerRepository
@@ -14,6 +16,12 @@ from src.excel_parser import parse_info, parse_paths_index
 from src.generator import OASGenerator
 from src.legacy_converter import DataType, LegacyConverter
 from src.legacy_converter_dialog import LegacyConverterDialog
+from src.gui import ImportDialog, OASGenApp
+from src.oas_importer.schema_flattener import SchemaFlattener
+from src.conversion_metadata_preferences import (
+    load_metadata_preferences,
+    save_metadata_preferences,
+)
 from src import main as main_script
 from src.oas_output_archive import (
     archive_existing_oas_files,
@@ -24,6 +32,7 @@ from src.oas_output_archive import (
     list_existing_oas_files,
 )
 from src.preferences import (
+    DEFAULT_SWIFT_SERVICES,
     DEFAULT_X_INFO_OPTIONS,
     GENERATION_MODE_API_PORTAL_READY,
     GENERATION_MODE_MINIMAL,
@@ -34,6 +43,7 @@ from src.swift_services import (
     ensure_swift_server_rows_in_workbook,
     get_swift_service_servers,
 )
+from src.update_checker import parse_update_manifest
 from src.version import FULL_VERSION
 
 
@@ -380,11 +390,18 @@ class _DummyEntry:
 class _DummyPrefs:
     def __init__(self, values: dict[str, str]):
         self._values = values
+        self.saved = False
 
     def get(self, key: str, default=None):
         if key == "remember_paths":
             return True
         return self._values.get(key, default)
+
+    def set(self, key: str, value):
+        self._values[key] = value
+
+    def save(self):
+        self.saved = True
 
 
 def test_legacy_converter_browse_initial_dir_uses_nearest_existing_path():
@@ -402,6 +419,120 @@ def test_legacy_converter_browse_initial_dir_uses_nearest_existing_path():
         assert Path(initial) == expected
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def test_metadata_preferences_roundtrip_includes_swift_service():
+    prefs = _DummyPrefs(
+        {
+            "tools_legacy_contact_name": "EBA CLEARING",
+            "tools_legacy_contact_url": "https://www.ebaclearing.eu",
+            "tools_legacy_release": "v20260418",
+            "tools_legacy_filename_pattern": "template.yaml",
+            "tools_legacy_swift_service": "FPAD",
+        }
+    )
+
+    defaults = load_metadata_preferences(prefs)
+
+    assert defaults["swift_service"] == "FPAD"
+
+    save_metadata_preferences(
+        prefs,
+        {
+            "contact_name": "NEXI",
+            "contact_url": "https://www.nexigroup.com/",
+            "release": "v2026Q4",
+            "filename_pattern": "next.yaml",
+            "swift_service": "R2P",
+        },
+    )
+
+    assert prefs._values["tools_legacy_swift_service"] == "R2P"
+    assert prefs.saved is True
+
+
+def test_legacy_conversion_metadata_defaults_include_saved_swift_service():
+    dialog = object.__new__(LegacyConverterDialog)
+    dialog.prefs_manager = _DummyPrefs({"tools_legacy_swift_service": "FPAD"})
+
+    defaults = dialog._get_conversion_metadata_defaults()
+
+    assert defaults["swift_service"] == "FPAD"
+
+
+def test_oas_import_metadata_defaults_include_saved_swift_service_when_oas_info_missing():
+    dialog = object.__new__(ImportDialog)
+    dialog.prefs_manager = _DummyPrefs({"tools_legacy_swift_service": "FPAD"})
+    dialog._log = lambda _message: None
+
+    defaults, _needs_filename_pattern = dialog._get_import_metadata_defaults("missing.yaml")
+
+    assert defaults["swift_service"] == "FPAD"
+
+
+def test_schema_flattener_does_not_print_debug_logs(capsys):
+    flattener = SchemaFlattener(
+        {
+            "components": {
+                "schemas": {
+                    "AccountCategory": {
+                        "description": "Account category.",
+                        "type": "string",
+                        "enum": ["BUSINESS", "PERSONAL"],
+                    }
+                }
+            }
+        }
+    )
+
+    rows = flattener.flatten_schema("AccountCategory")
+
+    assert rows
+    captured = capsys.readouterr()
+    assert "DEBUG:" not in captured.out
+
+
+def test_apply_preferences_skips_destroyed_import_dialog_log_area():
+    class DummyVar:
+        def set(self, _value):
+            pass
+
+    class DestroyedLogArea:
+        def configure(self, **_kwargs):
+            raise AssertionError("destroyed import log area was touched")
+
+    class DestroyedImportDialog:
+        import_log_area = DestroyedLogArea()
+
+        def winfo_exists(self):
+            return False
+
+    app = object.__new__(OASGenApp)
+    app.import_dialog = DestroyedImportDialog()
+    app.var_30 = DummyVar()
+    app.var_31 = DummyVar()
+    app.var_swift = DummyVar()
+    app.update_file_list = lambda: None
+
+    app._apply_preferences({"import_log_theme": "Dark"})
+
+
+def test_import_dialog_close_clears_parent_reference():
+    class Parent:
+        pass
+
+    parent = Parent()
+    dialog = object.__new__(ImportDialog)
+    dialog.parent = parent
+    dialog.prefs_manager = _DummyPrefs({})
+    dialog.destroyed = False
+    dialog.destroy = lambda: setattr(dialog, "destroyed", True)
+    parent.import_dialog = dialog
+
+    dialog._on_close()
+
+    assert parent.import_dialog is None
+    assert dialog.destroyed is True
 
 
 def test_generation_mode_filters_request_body_examples():
@@ -451,6 +582,34 @@ def test_x_info_extensions_are_enabled_by_default():
         "customization": True,
         "oasis_version": True,
     }
+
+
+def test_swift_services_are_preloaded_in_default_preferences():
+    defaults = PreferencesManager.DEFAULT_PREFERENCES
+
+    assert defaults["swift_services"] == DEFAULT_SWIFT_SERVICES
+    assert sorted(defaults["swift_services"].keys()) == [
+        "B2B",
+        "CGS",
+        "CGS-DKK",
+        "COR",
+        "FPAD",
+        "R2P",
+        "RT1",
+        "SCT",
+    ]
+    assert defaults["swift_services"]["R2P"]["servers"][1] == {
+        "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-r2p-pilot/v1",
+        "description": "Test Environment",
+    }
+
+
+def test_update_manifest_does_not_force_swift_services_override():
+    manifest_path = Path(__file__).resolve().parents[2] / "release-metadata" / "oasis-version.json"
+
+    manifest = parse_update_manifest(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest.preferences_override is None
 
 
 def test_build_info_emits_selected_x_info_extensions():
@@ -533,7 +692,7 @@ def test_parse_info_keeps_swift_servers_separate_from_standard_servers():
     df_info = pd.DataFrame(
         [
             ["servers url", "/standard", "servers description", "Standard"],
-            ["swift servers url", "/swift", "swift servers description", "SWIFT"],
+            ["swift servers url", "/swift", "servers description", "SWIFT"],
         ]
     )
 
@@ -578,6 +737,19 @@ def test_ensure_swift_server_rows_inserts_rows_before_release():
     ws.append(["servers url", "", "servers description", ""])
     ws.append(["release", "v1"])
     ws.append(["filename pattern", "api.yaml"])
+    ws.merge_cells("B9:D9")
+    ws.merge_cells("B10:D10")
+    side = Side(style="thin", color="808080")
+    server_label_fill = PatternFill("solid", fgColor="D9D9D9")
+    server_value_fill = PatternFill("solid", fgColor="FFFFFF")
+    for row in (7, 8):
+        ws.row_dimensions[row].height = 18
+        for col in range(1, 5):
+            cell = ws.cell(row=row, column=col)
+            cell.font = Font(name="Calibri", size=11, bold=col in (1, 3), color="1F4E79")
+            cell.fill = server_label_fill if col in (1, 3) else server_value_fill
+            cell.border = Border(left=side, right=side, top=side, bottom=side)
+            cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=False)
 
     ensure_swift_server_rows_in_workbook(
         workbook,
@@ -586,10 +758,18 @@ def test_ensure_swift_server_rows_inserts_rows_before_release():
 
     assert ws.cell(row=9, column=1).value == "swift servers url"
     assert ws.cell(row=9, column=2).value == "/swift"
+    assert ws.cell(row=9, column=3).value == "servers description"
     assert ws.cell(row=9, column=4).value == "SWIFT"
     assert ws.cell(row=10, column=1).value == "swift servers url"
+    assert ws.cell(row=10, column=3).value == "servers description"
     assert ws.cell(row=11, column=1).value == "release"
     assert ws.cell(row=12, column=1).value == "filename pattern"
+    assert "B11:D11" in [str(merged_range) for merged_range in ws.merged_cells.ranges]
+    assert "B12:D12" in [str(merged_range) for merged_range in ws.merged_cells.ranges]
+    for source_row, swift_row in ((7, 9), (8, 10)):
+        assert ws.row_dimensions[swift_row].height == ws.row_dimensions[source_row].height
+        for col in range(1, 5):
+            assert ws.cell(row=swift_row, column=col)._style == ws.cell(row=source_row, column=col)._style
 
 
 def test_swift_production_policy_removes_400_examples_in_api_portal_ready_mode():
@@ -805,6 +985,66 @@ def test_legacy_converter_fill_fix_examples_replaces_invalid_bic_and_creates_con
         assert all(re.fullmatch(r"[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}", value) for value in examples)
     finally:
         shutil.rmtree(temp_root, ignore_errors=True)
+
+
+def test_legacy_converter_excel_open_suppresses_only_openpyxl_data_validation_warning(monkeypatch):
+    def fake_excel_file(path):
+        warnings.warn_explicit(
+            "Data Validation extension is not supported and will be removed",
+            UserWarning,
+            filename="openpyxl/worksheet/_reader.py",
+            lineno=329,
+            module="openpyxl.worksheet._reader",
+        )
+        warnings.warn_explicit(
+            "Important workbook warning",
+            UserWarning,
+            filename="openpyxl/worksheet/_reader.py",
+            lineno=330,
+            module="openpyxl.worksheet._reader",
+        )
+        return f"opened:{path}"
+
+    monkeypatch.setattr("src.legacy_converter.pd.ExcelFile", fake_excel_file)
+    converter = LegacyConverter("in", "out")
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        result = converter._open_excel_file("legacy.xlsm")
+
+    assert result == "opened:legacy.xlsm"
+    assert [str(item.message) for item in captured] == ["Important workbook warning"]
+
+
+def test_legacy_converter_excel_read_suppresses_lazy_openpyxl_data_validation_warning(monkeypatch):
+    expected = pd.DataFrame([{"Name": "field"}])
+
+    def fake_read_excel(*args, **kwargs):
+        warnings.warn_explicit(
+            "Data Validation extension is not supported and will be removed",
+            UserWarning,
+            filename="openpyxl/worksheet/_reader.py",
+            lineno=329,
+            module="openpyxl.worksheet._reader",
+        )
+        warnings.warn_explicit(
+            "Important workbook warning",
+            UserWarning,
+            filename="openpyxl/worksheet/_reader.py",
+            lineno=330,
+            module="openpyxl.worksheet._reader",
+        )
+        return expected
+
+    monkeypatch.setattr("src.legacy_converter.pd.read_excel", fake_read_excel)
+    converter = LegacyConverter("in", "out")
+
+    with warnings.catch_warnings(record=True) as captured:
+        warnings.simplefilter("always")
+        result = converter._read_excel_sheet("legacy.xlsm", sheet_name="Body", dtype=str)
+
+    assert result is expected
+    assert [str(item.message) for item in captured] == ["Important workbook warning"]
 
 
 def test_legacy_converter_fill_fix_examples_respects_allowed_values_limit():
