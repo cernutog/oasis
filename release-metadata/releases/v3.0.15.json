@@ -5,14 +5,14 @@
   "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
   "announcement_url": "",
   "release_notes": [
-    "\u25cf Fixed SWIFT OAS generation: Bad Request examples are removed from SWIFT specifications even when API Portal-ready mode is selected.",
-    "\u25cf Fixed SWIFT OAS generation: SWIFT-specific cleanup is applied consistently to generated SWIFT OAS 3.0 and OAS 3.1 files.",
-    "\u25cf Added SWIFT server metadata in Preferences: each service can define server URL and description rows, with defaults for B2B, CGS, CGS-DKK, COR, FPAD, R2P, RT1, and SCT.",
-    "\u25cf Added the Service field to the Template Metadata dialog, so legacy conversion and Create Template from OAS can select the SWIFT server configuration to write into $index.xlsx.",
-    "\u25cf OAS generation now detects templates without SWIFT server rows and can update the template automatically after the user selects the related service.",
-    "\u25cf Legacy template conversion and Create Template from OAS now populate SWIFT server rows in the generated $index.xlsx when a service is selected.",
-    "\u25cf Create Template from OAS now saves and reuses the selected service together with contact, release, and filename pattern metadata.",
-    "\u25cf SWIFT server rows inserted in $index.xlsx now keep the expected template styling and merged-cell layout.",
-    "\u25cf Reduced noisy logs during conversion and template import, so relevant warnings are easier to see."
+    "\u25cf    Fixed SWIFT OAS generation: Bad Request examples are removed\n      from SWIFT specifications even when API Portal-ready mode is selected.",
+    "\u25cf    Fixed SWIFT OAS generation: SWIFT-specific cleanup is applied\n      consistently to generated SWIFT OAS 3.0 and OAS 3.1 files.",
+    "\u25cf    Added SWIFT server metadata in Preferences: each service can define\n      server URL and description rows, with defaults for B2B, CGS,\n      CGS-DKK, COR, FPAD, R2P, RT1, and SCT.",
+    "\u25cf    Added the Service field to the Template Metadata dialog, so legacy\n      conversion and Create Template from OAS can select the SWIFT server\n      configuration to write into $index.xlsx.",
+    "\u25cf    OAS generation now detects templates without SWIFT server rows and\n      can update the template automatically after the user selects the\n      related service.",
+    "\u25cf    Legacy template conversion and Create Template from OAS now populate\n      SWIFT server rows in the generated $index.xlsx when a service is\n      selected.",
+    "\u25cf    Create Template from OAS now saves and reuses the selected service\n      together with contact, release, and filename pattern metadata.",
+    "\u25cf    SWIFT server rows inserted in $index.xlsx now keep the expected\n      template styling and merged-cell layout.",
+    "\u25cf    Reduced noisy logs during conversion and template import, so relevant\n      warnings are easier to see."
   ]
 }
