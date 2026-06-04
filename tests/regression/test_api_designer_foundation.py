@@ -569,6 +569,104 @@ def test_generation_mode_filters_request_body_examples():
     }
 
 
+def test_swift_generation_filters_bad_request_body_examples_in_api_portal_ready_mode():
+    temp_root = _clean_test_temp()
+    input_dir = temp_root / "swift_request_examples_input"
+    output_dir = temp_root / "swift_request_examples_output"
+    input_dir.mkdir()
+    endpoint_file = "postPayment.xlsx"
+
+    _create_workbook(
+        input_dir / "$index.xlsx",
+        {
+            "General Description": [
+                ["Key", "Value"],
+                ["Info Title", "Payments API"],
+                ["Info Version", "1.0"],
+                [
+                    "Filename Pattern",
+                    "TEST_<oas_version>_<customization>API_<api_version>_<release>.yaml",
+                ],
+                ["Release", "v1"],
+            ],
+            "Tags": [["Name", "Description"]],
+            "Servers": [["URL", "Description"]],
+            "Security": [["Name", "Type", "Scheme", "Format", "Description"]],
+            "Paths": [
+                ["Excel", "Path", "Description", "Method", "Tag", "Summary", "OperationId"],
+                [
+                    endpoint_file,
+                    "/payments",
+                    "Payments",
+                    "post",
+                    "Payments",
+                    "Create payment",
+                    "createPayment",
+                ],
+            ],
+            "Parameters": [["Name", "Description", "In", "Required", "Schema"]],
+            "Headers": [["Name", "Description", "Schema"]],
+            "Schemas": [
+                ["Name", "Parent", "Description", "Type"],
+                ["PaymentRequest", "", "Payment request", "object"],
+            ],
+            "Responses": [["Name", "Description", "Schema"]],
+        },
+    )
+    _create_workbook(
+        input_dir / endpoint_file,
+        {
+            "Parameters": [["Name", "Description", "In", "Required", "Schema"]],
+            "Body": [
+                ["Body", "Payment request", "M"],
+                [
+                    "Section",
+                    "Name",
+                    "Parent",
+                    "Description",
+                    "Type",
+                    "Items Data Type",
+                    "Schema Name",
+                    "Format",
+                    "Mandatory",
+                ],
+                ["content", "application/json", "", "", "schema", "", "PaymentRequest", "", "M"],
+            ],
+            "Body Example": [
+                ["Name", "Body"],
+                ["OK", "amount: 100"],
+                ["Bad Request", "amount: invalid"],
+            ],
+            "200": [
+                ["Response", "200", "OK"],
+                ["Name", "Description", "Type", "Schema Name"],
+            ],
+        },
+    )
+
+    main_script.generate_oas(
+        str(input_dir),
+        gen_30=False,
+        gen_31=True,
+        gen_swift=True,
+        generation_mode=GENERATION_MODE_API_PORTAL_READY,
+        output_dir=str(output_dir),
+        log_callback=lambda _line: None,
+    )
+
+    standard_oas = yaml.safe_load((output_dir / "TEST_3.1_API_1.0_v1.yaml").read_text())
+    swift_oas = yaml.safe_load((output_dir / "TEST_3.1_SWIFT_API_1.0_v1.yaml").read_text())
+    standard_examples = standard_oas["paths"]["/payments"]["post"]["requestBody"][
+        "content"
+    ]["application/json"]["examples"]
+    swift_examples = swift_oas["paths"]["/payments"]["post"]["requestBody"]["content"][
+        "application/json"
+    ]["examples"]
+
+    assert list(standard_examples.keys()) == ["OK", "Bad Request"]
+    assert list(swift_examples.keys()) == ["OK"]
+
+
 def test_x_info_extensions_are_enabled_by_default():
     defaults = PreferencesManager.DEFAULT_PREFERENCES
 

@@ -8,7 +8,12 @@ from pathlib import Path
 # Standard relative imports for package structure
 from . import excel_parser as parser
 from .generator import OASGenerator
-from .preferences import DEFAULT_GENERATION_MODE, normalize_generation_mode, normalize_x_info_options
+from .preferences import (
+    DEFAULT_GENERATION_MODE,
+    GENERATION_MODE_STANDARD,
+    normalize_generation_mode,
+    normalize_x_info_options,
+)
 
 
 INDEX_FILENAME = "$index.xlsx"
@@ -409,11 +414,13 @@ def generate_oas(
 
     # 6. Generate SWIFT OAS (Customized)
     if gen_swift:
+        swift_generation_mode = GENERATION_MODE_STANDARD
+
         # SWIFT OAS 3.0
         log_callback("Generating SWIFT OAS 3.0...")
         sw_gen_30 = OASGenerator(
             version="3.0.0",
-            generation_mode=generation_mode,
+            generation_mode=swift_generation_mode,
             log_callback=log_callback,
             x_info_options=x_info_options,
         )
@@ -458,7 +465,7 @@ def generate_oas(
         log_callback("Generating SWIFT OAS 3.1...")
         sw_gen_31 = OASGenerator(
             version="3.1.0",
-            generation_mode=generation_mode,
+            generation_mode=swift_generation_mode,
             log_callback=log_callback,
             x_info_options=x_info_options,
         )
