@@ -1,0 +1,7 @@
+{
+  "version": "3.0.16",
+  "date": "2026-06-04",
+  "title": "OASIS 3.0.16",
+  "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
+  "release_notes": "FIXES\n\n\u00b7 SWIFT OAS generation removes Bad Request request examples from SWIFT outputs, including API Portal-ready mode."
+}
