@@ -104,6 +104,55 @@ def collapse_allof_ref_if_redundant(schema: dict) -> dict:
     return {"$ref": first["$ref"]}
 
 
+def parse_enum_values(enum_val, type_val: str) -> list:
+    """Parse Excel allowed values according to the target schema type."""
+    enum_list = [x.strip() for x in str(enum_val).split(",")]
+
+    if type_val == "integer":
+        try:
+            return [int(x) for x in enum_list if x]
+        except ValueError:
+            return enum_list
+
+    if type_val == "number":
+        try:
+            new_list = []
+            for x in enum_list:
+                if not x:
+                    continue
+                f = float(x)
+                if f.is_integer():
+                    new_list.append(int(f))
+                else:
+                    new_list.append(f)
+            return new_list
+        except ValueError:
+            return enum_list
+
+    if type_val == "boolean":
+        bool_map = {"true": True, "false": False}
+        return [
+            bool_map[x.strip().lower()]
+            for x in enum_list
+            if x.strip().lower() in bool_map
+        ]
+
+    if type_val == "string":
+        # If the schema expects a string but the enum token looks numeric,
+        # force quoting to avoid YAML type inference / octal-like artifacts.
+        out = []
+        for x in enum_list:
+            if not x:
+                continue
+            if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", x.strip()):
+                out.append(QuotedString(x.strip()))
+            else:
+                out.append(x)
+        return out
+
+    return enum_list
+
+
 def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
     """
     Applies enums, format, pattern, and min/max constraints to schema.
@@ -115,49 +164,8 @@ def apply_schema_constraints(schema: dict, row, type_val: str) -> None:
     """
     # Enums
     enum_val = get_col_value(row, ["Allowed value", "Allowed values"])
-    if pd.notna(enum_val):
-        enum_list = [x.strip() for x in str(enum_val).split(",")]
-
-        # Cast based on type
-        if type_val == "integer":
-            try:
-                enum_list = [int(x) for x in enum_list if x]
-            except ValueError:
-                pass
-        elif type_val == "number":
-            try:
-                new_list = []
-                for x in enum_list:
-                    if not x:
-                        continue
-                    f = float(x)
-                    if f.is_integer():
-                        new_list.append(int(f))
-                    else:
-                        new_list.append(f)
-                enum_list = new_list
-            except ValueError:
-                pass
-
-        elif type_val == "boolean":
-            bool_map = {"true": True, "false": False}
-            enum_list = [bool_map[x.strip().lower()] for x in enum_list
-                         if x.strip().lower() in bool_map]
-
-        elif type_val == "string":
-            # If the schema expects a string but the enum token looks numeric,
-            # force quoting to avoid YAML type inference / octal-like artifacts.
-            out = []
-            for x in enum_list:
-                if not x:
-                    continue
-                if re.fullmatch(r"[+-]?\d+(?:\.\d+)?", x.strip()):
-                    out.append(QuotedString(x.strip()))
-                else:
-                    out.append(x)
-            enum_list = out
-
-        schema["enum"] = enum_list
+    if pd.notna(enum_val) and type_val != "array":
+        schema["enum"] = parse_enum_values(enum_val, type_val)
 
     # Format and Pattern
     fmt = get_col_value(row, ["Format"])
@@ -313,6 +321,13 @@ def map_type_to_schema(row, version: str, is_node: bool = False, components_sche
                         }
         elif "items" not in schema:
             schema["items"] = {}
+
+        enum_val = get_col_value(row, ["Allowed value", "Allowed values"])
+        items_schema = schema.get("items")
+        if pd.notna(enum_val) and isinstance(items_schema, dict):
+            item_schema_type = str(items_schema.get("type", "")).strip().lower()
+            if item_schema_type in {"string", "integer", "number", "boolean"}:
+                items_schema["enum"] = parse_enum_values(enum_val, item_schema_type)
 
     # Add examples (at the end for YAML formatting)
     # Both OAS 3.0 and 3.1 support examples at schema level
