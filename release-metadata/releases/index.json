@@ -1,6 +1,14 @@
 {
   "releases": [
     {
+      "version": "3.0.19",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.19.json"
+    },
+    {
+      "version": "3.0.18",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.18.json"
+    },
+    {
       "version": "3.0.17",
       "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.17.json"
     },

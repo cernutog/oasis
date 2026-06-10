@@ -1,0 +1,7 @@
+{
+  "version": "3.0.18",
+  "date": "2026-06-10",
+  "title": "OASIS 3.0.18",
+  "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
+  "release_notes": "FIXES\n\n\u00b7 Legacy Converter example generation now validates generated examples against length, regex, pattern, and allowed-value constraints before using them.\n\n\u00b7 Legacy conversion now blocks with an action-required report when Excel template constraints cannot produce valid examples, instead of emitting invalid or empty fallback examples.\n\n\u00b7 Example validation now follows OpenAPI/JSON Schema pattern search semantics, while still respecting explicit anchors in source regex constraints."
+}
