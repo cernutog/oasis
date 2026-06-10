@@ -31,11 +31,11 @@ DEFAULT_SWIFT_SERVICES = {
     "B2B": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-b2b/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/b2b/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-b2b-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/b2b/v1",
                 "description": "Test Environment",
             },
         ]
@@ -43,11 +43,11 @@ DEFAULT_SWIFT_SERVICES = {
     "CGS": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-cgs/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/cgs/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-cgs-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/cgs/v1",
                 "description": "Test Environment",
             },
         ]
@@ -55,11 +55,11 @@ DEFAULT_SWIFT_SERVICES = {
     "CGS-DKK": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-cgs-dkk/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/cgs-dkk/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-cgs-dkk-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/cgs-dkk/v1",
                 "description": "Test Environment",
             },
         ]
@@ -67,11 +67,23 @@ DEFAULT_SWIFT_SERVICES = {
     "COR": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-cor/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/cor/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-cor-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/cor/v1",
+                "description": "Test Environment",
+            },
+        ]
+    },
+    "DCT": {
+        "servers": [
+            {
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/dct/v1",
+                "description": "Live Environment",
+            },
+            {
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/dct/v1",
                 "description": "Test Environment",
             },
         ]
@@ -79,11 +91,11 @@ DEFAULT_SWIFT_SERVICES = {
     "FPAD": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-fpad/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/fpad/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-fpad-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/fpad/v1",
                 "description": "Test Environment",
             },
         ]
@@ -91,11 +103,11 @@ DEFAULT_SWIFT_SERVICES = {
     "R2P": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-r2p/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/r2p/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-r2p-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/r2p/v1",
                 "description": "Test Environment",
             },
         ]
@@ -103,11 +115,11 @@ DEFAULT_SWIFT_SERVICES = {
     "RT1": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-rt1/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/rt1/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-rt1-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/rt1/v1",
                 "description": "Test Environment",
             },
         ]
@@ -115,11 +127,11 @@ DEFAULT_SWIFT_SERVICES = {
     "SCT": {
         "servers": [
             {
-                "url": "https://api.common.swiftnet.sipn.swift.com/ebacl-sct/v1",
+                "url": "https://ebaclapi.swiftnet.sipn.swift.com/sct/v1",
                 "description": "Live Environment",
             },
             {
-                "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-sct-pilot/v1",
+                "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/sct/v1",
                 "description": "Test Environment",
             },
         ]

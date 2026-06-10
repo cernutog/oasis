@@ -684,6 +684,10 @@ def test_x_info_extensions_are_enabled_by_default():
 
 def test_swift_services_are_preloaded_in_default_preferences():
     defaults = PreferencesManager.DEFAULT_PREFERENCES
+    old_swift_hosts = (
+        "https://api.common.swiftnet.sipn.swift.com",
+        "https://api-pilot.common.swiftnet.sipn.swift.com",
+    )
 
     assert defaults["swift_services"] == DEFAULT_SWIFT_SERVICES
     assert sorted(defaults["swift_services"].keys()) == [
@@ -691,13 +695,41 @@ def test_swift_services_are_preloaded_in_default_preferences():
         "CGS",
         "CGS-DKK",
         "COR",
+        "DCT",
         "FPAD",
         "R2P",
         "RT1",
         "SCT",
     ]
+    for service_name, service_config in defaults["swift_services"].items():
+        servers = service_config["servers"]
+        assert len(servers) == 2, service_name
+        assert servers[0]["url"].startswith("https://ebaclapi.swiftnet.sipn.swift.com/")
+        assert servers[1]["url"].startswith("https://ebaclapi-pilot.swiftnet.sipn.swift.com/")
+        assert "/ebacl-" not in servers[0]["url"]
+        assert "/ebacl-" not in servers[1]["url"]
+        assert servers[0]["url"].replace(
+            "https://ebaclapi.swiftnet.sipn.swift.com",
+            "",
+        ) == servers[1]["url"].replace(
+            "https://ebaclapi-pilot.swiftnet.sipn.swift.com",
+            "",
+        )
+        for old_host in old_swift_hosts:
+            assert old_host not in servers[0]["url"]
+            assert old_host not in servers[1]["url"]
+    assert defaults["swift_services"]["DCT"]["servers"] == [
+        {
+            "url": "https://ebaclapi.swiftnet.sipn.swift.com/dct/v1",
+            "description": "Live Environment",
+        },
+        {
+            "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/dct/v1",
+            "description": "Test Environment",
+        },
+    ]
     assert defaults["swift_services"]["R2P"]["servers"][1] == {
-        "url": "https://api-pilot.common.swiftnet.sipn.swift.com/ebacl-r2p-pilot/v1",
+        "url": "https://ebaclapi-pilot.swiftnet.sipn.swift.com/r2p/v1",
         "description": "Test Environment",
     }
 
@@ -1385,6 +1417,20 @@ def test_schema_tracer_does_not_compare_source_names_ending_with_digits_as_colli
     assert "- Max Length:" not in rendered
 
 
+def test_schema_tracer_orders_case_variants_deterministically():
+    logs = []
+    converter = LegacyConverter("in", "out", log_callback=logs.append)
+    converter.schema_usage["EndToEndId"] = ["messageDetails (200)"]
+    converter.schema_usage["EndToEndID"] = ["listPayments (200)"]
+
+    converter._log_usage_summary()
+
+    rendered = "\n".join(logs)
+    upper_index = rendered.index("| EndToEndID")
+    mixed_index = rendered.index("| EndToEndId")
+    assert upper_index < mixed_index
+
+
 def test_legacy_converter_literal_array_uses_distinct_item_component_when_named_array_exists():
     converter = LegacyConverter("in", "out")
     converter.global_schemas["AosId"] = DataType(
@@ -1832,7 +1878,7 @@ def test_legacy_converter_datetime_regex_drives_realistic_examples():
         name="dataTime",
         type="string",
         regex=r"[0-9]{4,4}-[0-9]{2,2}-[0-9]{2,2}[T][0-9]{2,2}:[0-9]{2,2}:[0-9]{2,2}",
-        example="1111-11-11T11:11:11A1",
+        example="not-a-datetime",
     )
 
     converter._fill_and_fix_examples_for_data_type(data_time)

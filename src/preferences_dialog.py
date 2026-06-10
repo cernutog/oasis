@@ -7,12 +7,13 @@ import customtkinter as ctk
 from tkinter import filedialog
 import os
 import sys
+from copy import deepcopy
 
 try:
-    from .preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, normalize_generation_mode
+    from .preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
     from .swift_services import normalize_swift_services
 except ImportError:
-    from preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, normalize_generation_mode
+    from preferences import DEFAULT_GENERATION_MODE, GENERATION_MODES, PreferencesManager, normalize_generation_mode
     from swift_services import normalize_swift_services
 
 
@@ -95,18 +96,19 @@ class OASConfirmationDialog(ctk.CTkToplevel):
         self.transient(parent)
         self.grab_set()
         
-        # Icon
-        self.after(200, self._set_icon)
+        # Set window icon AFTER CTkToplevel's internal 200ms default icon setting
+        self.after(250, self._set_icon)
         
         self._build_ui(message)
         self.protocol("WM_DELETE_WINDOW", self._on_cancel)
 
     def _set_icon(self):
         try:
-            # Try to grab icon from parent or resource
-            if hasattr(self.master, "iconbitmap"):
-                 pass # Already inherits?
-        except:
+            icon_file = resource_path("icon.ico")
+            if os.path.exists(icon_file):
+                self.iconbitmap(icon_file)
+                self.wm_iconbitmap(icon_file)
+        except (OSError, FileNotFoundError, Exception):
             pass
 
     def _build_ui(self, message):
@@ -671,17 +673,45 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.frame_buttons = ctk.CTkFrame(self, fg_color="transparent")
         self.frame_buttons.pack(fill="x", side="bottom", padx=15, pady=15)
 
-        ctk.CTkButton(self.frame_buttons, text="Reset to Defaults", width=130,
-                      fg_color=("#D04040", "#B03030"), hover_color=("#B03030", "#902020"),
-                      command=self._on_reset).pack(side="left")
+        self.btn_reset_defaults = ctk.CTkButton(
+            self.frame_buttons,
+            text="Reset to Defaults",
+            width=130,
+            fg_color=("#D04040", "#B03030"),
+            hover_color=("#B03030", "#902020"),
+            command=self._on_reset,
+        )
+        self.btn_reset_defaults.pack(side="left")
 
-        ctk.CTkButton(self.frame_buttons, text="Cancel", width=100,
-                      fg_color="#0A809E", hover_color="#076075",
-                      command=self._on_cancel).pack(side="right", padx=(10, 0))
+        self.btn_reset_current_section = ctk.CTkButton(
+            self.frame_buttons,
+            text="Reset Current Section",
+            width=165,
+            fg_color=("#D04040", "#B03030"),
+            hover_color=("#B03030", "#902020"),
+            command=self._on_reset_current_section,
+        )
+        self.btn_reset_current_section.pack(side="left", padx=(10, 0))
 
-        ctk.CTkButton(self.frame_buttons, text="Apply & Close", width=120, 
-                      fg_color="#0A809E", hover_color="#076075",
-                      command=self._on_save).pack(side="right")
+        self.btn_cancel = ctk.CTkButton(
+            self.frame_buttons,
+            text="Cancel",
+            width=100,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._on_cancel,
+        )
+        self.btn_cancel.pack(side="right", padx=(10, 0))
+
+        self.btn_apply_close = ctk.CTkButton(
+            self.frame_buttons,
+            text="Apply & Close",
+            width=120,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._on_save,
+        )
+        self.btn_apply_close.pack(side="right")
 
         # Failsafe: Pack tabview AFTER buttons to prevent container-stretch overlapping
         self.tabview.pack(fill="both", expand=True, padx=15, pady=(10, 5))
@@ -1239,16 +1269,7 @@ class PreferencesDialog(ctk.CTkToplevel):
             "diff_static_variables": self.current_diff_vars,
         }
         
-        self.prefs_manager.update(new_prefs)
-        self.prefs_manager.save()
-        
-        if self.on_save_callback:
-            try:
-                self.on_save_callback(new_prefs)
-            except Exception as e:
-                print(f"Error applying preferences: {e}")
-                # We still destroy the window, or maybe show an error?
-                # For now, let's allow closing to avoid 'stuck' UI, but logging is critical.
+        self._persist_preferences(new_prefs)
 
         self.result = True
         self.destroy()
@@ -1274,66 +1295,256 @@ class PreferencesDialog(ctk.CTkToplevel):
     def _on_enable_designer_toggle(self):
         self._refresh_default_tab_options()
 
+    def _default_value(self, key):
+        return deepcopy(PreferencesManager.DEFAULT_PREFERENCES[key])
+
+    def _set_switch_value(self, switch, value):
+        if bool(value):
+            switch.select()
+        else:
+            switch.deselect()
+
+    def _set_entry_value(self, entry, value):
+        entry.delete(0, "end")
+        entry.insert(0, str(value or ""))
+
+    def _reset_general_defaults(self):
+        self.var_enable_designer.set(self._default_value("enable_api_designer"))
+        self._refresh_default_tab_options()
+        self.cbo_tab.set(self._default_value("default_tab"))
+
+        default_sort = self._default_value("file_sort_order")
+        for display, value in self.SORT_OPTIONS:
+            if value == default_sort:
+                self.cbo_sort.set(display)
+                break
+
+        self.var_remember.set(self._default_value("remember_paths"))
+        self._set_switch_value(self.chk_window_pos, self._default_value("remember_window_pos"))
+        self.var_update_check.set(self._default_value("update_check_enabled"))
+
+    def _reset_oas_generation_defaults(self):
+        self._set_switch_value(self.chk_oas30, self._default_value("gen_oas_30"))
+        self._set_switch_value(self.chk_oas31, self._default_value("gen_oas_31"))
+        self._set_switch_value(self.chk_swift, self._default_value("gen_oas_swift"))
+        self.cbo_generation_mode.set(self._default_value("generation_mode"))
+        self._set_switch_value(self.chk_x_info_creation_date, self._default_value("gen_x_info_creation_date"))
+        self._set_switch_value(self.chk_x_info_release, self._default_value("gen_x_info_release"))
+        self._set_switch_value(self.chk_x_info_customization, self._default_value("gen_x_info_customization"))
+        self._set_switch_value(self.chk_x_info_oasis_version, self._default_value("gen_x_info_oasis_version"))
+
+    def _reset_templates_general_defaults(self):
+        self._set_switch_value(self.chk_excel_attr_diff, self._default_value("excel_gen_attr_diff"))
+        self._set_switch_value(self.chk_excel_line_diff, self._default_value("excel_gen_line_diff"))
+
+        self.var_legacy_tracing.set(self._default_value("tools_legacy_tracing_enabled"))
+        self.var_legacy_collision_desc.set(self._default_value("tools_legacy_collision_include_descriptions"))
+        self.var_legacy_collision_examples.set(self._default_value("tools_legacy_collision_include_examples"))
+        self.var_legacy_capitalize_schemas.set(self._default_value("tools_legacy_capitalize_schema_names"))
+        self.var_legacy_fill_fix_examples.set(self._default_value("tools_legacy_fill_fix_examples"))
+        self.var_legacy_example_tracing.set(self._default_value("tools_legacy_example_tracing_enabled"))
+        self._set_entry_value(self.entry_legacy_contact_name, self._default_value("tools_legacy_contact_name"))
+        self._set_entry_value(self.entry_legacy_contact_url, self._default_value("tools_legacy_contact_url"))
+        self._set_entry_value(self.entry_legacy_release, self._default_value("tools_legacy_release"))
+        self._set_entry_value(self.entry_legacy_filename_pattern, self._default_value("tools_legacy_filename_pattern"))
+
+    def _reset_templates_swift_defaults(self):
+        self.swift_column_widths = self._sanitize_swift_column_widths(
+            self._default_value("swift_servers_column_widths")
+        )
+        self._apply_swift_column_widths()
+        self._load_swift_server_rows(self._default_value("swift_services"))
+
+    def _reset_validation_defaults(self):
+        self.cbo_linter_engine.set(str(self._default_value("linter_engine")).capitalize())
+        self._set_switch_value(self.chk_ignore_br, self._default_value("ignore_bad_request"))
+        font_size = self._default_value("validation_font_size")
+        self.slider_validation_font.set(font_size)
+        self.lbl_validation_font_val.configure(text=str(font_size))
+
+    def _reset_view_defaults(self):
+        self.cbo_theme.set(self._default_value("yaml_theme"))
+        self.cbo_font.set(self._default_value("yaml_font"))
+        font_size = self._default_value("yaml_font_size")
+        self.slider_font.set(font_size)
+        self.lbl_font_val.configure(text=str(font_size))
+        self._set_switch_value(self.chk_snap_default, self._default_value("doc_snap_default_enabled"))
+        self._set_switch_value(self.chk_word_wrap, self._default_value("yaml_word_wrap"))
+
+    def _reset_logs_defaults(self):
+        self.cbo_gen_log_theme.set(self._default_value("gen_log_theme"))
+        self.cbo_import_log_theme.set(self._default_value("import_log_theme"))
+        self.cbo_app_log_theme.set(self._default_value("app_log_theme"))
+        self.cbo_spectral_log_theme.set(self._default_value("spectral_log_theme"))
+
+    def _reset_diff_general_defaults(self):
+        self.current_diff_vars = self._default_value("diff_static_variables")
+        self._refresh_vars_list()
+
+    def _reset_diff_template_entry(self, entry, preference_key):
+        self._set_entry_value(entry, self._default_value(preference_key))
+
+    def _reset_diff_interface_defaults(self):
+        self._reset_diff_template_entry(self.entry_tmpl_comp, "diff_template_compatibility")
+        self.var_diff_show_enum_order_changes.set(self._default_value("diff_show_enum_order_changes"))
+        self.var_diff_show_validation_rule_only_description_changes.set(
+            self._default_value("diff_show_validation_rule_only_description_changes")
+        )
+
+    def _persist_preferences(self, preferences):
+        self.prefs_manager.update(preferences)
+        self.prefs_manager.save()
+
+        if self.on_save_callback:
+            try:
+                self.on_save_callback(preferences)
+            except Exception as e:
+                print(f"Error applying preferences: {e}")
+
+    def _default_preferences_for_keys(self, keys):
+        return {key: self._default_value(key) for key in keys}
+
+    def _current_reset_target(self):
+        current_tab = self.tabview.get()
+        if current_tab == "Templates":
+            current_subtab = self.templates_tabview.get()
+            if current_subtab == "SWIFT Servers":
+                return (
+                    "Templates > SWIFT Servers",
+                    self._reset_templates_swift_defaults,
+                    ["swift_services", "swift_servers_column_widths"],
+                )
+            return (
+                "Templates > General",
+                self._reset_templates_general_defaults,
+                [
+                    "excel_gen_attr_diff",
+                    "excel_gen_line_diff",
+                    "tools_legacy_tracing_enabled",
+                    "tools_legacy_collision_include_descriptions",
+                    "tools_legacy_collision_include_examples",
+                    "tools_legacy_capitalize_schema_names",
+                    "tools_legacy_fill_fix_examples",
+                    "tools_legacy_example_tracing_enabled",
+                    "tools_legacy_contact_name",
+                    "tools_legacy_contact_url",
+                    "tools_legacy_release",
+                    "tools_legacy_filename_pattern",
+                ],
+            )
+        if current_tab == "OAS Comparison":
+            current_subtab = self.diff_tabview.get()
+            if current_subtab == "General":
+                return "OAS Comparison > General", self._reset_diff_general_defaults, ["diff_static_variables"]
+            if current_subtab == "Synthesis":
+                return (
+                    "OAS Comparison > Synthesis",
+                    lambda: self._reset_diff_template_entry(self.entry_tmpl_syn, "diff_template_synthesis"),
+                    ["diff_template_synthesis"],
+                )
+            if current_subtab == "Analytical":
+                return (
+                    "OAS Comparison > Analytical",
+                    lambda: self._reset_diff_template_entry(self.entry_tmpl_ana, "diff_template_analytical"),
+                    ["diff_template_analytical"],
+                )
+            if current_subtab == "Impact":
+                return (
+                    "OAS Comparison > Impact",
+                    lambda: self._reset_diff_template_entry(self.entry_tmpl_imp, "diff_template_impact"),
+                    ["diff_template_impact"],
+                )
+            return (
+                "OAS Comparison > Interface",
+                self._reset_diff_interface_defaults,
+                [
+                    "diff_template_compatibility",
+                    "diff_show_enum_order_changes",
+                    "diff_show_validation_rule_only_description_changes",
+                ],
+            )
+
+        resetters = {
+            "General": (
+                self._reset_general_defaults,
+                [
+                    "default_tab",
+                    "enable_api_designer",
+                    "file_sort_order",
+                    "remember_paths",
+                    "remember_window_pos",
+                    "update_check_enabled",
+                ],
+            ),
+            "OAS Generation": (
+                self._reset_oas_generation_defaults,
+                [
+                    "gen_oas_30",
+                    "gen_oas_31",
+                    "gen_oas_swift",
+                    "generation_mode",
+                    "gen_x_info_creation_date",
+                    "gen_x_info_release",
+                    "gen_x_info_customization",
+                    "gen_x_info_oasis_version",
+                ],
+            ),
+            "Validation": (
+                self._reset_validation_defaults,
+                ["linter_engine", "ignore_bad_request", "validation_font_size"],
+            ),
+            "View": (
+                self._reset_view_defaults,
+                [
+                    "yaml_theme",
+                    "yaml_font",
+                    "yaml_font_size",
+                    "doc_snap_default_enabled",
+                    "yaml_word_wrap",
+                ],
+            ),
+            "Logs": (
+                self._reset_logs_defaults,
+                ["gen_log_theme", "import_log_theme", "app_log_theme", "spectral_log_theme"],
+            ),
+        }
+        resetter_and_keys = resetters.get(current_tab)
+        if resetter_and_keys is None:
+            return current_tab, None, []
+        resetter, keys = resetter_and_keys
+        return current_tab, resetter, keys
+
+    def _on_reset_current_section(self):
+        scope_name, resetter, preference_keys = self._current_reset_target()
+        if resetter is None:
+            return
+        if not ask_confirmation(
+            self,
+            "Reset Current Section",
+            f"Reset {scope_name} to default values and save immediately?\nOnly this section will change.",
+        ):
+            return
+        resetter()
+        self._persist_preferences(self._default_preferences_for_keys(preference_keys))
+
     def _on_reset(self):
         """Reset UI to default values."""
-        self.var_enable_designer.set(False)
-        self._refresh_default_tab_options()
-        self.cbo_tab.set("OAS Generation")
-        self.cbo_sort.set("Alphabetical")
-        self.var_remember.set(False)
-        self.chk_window_pos.select()
-        self.var_update_check.set(True)
-        
-        self.chk_oas30.select()
-        self.chk_oas31.select()
-        self.chk_swift.deselect()
-        self.cbo_generation_mode.set(DEFAULT_GENERATION_MODE)
-        self.chk_x_info_creation_date.select()
-        self.chk_x_info_release.select()
-        self.chk_x_info_customization.select()
-        self.chk_x_info_oasis_version.select()
-        self._load_swift_server_rows({})
-
-        self.chk_excel_attr_diff.select()
-        self.chk_excel_line_diff.deselect()
-        
-        self.chk_ignore_br.select()
-        self.cbo_linter_engine.set("Spectral")
-        self.slider_validation_font.set(11)
-        self.lbl_validation_font_val.configure(text="11")
-        
-        self.cbo_theme.set("oas-dark")
-        self.cbo_font.set("Consolas")
-        self.slider_font.set(12)
-        self.lbl_font_val.configure(text="12")
-        self.chk_snap_default.select()
-        
-        self.cbo_gen_log_theme.set("Light")
-        self.cbo_import_log_theme.set("Light")
-        self.cbo_app_log_theme.set("Dark")
-        self.cbo_spectral_log_theme.set("Light")
-
-        self.var_legacy_tracing.set(True)
-        self.var_legacy_collision_desc.set(False)
-        self.var_legacy_collision_examples.set(False)
-        self.var_legacy_capitalize_schemas.set(True)
-        self.var_legacy_fill_fix_examples.set(True)
-        self.var_legacy_example_tracing.set(True)
-        self.entry_legacy_contact_name.delete(0, "end")
-        self.entry_legacy_contact_url.delete(0, "end")
-        self.entry_legacy_release.delete(0, "end")
-        self.entry_legacy_filename_pattern.delete(0, "end")
-
-        self.var_diff_show_enum_order_changes.set(False)
-        self.var_diff_show_validation_rule_only_description_changes.set(True)
-
-        self.var_legacy_tracing.set(True)
-        self.var_legacy_collision_desc.set(False)
-        self.var_legacy_collision_examples.set(False)
-        self.var_legacy_capitalize_schemas.set(True)
-        self.var_legacy_fill_fix_examples.set(True)
-        self.var_legacy_example_tracing.set(True)
-        self.entry_legacy_contact_name.delete(0, "end")
-        self.entry_legacy_contact_url.delete(0, "end")
-        self.entry_legacy_release.delete(0, "end")
-        self.entry_legacy_filename_pattern.delete(0, "end")
+        if not ask_confirmation(
+            self,
+            "Reset to Defaults",
+            "Reset all Preferences to default values and save immediately?",
+        ):
+            return
+        self._reset_general_defaults()
+        self._reset_oas_generation_defaults()
+        self._reset_templates_general_defaults()
+        self._reset_templates_swift_defaults()
+        self._reset_validation_defaults()
+        self._reset_view_defaults()
+        self._reset_logs_defaults()
+        self._reset_diff_general_defaults()
+        self._reset_diff_template_entry(self.entry_tmpl_syn, "diff_template_synthesis")
+        self._reset_diff_template_entry(self.entry_tmpl_ana, "diff_template_analytical")
+        self._reset_diff_template_entry(self.entry_tmpl_imp, "diff_template_impact")
+        self._reset_diff_interface_defaults()
+        self._persist_preferences(deepcopy(PreferencesManager.DEFAULT_PREFERENCES))

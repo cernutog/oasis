@@ -277,6 +277,37 @@ def test_body_example_fallback_is_constraint_compliant_for_named_string_schema()
     assert converter._is_valid_example_token(dt, body["productId"])
 
 
+def test_diagnostic_provenance_fields_do_not_split_schema_fingerprints():
+    converter = _converter()
+    first = DataType(
+        name="SenderBic",
+        type="string",
+        description="sender Bic",
+        regex="[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}",
+        example="IPSDITM1;DEUTDEFF;BNPAFRPP",
+        source_file="first.xlsm",
+        source_sheet="Data Type",
+        source_row=10,
+    )
+    second = DataType(
+        name="SenderBic",
+        type="string",
+        description="sender Bic",
+        regex="[A-Z0-9]{4,4}[A-Z]{2,2}[A-Z0-9]{2,2}",
+        example="IPSDITM1;DEUTDEFF;BNPAFRPP",
+        source_file="second.xlsm",
+        source_sheet="Data Type",
+        source_row=42,
+    )
+
+    first_name = converter._register_data_type("first.xlsm", "SenderBic", first)
+    second_name = converter._register_data_type("second.xlsm", "SenderBic", second)
+
+    assert first_name == "SenderBic"
+    assert second_name == "SenderBic"
+    assert sorted(converter.global_schemas) == ["SenderBic"]
+
+
 def test_impossible_example_constraints_are_recorded_as_blocking_errors():
     converter = _converter()
     dt = DataType(

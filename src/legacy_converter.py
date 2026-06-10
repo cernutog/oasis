@@ -716,11 +716,12 @@ class LegacyConverter:
 
     def _register_data_type(self, file_key: str, norm_name: str, dt: DataType):
         """Registers a data type, deduplicating by content and handling name collisions."""
-        # Fingerprint for deduplication (exclude source_file and pattern_eba).
+        # Fingerprint for deduplication (exclude provenance/reporting-only fields
+        # and pattern_eba).
         # 'name' is INCLUDED so that differently-named DataTypes (e.g. BIC8 vs
         # SenderBIC) are kept separate even when their structural content is identical.
         # Optionally include description/examples depending on preferences.
-        excluded = {'source_file', 'pattern_eba'}
+        excluded = {'source_file', 'source_sheet', 'source_row', 'pattern_eba'}
         if not self.include_descriptions_in_collision:
             excluded.add('description')
         if not self.include_examples_in_collision:
@@ -2664,7 +2665,11 @@ class LegacyConverter:
         self.log(header)
         self.log(sep)
         
-        sorted_names = sorted(self.schema_usage.keys(), key=lambda x: x.lower())
+        def _schema_name_sort_key(value: str) -> Tuple[str, str]:
+            text = str(value)
+            return (text.lower(), text)
+
+        sorted_names = sorted(self.schema_usage.keys(), key=_schema_name_sort_key)
         
         # Group schema names by base stem for collision/split analysis.
         # We handle two distinct cases:
@@ -2736,7 +2741,7 @@ class LegacyConverter:
         final_groups: Dict[str, List[str]] = {}
 
         # 1. Base names: always show base, plus any numeric variants (even with gaps)
-        for base in sorted(base_names, key=lambda x: str(x).lower()):
+        for base in sorted(base_names, key=_schema_name_sort_key):
             variants = []
             variants.extend(base_to_variants.get(base, []))
             variants.extend(stem_to_variants.get(base, []))
@@ -2748,7 +2753,7 @@ class LegacyConverter:
         # Only group when the smallest numeric suffix is 1: collision naming always starts
         # from 1 (Foo → Foo1 → Foo2 …).  Schemas like Bic8/Bic11/Bic81 have semantic names
         # (not collision-generated) and must NOT be grouped as spurious collision variants.
-        for stem, variants in sorted(stem_to_variants.items(), key=lambda kv: str(kv[0]).lower()):
+        for stem, variants in sorted(stem_to_variants.items(), key=lambda kv: _schema_name_sort_key(kv[0])):
             if stem in base_names:
                 continue
             variants = sorted(variants, key=lambda t: t[0])
@@ -3713,7 +3718,10 @@ class LegacyConverter:
                 self.schema_usage.setdefault(k, [])
 
             # Keep only root-level schema names
-            self.schema_usage = {k: self.schema_usage.get(k, []) for k in _hnp}
+            self.schema_usage = {
+                k: self.schema_usage.get(k, [])
+                for k in sorted(_hnp, key=lambda value: (str(value).lower(), str(value)))
+            }
 
             self._log_usage_summary()
 
