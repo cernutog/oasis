@@ -1,0 +1,7 @@
+{
+  "version": "3.0.19",
+  "date": "2026-06-10",
+  "title": "OASIS 3.0.19",
+  "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
+  "release_notes": "FIXES\n\n\u00b7 Legacy Converter collision grouping now excludes provenance-only fields from schema fingerprints, preventing source row/sheet metadata from changing deduplication behavior.\n\n\u00b7 Legacy Converter schema usage reporting now uses deterministic ordering for schema names and collision groups.\n\n\u00b7 SWIFT default service URLs were aligned to the ebaclapi/ebaclapi-pilot endpoints and DCT defaults were added.\n\n\u00b7 Preferences reset handling now supports resetting the current section only, while preserving unrelated saved preferences."
+}
