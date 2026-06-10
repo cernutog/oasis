@@ -254,6 +254,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.master_dir = master_dir
         self.prefs_manager = prefs_manager
+        self._action_required_log_block_active = False
         self.title("Legacy Template Converter")
         
         # Match parent window size and position
@@ -511,14 +512,18 @@ class LegacyConverterDialog(ctk.CTkToplevel):
     def _is_action_required_log_line(self, message):
         if not isinstance(message, str):
             return False
-        return (
-            message.startswith("+-- ACTION REQUIRED")
-            or message.startswith("| Fix the Allowed value column")
-            or message.startswith("| Ensure each Allowed value")
-            or message.startswith("| For boolean fields use")
-            or message.startswith("| If 0/1 is intended")
-            or message.startswith("+-----------------------------------------------------------+")
-        )
+        if message.startswith("+-- ACTION REQUIRED"):
+            self._action_required_log_block_active = True
+            return True
+        if not getattr(self, "_action_required_log_block_active", False):
+            return False
+        if message.startswith("+-----------------------------------------------------------+"):
+            self._action_required_log_block_active = False
+            return True
+        if message.startswith("|"):
+            return True
+        self._action_required_log_block_active = False
+        return False
 
     def _insert_tagged_log(self, text, tag):
         tag_target = getattr(self.log_area, "_textbox", None)

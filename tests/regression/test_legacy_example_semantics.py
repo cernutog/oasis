@@ -2,13 +2,15 @@ import shutil
 from pathlib import Path
 
 from src.legacy_converter import DataType, LegacyConverter
+from src.legacy_converter_dialog import LegacyConverterDialog
 
 
 def _converter(**kwargs):
+    log_callback = kwargs.pop("log_callback", lambda _message: None)
     converter = LegacyConverter(
         input_dir=".",
         output_dir=".",
-        log_callback=lambda _message: None,
+        log_callback=log_callback,
         **kwargs,
     )
     converter.example_seed_values = converter._load_example_seed_values()
@@ -233,3 +235,174 @@ def test_invalid_existing_example_repaired_with_constraint_reason():
     assert dt.example == "10:15; 12:00; 23:59"
     assert converter._example_trace_rows[-1]["action"] == "REPAIRED"
     assert converter._example_trace_rows[-1]["reason"] == "repaired invalid example: regex mismatch"
+
+
+def test_oas_pattern_examples_are_validated_with_json_schema_search_semantics():
+    converter = _converter()
+    dt = DataType(
+        name="ProductId",
+        type="string",
+        min_val="4",
+        max_val="4",
+        regex="[0-9A-Z]",
+        example="INST;EOLO",
+    )
+
+    converter._fill_and_fix_examples_for_data_type(dt, schema_name="ProductId")
+
+    values = [part.strip() for part in dt.example.split(";")]
+    assert values[:2] == ["INST", "EOLO"]
+    assert all(converter._is_valid_example_token(dt, value) for value in values)
+
+
+def test_body_example_fallback_is_constraint_compliant_for_named_string_schema():
+    converter = _converter()
+    dt = DataType(
+        name="ProductId",
+        type="string",
+        min_val="4",
+        max_val="4",
+        regex="[0-9A-Z]",
+        example="",
+    )
+    converter.global_schemas["ProductId"] = dt
+    converter.output_names[("$global", "ProductId")] = "ProductId"
+
+    body = converter._build_body_example_dict(
+        [("productId", "", "", "ProductId", "M", "", "", "")],
+        ep_filename=None,
+    )
+
+    assert body["productId"] != "string"
+    assert converter._is_valid_example_token(dt, body["productId"])
+
+
+def test_impossible_example_constraints_are_recorded_as_blocking_errors():
+    converter = _converter()
+    dt = DataType(
+        name="ImpossibleCode",
+        type="string",
+        min_val="5",
+        max_val="4",
+        regex="^[A-Z]{4}$",
+        example="",
+        source_file="example.xlsm",
+    )
+
+    converter.global_schemas["ImpossibleCode"] = dt
+    converter._fill_and_fix_consolidated_examples()
+
+    assert converter.example_generation_errors
+    issue = converter.example_generation_errors[0]
+    assert issue["field"] == "ImpossibleCode"
+    assert issue["severity"] == "impossible"
+    assert "min 5 > max 4" in issue["reason"]
+
+
+def test_complex_non_generable_example_constraints_are_recorded_as_blocking_errors():
+    converter = _converter()
+    dt = DataType(
+        name="ComplexCode",
+        type="string",
+        min_val="8",
+        max_val="8",
+        regex=r"^(?=.*[0-9])[a-z]{8}$",
+        example="",
+        source_file="example.xlsm",
+    )
+
+    converter.global_schemas["ComplexCode"] = dt
+    converter._fill_and_fix_consolidated_examples()
+
+    assert converter.example_generation_errors
+    issue = converter.example_generation_errors[0]
+    assert issue["field"] == "ComplexCode"
+    assert issue["severity"] == "complex"
+    assert "too complex regex" in issue["reason"]
+
+
+def test_convert_blocks_before_writing_outputs_when_examples_cannot_be_generated(tmp_path, monkeypatch):
+    input_dir = tmp_path / "legacy"
+    output_dir = tmp_path / "converted"
+    input_dir.mkdir()
+    (input_dir / "dummy.xlsm").write_bytes(b"placeholder")
+    logs = []
+    converter = LegacyConverter(
+        input_dir=str(input_dir),
+        output_dir=str(output_dir),
+        master_dir=".",
+        log_callback=logs.append,
+    )
+    dt = DataType(
+        name="ImpossibleCode",
+        type="string",
+        min_val="5",
+        max_val="4",
+        regex="^[A-Z]{4}$",
+        example="",
+        source_file="dummy.xlsm",
+    )
+
+    def collect_bad_data_type():
+        converter.global_schemas["ImpossibleCode"] = dt
+
+    monkeypatch.setattr(converter, "_collect_all_data_types", collect_bad_data_type)
+    monkeypatch.setattr(converter, "_perform_naming_and_usage_pass", lambda: None)
+
+    assert converter.convert(tracing_enabled=False) is False
+    assert any("CONVERSION BLOCKED: EXAMPLE GENERATION ERRORS" in line for line in logs)
+    assert not (output_dir / "dummy.xlsx").exists()
+
+
+def test_blocking_example_report_uses_legacy_field_and_sheet_context():
+    logs = []
+    converter = _converter(log_callback=logs.append)
+    dt = DataType(
+        name="ProductId",
+        type="string",
+        min_val="4",
+        max_val="4",
+        regex="[0-9A-Z]{5}",
+        example="INST;EOLO",
+        source_file="apDetails.250410.xlsm",
+        source_sheet="Data Type",
+        source_row=21,
+    )
+
+    converter._record_example_generation_error(
+        schema_name="ProductId2",
+        dt=dt,
+        severity="error",
+        reason="no valid constraint-compliant example",
+    )
+    converter._log_example_generation_errors()
+
+    joined = "\n".join(logs)
+    assert "[1] ProductId\n" in joined
+    assert "[1] ProductId2" not in joined
+    assert "    Source field: ProductId" in joined
+    assert "    Sheet: Data Type" in joined
+    assert "    Row: 21" in joined
+
+
+def test_action_required_log_tag_spans_all_box_lines():
+    dialog = object.__new__(LegacyConverterDialog)
+    dialog._action_required_log_block_active = False
+
+    lines = [
+        "+-- ACTION REQUIRED ----------------------------------------+",
+        "| Provide valid examples in the Data Type sheet or fix      |",
+        "| contradictory/too-complex constraints. OASIS will not     |",
+        "| generate invalid or empty OAS examples as a fallback.     |",
+        "+-----------------------------------------------------------+",
+        "ISSUES",
+    ]
+
+    assert [dialog._is_action_required_log_line(line) for line in lines] == [
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+    ]

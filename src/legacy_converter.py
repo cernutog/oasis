@@ -49,6 +49,8 @@ class DataType:
     example: str = ""
     items_type: str = ""
     source_file: str = "" # Track origin for collision resolution
+    source_sheet: str = ""
+    source_row: int = 0
 
 
 DEFAULT_LEGACY_EXAMPLE_SEED_VALUES = {
@@ -285,6 +287,7 @@ class LegacyConverter:
         self.error_response_description_candidates: Dict[str, Dict[Tuple[str, str, str, str, str, str], Dict[str, Dict[str, Any]]]] = {}
         self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0, "impossible": 0, "complex": 0}
         self._example_trace_rows: List[Dict[str, str]] = []
+        self.example_generation_errors: List[Dict[str, str]] = []
 
     def _resolve_internal_master_dir(self):
         """Finds 'Templates Master' folder as an internal resource."""
@@ -338,6 +341,8 @@ class LegacyConverter:
                 type="object",
                 description=dt.description,
                 source_file=dt.source_file,
+                source_sheet=dt.source_sheet,
+                source_row=dt.source_row,
             )
         if item_low in {"string", "number", "integer", "boolean"}:
             return DataType(
@@ -350,6 +355,8 @@ class LegacyConverter:
                 allowed_values=dt.allowed_values,
                 example=dt.example,
                 source_file=dt.source_file,
+                source_sheet=dt.source_sheet,
+                source_row=dt.source_row,
             )
 
         _item_out, item_dt = self._resolve_data_type(
@@ -457,6 +464,9 @@ class LegacyConverter:
 
         if self.fill_fix_examples:
             self._fill_and_fix_consolidated_examples()
+            if self.example_generation_errors:
+                self._log_example_generation_errors()
+                return False
 
         # 2. Index Phase
         if index_path.exists():
@@ -584,7 +594,9 @@ class LegacyConverter:
                     allowed_values=self._clean_value(row.get(all_c, "")),
                     example=self._clean_value(row.get(ex_c, "")),
                     items_type=self._clean_value(row.get(items_c, "")),
-                    source_file=file_key
+                    source_file=file_key,
+                    source_sheet="Data Type",
+                    source_row=header_row_idx + 2 + row_offset,
                 )
                 self._record_invalid_allowed_values(
                     dt,
@@ -843,7 +855,9 @@ class LegacyConverter:
 
         for regex_raw in self._example_constraint_patterns(dt):
             try:
-                if re.fullmatch(regex_raw, val) is None:
+                # OAS/JSON Schema pattern uses search semantics, not full-string
+                # matching. Anchors in the source regex still enforce full matches.
+                if re.search(regex_raw, val) is None:
                     return False
             except re.error:
                 # Ignore malformed regex values here rather than rejecting otherwise
@@ -1303,9 +1317,79 @@ class LegacyConverter:
         self.example_semantic_rules = self._load_example_semantic_rules()
         self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0, "impossible": 0, "complex": 0}
         self._example_trace_rows = []
+        self.example_generation_errors = []
 
         for schema_name, dt in sorted(self.global_schemas.items(), key=lambda item: item[0].lower()):
             self._fill_and_fix_examples_for_data_type(dt, schema_name=schema_name, trace_kept=trace_kept)
+
+    def _record_example_generation_error(
+        self,
+        schema_name: str,
+        dt: DataType,
+        severity: str,
+        reason: str,
+    ) -> None:
+        self.example_generation_errors.append(
+            {
+                "template": str(dt.source_file or ""),
+                "field": str(dt.name or schema_name or ""),
+                "source_field": str(dt.name or ""),
+                "sheet": str(dt.source_sheet or "Data Type"),
+                "row": str(dt.source_row or ""),
+                "type": str(dt.type or "string"),
+                "min": str(dt.min_val or ""),
+                "max": str(dt.max_val or ""),
+                "pattern_eba": str(dt.pattern_eba or ""),
+                "regex": str(dt.regex or ""),
+                "allowed_values": str(dt.allowed_values or ""),
+                "example": str(dt.example or ""),
+                "severity": severity or "error",
+                "reason": reason or "no valid constraint-compliant example",
+            }
+        )
+
+    def _log_example_generation_errors(self) -> None:
+        issues = sorted(
+            self.example_generation_errors,
+            key=lambda issue: (
+                issue.get("template", "").lower(),
+                issue.get("field", "").lower(),
+                issue.get("reason", "").lower(),
+            ),
+        )
+        self.log("")
+        self.log("=== CONVERSION BLOCKED: EXAMPLE GENERATION ERRORS ===")
+        self.log(f"{len(issues)} issue(s) found. Fix the Excel templates, then run conversion again.")
+        self.log("")
+        self.log("+-- ACTION REQUIRED ----------------------------------------+")
+        self.log("| Provide valid examples in the Data Type sheet or fix      |")
+        self.log("| contradictory/too-complex constraints. OASIS will not     |")
+        self.log("| generate invalid or empty OAS examples as a fallback.     |")
+        self.log("+-----------------------------------------------------------+")
+        self.log("")
+        self.log("ISSUES")
+        self.log("")
+        for index, issue in enumerate(issues, start=1):
+            self.log(f"[{index}] {issue.get('field', '')}")
+            if issue.get("template"):
+                self.log(f"    Template: {issue['template']}")
+            self.log(f"    Source field: {issue.get('source_field', '')}")
+            if issue.get("sheet"):
+                self.log(f"    Sheet: {issue['sheet']}")
+            if issue.get("row"):
+                self.log(f"    Row: {issue['row']}")
+            self.log(f"    Type: {issue.get('type', '')}")
+            self.log(f"    Min: {issue.get('min', '')}")
+            self.log(f"    Max: {issue.get('max', '')}")
+            if issue.get("pattern_eba"):
+                self.log(f"    PatternEba: {issue['pattern_eba']}")
+            if issue.get("regex"):
+                self.log(f"    Regex: {issue['regex']}")
+            if issue.get("allowed_values"):
+                self.log(f"    Allowed value: {issue['allowed_values']}")
+            if issue.get("example"):
+                self.log(f"    Example: {issue['example']}")
+            self.log(f"    Problem: {issue.get('reason', '')}")
 
     def _log_example_repair_report(self) -> None:
         stats = self._example_fix_stats
@@ -1381,6 +1465,13 @@ class LegacyConverter:
                     self._example_fix_stats["complex"] += 1
                 elif original and original.lower() != "nan":
                     self._example_fix_stats["best_effort"] += 1
+
+                self._record_example_generation_error(
+                    schema_name or dt.name,
+                    dt,
+                    severity or "error",
+                    trace_reason,
+                )
 
                 if original and original.lower() != "nan":
                     dt.example = ""
@@ -1481,7 +1572,9 @@ class LegacyConverter:
 
         for regex_raw in self._example_constraint_patterns(dt):
             try:
-                if re.fullmatch(regex_raw, val) is None:
+                # OAS/JSON Schema pattern uses search semantics, not full-string
+                # matching. Anchors in the source regex still enforce full matches.
+                if re.search(regex_raw, val) is None:
                     return "regex mismatch"
             except re.error:
                 return "invalid regex constraint"
@@ -2159,8 +2252,9 @@ class LegacyConverter:
                 return value
         for pattern in self._example_constraint_patterns(dt):
             generated_values = self._generate_valid_examples_from_regex(pattern, limit=1)
-            if generated_values:
-                return generated_values[0]
+            for generated in generated_values:
+                if self._is_valid_example_token(dt, generated):
+                    return generated
         generic = self.example_seed_values.get("generic", ["Banking value"])[0]
         fitted = self._fit_string_bounds(dt, generic)
         return fitted if self._is_valid_example_token(dt, fitted) else ""
@@ -5889,6 +5983,27 @@ class LegacyConverter:
             return True
         return "string"
 
+    def _generate_constraint_compliant_value(
+        self,
+        dtype_lower: str,
+        dt: Optional['DataType'],
+        item_offset: int = 0,
+    ) -> Any:
+        """Return a fallback value that satisfies the DataType constraints when known."""
+        if dt is None:
+            return self._generate_synthetic_value(dtype_lower)
+
+        category = self._classify_example_category(dt)
+        examples, _reason = self._build_example_candidates(dt, [], category=category)
+        if examples:
+            return examples[item_offset % len(examples)]
+
+        fallback = self._best_effort_example(dt)
+        if fallback and self._is_valid_example_token(dt, fallback):
+            return fallback
+
+        return ""
+
     def _resolve_leaf_dt(self, dtype: str, ep_filename: Optional[str]) -> Optional['DataType']:
         """Resolve a field type to its DataType, or None for primitives."""
         if self._is_oas_primitive_name(dtype):
@@ -5982,7 +6097,11 @@ class LegacyConverter:
                     low_t = dt.type.lower()
                 else:
                     low_t = low
-                synthetic = self._generate_synthetic_value(low_t)
+                synthetic = self._generate_constraint_compliant_value(
+                    low_t,
+                    dt,
+                    item_offset=item_offset,
+                )
                 return [synthetic] if is_array_item else synthetic
 
         # Build parent → children tree.
