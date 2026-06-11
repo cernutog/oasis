@@ -1,0 +1,7 @@
+{
+  "version": "3.0.20",
+  "date": "2026-06-11",
+  "title": "OASIS 3.0.20",
+  "download_url": "https://christianiabpos.sharepoint.com/sites/OASIS/Shared%20Documents/Announcements/OASIS.exe?csf=1&web=1&e=dkbCjx",
+  "release_notes": "FIXES\n\n\u00b7 Legacy Converter body example generation now scopes example counters per structural container, covering root fields, nested objects, arrays of objects, and arrays nested inside repeated objects without leaking counters across sibling or parent structures.\n\n\u00b7 Legacy Converter metadata now saves Contact name, Contact URL, Release, Filename pattern, and Service immediately when Save in preferences is selected in the metadata dialog.\n\n\u00b7 Legacy example maintenance now separates Repair examples from Complete examples, with Repair enabled by default and Complete disabled by default for migrated preferences."
+}

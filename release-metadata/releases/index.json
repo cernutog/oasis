@@ -1,6 +1,10 @@
 {
   "releases": [
     {
+      "version": "3.0.20",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.20.json"
+    },
+    {
       "version": "3.0.19",
       "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.19.json"
     },
