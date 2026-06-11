@@ -551,7 +551,15 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             swift_services=swift_services,
         )
         self.wait_window(dialog)
-        return dialog.result
+        result = dialog.result
+        if result is None:
+            return None
+
+        if self.prefs_manager and result.get("save_in_preferences"):
+            save_metadata_preferences(self.prefs_manager, result)
+            self._log("Saved conversion metadata to preferences.")
+
+        return result
 
     def _start_conversion(self):
         src = self.entry_src.get()
@@ -634,7 +642,8 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             include_desc = False
             include_ex = False
             capitalize_schemas = True
-            fill_fix_examples = True
+            repair_examples = True
+            complete_examples = False
             example_seed_values_path = None
             example_semantic_rules_path = None
             defaults = self._get_conversion_metadata_defaults()
@@ -645,7 +654,9 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
                 include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
                 capitalize_schemas = bool(self.prefs_manager.get("tools_legacy_capitalize_schema_names", True))
-                fill_fix_examples = bool(self.prefs_manager.get("tools_legacy_fill_fix_examples", True))
+                legacy_fill_fix = bool(self.prefs_manager.get("tools_legacy_fill_fix_examples", True))
+                repair_examples = bool(self.prefs_manager.get("tools_legacy_repair_examples", legacy_fill_fix))
+                complete_examples = bool(self.prefs_manager.get("tools_legacy_complete_examples", False))
                 if hasattr(self.prefs_manager, "get_legacy_example_seed_values_path"):
                     example_seed_values_path = self.prefs_manager.get_legacy_example_seed_values_path()
                 if hasattr(self.prefs_manager, "get_legacy_example_semantic_rules_path"):
@@ -663,10 +674,6 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             if swift_warning:
                 self._log(swift_warning)
 
-            if self.prefs_manager and overrides.get("save_in_preferences"):
-                save_metadata_preferences(self.prefs_manager, overrides)
-                self._log("Saved conversion metadata to preferences.")
-
             converter = LegacyConverter(
                 src,
                 dst,
@@ -679,7 +686,8 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 release=release,
                 filename_pattern=filename_pattern,
                 swift_servers=swift_servers,
-                fill_fix_examples=fill_fix_examples,
+                repair_examples=repair_examples,
+                complete_examples=complete_examples,
                 example_seed_values_path=example_seed_values_path,
                 example_semantic_rules_path=example_semantic_rules_path,
                 example_tracing_enabled=example_tracing,

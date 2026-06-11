@@ -28,5 +28,7 @@ def save_metadata_preferences(prefs_manager, values: dict) -> None:
         return
 
     for field_name, preference_key in METADATA_PREFERENCE_KEYS.items():
+        if field_name not in values:
+            continue
         prefs_manager.set(preference_key, str(values.get(field_name, "") or "").strip())
     prefs_manager.save()

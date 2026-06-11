@@ -86,7 +86,7 @@ def test_configured_semantic_placeholders_are_repaired_but_valid_examples_are_ke
             "      - '^([A-Z0-9])\\\\1+$'\n",
             encoding="utf-8",
         )
-        converter = _converter(example_semantic_rules_path=rules_path)
+        converter = _converter(example_semantic_rules_path=rules_path, complete_examples=True)
         bic = DataType(
             name="ReceiverBic",
             type="string",
@@ -112,7 +112,7 @@ def test_configured_semantic_placeholders_are_repaired_but_valid_examples_are_ke
 
 
 def test_semantic_time_candidates_are_filtered_by_regex_before_regex_fallback():
-    converter = _converter()
+    converter = _converter(complete_examples=True)
     dt = DataType(
         name="TimeIndicator",
         type="string",
@@ -181,6 +181,7 @@ def test_custom_semantic_category_can_be_defined_by_seed_and_rules_files():
         converter = _converter(
             example_seed_values_path=seed_path,
             example_semantic_rules_path=rules_path,
+            complete_examples=True,
         )
         dt = DataType(name="ClrgSys", type="string", example="")
 
@@ -192,7 +193,7 @@ def test_custom_semantic_category_can_be_defined_by_seed_and_rules_files():
 
 
 def test_regex_alternatives_are_used_when_semantic_candidates_do_not_match():
-    converter = _converter()
+    converter = _converter(complete_examples=True)
     dt = DataType(
         name="MsgTp",
         type="string",
@@ -206,7 +207,7 @@ def test_regex_alternatives_are_used_when_semantic_candidates_do_not_match():
 
 
 def test_existing_valid_example_completed_from_allowed_values_is_not_repaired():
-    converter = _converter()
+    converter = _converter(complete_examples=True)
     dt = DataType(
         name="ReportStatus",
         type="string",
@@ -237,8 +238,38 @@ def test_invalid_existing_example_repaired_with_constraint_reason():
     assert converter._example_trace_rows[-1]["reason"] == "repaired invalid example: regex mismatch"
 
 
+def test_missing_example_is_not_completed_when_complete_examples_is_disabled():
+    converter = _converter(repair_examples=True, complete_examples=False)
+    dt = DataType(
+        name="TimeIndicator",
+        type="string",
+        regex="[0-9]{2,2}:[0-9]{2,2}",
+        example="",
+    )
+
+    converter._fill_and_fix_examples_for_data_type(dt, schema_name="TimeIndicator")
+
+    assert dt.example == ""
+    assert not converter._example_trace_rows
+
+
+def test_invalid_existing_example_is_not_repaired_when_repair_examples_is_disabled():
+    converter = _converter(repair_examples=False, complete_examples=True)
+    dt = DataType(
+        name="TimeIndicator",
+        type="string",
+        regex="[0-9]{2,2}:[0-9]{2,2}",
+        example="string",
+    )
+
+    converter._fill_and_fix_examples_for_data_type(dt, schema_name="TimeIndicator")
+
+    assert dt.example == "string"
+    assert not converter._example_trace_rows
+
+
 def test_oas_pattern_examples_are_validated_with_json_schema_search_semantics():
-    converter = _converter()
+    converter = _converter(complete_examples=True)
     dt = DataType(
         name="ProductId",
         type="string",
@@ -256,7 +287,7 @@ def test_oas_pattern_examples_are_validated_with_json_schema_search_semantics():
 
 
 def test_body_example_fallback_is_constraint_compliant_for_named_string_schema():
-    converter = _converter()
+    converter = _converter(complete_examples=True)
     dt = DataType(
         name="ProductId",
         type="string",
@@ -275,6 +306,185 @@ def test_body_example_fallback_is_constraint_compliant_for_named_string_schema()
 
     assert body["productId"] != "string"
     assert converter._is_valid_example_token(dt, body["productId"])
+
+
+def test_top_level_fields_share_root_counter_scope():
+    converter = _converter(complete_examples=True)
+    product = DataType(
+        name="ProductId3",
+        type="string",
+        max_val="4",
+        regex="[0-9A-Z]",
+        example="INST; EOLO; A",
+    )
+    converter.global_schemas["ProductId3"] = product
+    converter.output_names[("$global", "ProductId3")] = "ProductId3"
+
+    body = converter._build_body_example_dict(
+        [
+            ("firstProductId", "", "", "ProductId3", "M", "", "", ""),
+            ("secondProductId", "", "", "ProductId3", "M", "", "", ""),
+        ],
+        ep_filename=None,
+    )
+
+    assert body == {
+        "firstProductId": "INST",
+        "secondProductId": "EOLO",
+    }
+
+
+def test_object_array_examples_use_array_item_index_without_double_advancing_type_counter():
+    converter = _converter(complete_examples=True)
+    product = DataType(
+        name="ProductId3",
+        type="string",
+        max_val="4",
+        regex="[0-9A-Z]",
+        example="INST; EOLO; A",
+    )
+    profile = DataType(
+        name="AdmissionProfile",
+        type="string",
+        max_val="3",
+        example="CAD; CRD",
+    )
+    converter.global_schemas["ProductId3"] = product
+    converter.global_schemas["AdmissionProfile"] = profile
+    converter.output_names[("$global", "ProductId3")] = "ProductId3"
+    converter.output_names[("$global", "AdmissionProfile")] = "AdmissionProfile"
+
+    body = converter._build_body_example_dict(
+        [
+            ("criteria", "", "", "object", "M", "", "", ""),
+            ("productList", "criteria", "", "array", "O", "", "", "object"),
+            ("productId", "productList", "", "ProductId3", "M", "", "", ""),
+            ("admissionProfile", "productList", "", "AdmissionProfile", "M", "", "", ""),
+        ],
+        ep_filename=None,
+    )
+
+    assert body["criteria"]["productList"] == [
+        {"productId": "INST", "admissionProfile": "CAD"},
+        {"productId": "EOLO", "admissionProfile": "CRD"},
+    ]
+
+
+def test_nested_object_examples_use_independent_counter_scope():
+    converter = _converter(complete_examples=True)
+    product = DataType(
+        name="ProductId3",
+        type="string",
+        max_val="4",
+        regex="[0-9A-Z]",
+        example="INST; EOLO; A",
+    )
+    converter.global_schemas["ProductId3"] = product
+    converter.output_names[("$global", "ProductId3")] = "ProductId3"
+
+    body = converter._build_body_example_dict(
+        [
+            ("criteria", "", "", "object", "M", "", "", ""),
+            ("parentProductId", "criteria", "", "ProductId3", "M", "", "", ""),
+            ("nestedCriteria", "criteria", "", "object", "M", "", "", ""),
+            ("nestedProductId", "nestedCriteria", "", "ProductId3", "M", "", "", ""),
+        ],
+        ep_filename=None,
+    )
+
+    assert body["criteria"] == {
+        "parentProductId": "INST",
+        "nestedCriteria": {
+            "nestedProductId": "INST",
+        },
+    }
+
+
+def test_nested_object_inside_array_item_restarts_counter_scope_per_item():
+    converter = _converter(complete_examples=True)
+    product = DataType(
+        name="ProductId3",
+        type="string",
+        max_val="4",
+        regex="[0-9A-Z]",
+        example="INST; EOLO; A",
+    )
+    converter.global_schemas["ProductId3"] = product
+    converter.output_names[("$global", "ProductId3")] = "ProductId3"
+
+    body = converter._build_body_example_dict(
+        [
+            ("parametersHistory", "", "", "array", "M", "", "", "object"),
+            ("historyProductId", "parametersHistory", "", "ProductId3", "M", "", "", ""),
+            ("nestedCriteria", "parametersHistory", "", "object", "M", "", "", ""),
+            ("nestedProductId", "nestedCriteria", "", "ProductId3", "M", "", "", ""),
+        ],
+        ep_filename=None,
+    )
+
+    assert body["parametersHistory"] == [
+        {
+            "historyProductId": "INST",
+            "nestedCriteria": {
+                "nestedProductId": "INST",
+            },
+        },
+        {
+            "historyProductId": "EOLO",
+            "nestedCriteria": {
+                "nestedProductId": "INST",
+            },
+        },
+    ]
+
+
+def test_nested_object_array_examples_restart_rotation_per_array_instance():
+    converter = _converter(complete_examples=True)
+    product = DataType(
+        name="ProductId3",
+        type="string",
+        max_val="4",
+        regex="[0-9A-Z]",
+        example="INST; EOLO; A",
+    )
+    profile = DataType(
+        name="AdmissionProfile",
+        type="string",
+        max_val="3",
+        example="CAD; CRD",
+    )
+    converter.global_schemas["ProductId3"] = product
+    converter.global_schemas["AdmissionProfile"] = profile
+    converter.output_names[("$global", "ProductId3")] = "ProductId3"
+    converter.output_names[("$global", "AdmissionProfile")] = "AdmissionProfile"
+
+    body = converter._build_body_example_dict(
+        [
+            ("parametersHistory", "", "", "array", "M", "", "", "object"),
+            ("historyProductId", "parametersHistory", "", "ProductId3", "M", "", "", ""),
+            ("productList", "parametersHistory", "", "array", "O", "", "", "object"),
+            ("productId", "productList", "", "ProductId3", "M", "", "", ""),
+            ("admissionProfile", "productList", "", "AdmissionProfile", "M", "", "", ""),
+        ],
+        ep_filename=None,
+    )
+
+    assert body["parametersHistory"] == [
+        {
+            "historyProductId": "INST",
+            "productList": [
+                {"productId": "INST", "admissionProfile": "CAD"},
+                {"productId": "EOLO", "admissionProfile": "CRD"},
+            ]
+        },
+        {
+            "historyProductId": "EOLO",
+            "productList": [
+                {"productId": "INST", "admissionProfile": "CAD"},
+                {"productId": "EOLO", "admissionProfile": "CRD"},
+            ]
+        },
+    ]
 
 
 def test_diagnostic_provenance_fields_do_not_split_schema_fingerprints():
@@ -309,7 +519,7 @@ def test_diagnostic_provenance_fields_do_not_split_schema_fingerprints():
 
 
 def test_impossible_example_constraints_are_recorded_as_blocking_errors():
-    converter = _converter()
+    converter = _converter(complete_examples=True)
     dt = DataType(
         name="ImpossibleCode",
         type="string",
@@ -331,7 +541,7 @@ def test_impossible_example_constraints_are_recorded_as_blocking_errors():
 
 
 def test_complex_non_generable_example_constraints_are_recorded_as_blocking_errors():
-    converter = _converter()
+    converter = _converter(complete_examples=True)
     dt = DataType(
         name="ComplexCode",
         type="string",
@@ -363,6 +573,7 @@ def test_convert_blocks_before_writing_outputs_when_examples_cannot_be_generated
         output_dir=str(output_dir),
         master_dir=".",
         log_callback=logs.append,
+        complete_examples=True,
     )
     dt = DataType(
         name="ImpossibleCode",

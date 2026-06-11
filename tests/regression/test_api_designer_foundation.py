@@ -15,6 +15,7 @@ from src.api_designer.persistence import FileSystemDesignerRepository
 from src.excel_parser import parse_info, parse_paths_index
 from src.generator import OASGenerator
 from src.legacy_converter import DataType, LegacyConverter
+import src.legacy_converter_dialog as legacy_converter_dialog_module
 from src.legacy_converter_dialog import LegacyConverterDialog
 from src.gui import ImportDialog, OASGenApp
 from src.oas_importer.schema_flattener import SchemaFlattener
@@ -38,6 +39,7 @@ from src.preferences import (
     GENERATION_MODE_MINIMAL,
     GENERATION_MODE_STANDARD,
     PreferencesManager,
+    migrate_saved_preferences,
 )
 from src.swift_services import (
     ensure_swift_server_rows_in_workbook,
@@ -301,6 +303,20 @@ def test_designer_is_hidden_by_default_for_intermediate_releases():
     assert defaults["default_tab"] == "OAS Generation"
 
 
+def test_legacy_example_repair_and_complete_have_separate_defaults():
+    defaults = PreferencesManager.DEFAULT_PREFERENCES
+
+    assert defaults["tools_legacy_repair_examples"] is True
+    assert defaults["tools_legacy_complete_examples"] is False
+
+
+def test_legacy_example_migration_keeps_completion_disabled_for_old_combined_flag():
+    migrated = migrate_saved_preferences({"tools_legacy_fill_fix_examples": True})
+
+    assert migrated["tools_legacy_repair_examples"] is True
+    assert migrated["tools_legacy_complete_examples"] is False
+
+
 def test_api_designer_workspace_roundtrip_is_deterministic():
     temp_root = _clean_test_temp()
     workspace = create_empty_workspace("Payments Workspace")
@@ -451,6 +467,38 @@ def test_metadata_preferences_roundtrip_includes_swift_service():
     assert prefs.saved is True
 
 
+def test_metadata_preferences_partial_save_preserves_existing_swift_service():
+    prefs = _DummyPrefs(
+        {
+            "tools_legacy_contact_name": "EBA CLEARING",
+            "tools_legacy_contact_url": "https://www.ebaclearing.eu",
+            "tools_legacy_release": "v20260418",
+            "tools_legacy_filename_pattern": "template.yaml",
+            "tools_legacy_swift_service": "FPAD",
+        }
+    )
+
+    save_metadata_preferences(
+        prefs,
+        {
+            "contact_name": "NEXI",
+            "contact_url": "https://www.nexigroup.com/",
+            "release": "v2026Q4",
+            "filename_pattern": "next.yaml",
+        },
+    )
+
+    assert prefs._values["tools_legacy_swift_service"] == "FPAD"
+
+
+def test_metadata_preferences_explicit_blank_clears_swift_service():
+    prefs = _DummyPrefs({"tools_legacy_swift_service": "FPAD"})
+
+    save_metadata_preferences(prefs, {"swift_service": ""})
+
+    assert prefs._values["tools_legacy_swift_service"] == ""
+
+
 def test_legacy_conversion_metadata_defaults_include_saved_swift_service():
     dialog = object.__new__(LegacyConverterDialog)
     dialog.prefs_manager = _DummyPrefs({"tools_legacy_swift_service": "FPAD"})
@@ -458,6 +506,53 @@ def test_legacy_conversion_metadata_defaults_include_saved_swift_service():
     defaults = dialog._get_conversion_metadata_defaults()
 
     assert defaults["swift_service"] == "FPAD"
+
+
+def test_legacy_conversion_metadata_prompt_saves_preferences_immediately(monkeypatch):
+    metadata_result = {
+        "contact_name": "EBA CLEARING",
+        "contact_url": "https://www.ebaclearing.eu",
+        "release": "v20261113",
+        "filename_pattern": "EBACL_RT1_<current_date>_OpenApi<oas_version>_<customization>RT1_API_Participant_<api_version>_<release>.yaml",
+        "swift_service": "RT1",
+        "swift_servers": [{"url": "https://example.test/rt1", "description": "Live Environment"}],
+        "save_in_preferences": True,
+    }
+
+    class FakeMetadataDialog:
+        def __init__(self, *_args, **_kwargs):
+            self.result = dict(metadata_result)
+
+    dialog = object.__new__(LegacyConverterDialog)
+    dialog.prefs_manager = _DummyPrefs(
+        {
+            "tools_legacy_contact_name": "OLD",
+            "tools_legacy_contact_url": "https://old.example",
+            "tools_legacy_release": "vOLD",
+            "tools_legacy_filename_pattern": "OLD_FPAD.yaml",
+            "tools_legacy_swift_service": "",
+            "swift_services": {},
+        }
+    )
+    dialog.wait_window = lambda _dialog: None
+    saved_logs = []
+    dialog._log = saved_logs.append
+    monkeypatch.setattr(
+        legacy_converter_dialog_module,
+        "LegacyConversionMetadataDialog",
+        FakeMetadataDialog,
+    )
+
+    result = dialog._prompt_conversion_metadata_overrides()
+
+    assert result == metadata_result
+    assert dialog.prefs_manager._values["tools_legacy_contact_name"] == "EBA CLEARING"
+    assert dialog.prefs_manager._values["tools_legacy_contact_url"] == "https://www.ebaclearing.eu"
+    assert dialog.prefs_manager._values["tools_legacy_release"] == "v20261113"
+    assert dialog.prefs_manager._values["tools_legacy_filename_pattern"].startswith("EBACL_RT1_")
+    assert dialog.prefs_manager._values["tools_legacy_swift_service"] == "RT1"
+    assert dialog.prefs_manager.saved is True
+    assert saved_logs == ["Saved conversion metadata to preferences."]
 
 
 def test_oas_import_metadata_defaults_include_saved_swift_service_when_oas_info_missing():
@@ -1823,7 +1918,7 @@ def test_legacy_converter_standalone_example_trace_reports_kept_examples():
         assert converter.run_standalone_example_trace(str(temp_root), repair_files=False)
 
         joined = "\n".join(detail_lines)
-        assert "Repair and complete examples: kept 1" in joined
+        assert "Repair/complete examples: kept 1" in joined
         assert "EXAMPLE TRACER" in joined
         assert "KEPT" in joined
         assert "BIC8" in joined

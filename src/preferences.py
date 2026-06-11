@@ -156,6 +156,11 @@ def migrate_saved_preferences(saved: dict) -> dict:
     if "update_manifest_url" in migrated:
         migrated["update_manifest_url"] = normalize_update_manifest_url(migrated.get("update_manifest_url"))
 
+    if "tools_legacy_fill_fix_examples" in migrated:
+        legacy_value = bool(migrated.get("tools_legacy_fill_fix_examples"))
+        migrated.setdefault("tools_legacy_repair_examples", legacy_value)
+        migrated.setdefault("tools_legacy_complete_examples", False)
+
     return migrated
 
 
@@ -295,6 +300,8 @@ class PreferencesManager:
         "tools_legacy_collision_include_examples": False,
         "tools_legacy_capitalize_schema_names": True,
         "tools_legacy_fill_fix_examples": True,
+        "tools_legacy_repair_examples": True,
+        "tools_legacy_complete_examples": False,
         "tools_legacy_contact_name": "",
         "tools_legacy_contact_url": "",
         "tools_legacy_release": "",

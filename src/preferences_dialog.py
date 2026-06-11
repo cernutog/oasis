@@ -435,14 +435,23 @@ class PreferencesDialog(ctk.CTkToplevel):
         )
         self.chk_legacy_capitalize_schemas.pack(anchor="w", pady=(3, 6))
 
-        self.var_legacy_fill_fix_examples = ctk.BooleanVar(value=True)
-        self.chk_legacy_fill_fix_examples = ctk.CTkSwitch(
+        self.var_legacy_repair_examples = ctk.BooleanVar(value=True)
+        self.chk_legacy_repair_examples = ctk.CTkSwitch(
             self.frame_legacy_switches_right,
-            text="Repair and complete examples",
-            variable=self.var_legacy_fill_fix_examples,
+            text="Repair examples",
+            variable=self.var_legacy_repair_examples,
             progress_color="#0A809E",
         )
-        self.chk_legacy_fill_fix_examples.pack(anchor="w", pady=(3, 6))
+        self.chk_legacy_repair_examples.pack(anchor="w", pady=(3, 6))
+
+        self.var_legacy_complete_examples = ctk.BooleanVar(value=False)
+        self.chk_legacy_complete_examples = ctk.CTkSwitch(
+            self.frame_legacy_switches_right,
+            text="Complete examples",
+            variable=self.var_legacy_complete_examples,
+            progress_color="#0A809E",
+        )
+        self.chk_legacy_complete_examples.pack(anchor="w", pady=(3, 6))
 
         self.var_legacy_example_tracing = ctk.BooleanVar(value=True)
         self.chk_legacy_example_tracing = ctk.CTkSwitch(
@@ -837,7 +846,9 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_collision_desc.set(prefs.get("tools_legacy_collision_include_descriptions", False))
         self.var_legacy_collision_examples.set(prefs.get("tools_legacy_collision_include_examples", False))
         self.var_legacy_capitalize_schemas.set(prefs.get("tools_legacy_capitalize_schema_names", True))
-        self.var_legacy_fill_fix_examples.set(prefs.get("tools_legacy_fill_fix_examples", True))
+        legacy_fill_fix = prefs.get("tools_legacy_fill_fix_examples", True)
+        self.var_legacy_repair_examples.set(prefs.get("tools_legacy_repair_examples", legacy_fill_fix))
+        self.var_legacy_complete_examples.set(prefs.get("tools_legacy_complete_examples", False))
         self.var_legacy_example_tracing.set(prefs.get("tools_legacy_example_tracing_enabled", True))
         self.entry_legacy_contact_name.delete(0, "end")
         self.entry_legacy_contact_name.insert(0, prefs.get("tools_legacy_contact_name", ""))
@@ -1249,7 +1260,9 @@ class PreferencesDialog(ctk.CTkToplevel):
             "tools_legacy_collision_include_descriptions": self.var_legacy_collision_desc.get(),
             "tools_legacy_collision_include_examples": self.var_legacy_collision_examples.get(),
             "tools_legacy_capitalize_schema_names": self.var_legacy_capitalize_schemas.get(),
-            "tools_legacy_fill_fix_examples": self.var_legacy_fill_fix_examples.get(),
+            "tools_legacy_fill_fix_examples": self.var_legacy_repair_examples.get() or self.var_legacy_complete_examples.get(),
+            "tools_legacy_repair_examples": self.var_legacy_repair_examples.get(),
+            "tools_legacy_complete_examples": self.var_legacy_complete_examples.get(),
             "tools_legacy_contact_name": self.entry_legacy_contact_name.get().strip(),
             "tools_legacy_contact_url": self.entry_legacy_contact_url.get().strip(),
             "tools_legacy_release": self.entry_legacy_release.get().strip(),
@@ -1341,7 +1354,8 @@ class PreferencesDialog(ctk.CTkToplevel):
         self.var_legacy_collision_desc.set(self._default_value("tools_legacy_collision_include_descriptions"))
         self.var_legacy_collision_examples.set(self._default_value("tools_legacy_collision_include_examples"))
         self.var_legacy_capitalize_schemas.set(self._default_value("tools_legacy_capitalize_schema_names"))
-        self.var_legacy_fill_fix_examples.set(self._default_value("tools_legacy_fill_fix_examples"))
+        self.var_legacy_repair_examples.set(self._default_value("tools_legacy_repair_examples"))
+        self.var_legacy_complete_examples.set(self._default_value("tools_legacy_complete_examples"))
         self.var_legacy_example_tracing.set(self._default_value("tools_legacy_example_tracing_enabled"))
         self._set_entry_value(self.entry_legacy_contact_name, self._default_value("tools_legacy_contact_name"))
         self._set_entry_value(self.entry_legacy_contact_url, self._default_value("tools_legacy_contact_url"))
@@ -1425,6 +1439,8 @@ class PreferencesDialog(ctk.CTkToplevel):
                     "tools_legacy_collision_include_examples",
                     "tools_legacy_capitalize_schema_names",
                     "tools_legacy_fill_fix_examples",
+                    "tools_legacy_repair_examples",
+                    "tools_legacy_complete_examples",
                     "tools_legacy_example_tracing_enabled",
                     "tools_legacy_contact_name",
                     "tools_legacy_contact_url",

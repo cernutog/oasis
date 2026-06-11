@@ -219,7 +219,9 @@ class LegacyConverter:
         release: str = "",
         filename_pattern: str = "",
         swift_servers: Optional[List[Dict[str, str]]] = None,
-        fill_fix_examples: bool = True,
+        fill_fix_examples: Optional[bool] = None,
+        repair_examples: Optional[bool] = None,
+        complete_examples: Optional[bool] = None,
         example_seed_values_path: Optional[Any] = None,
         example_semantic_rules_path: Optional[Any] = None,
         example_tracing_enabled: bool = True,
@@ -241,7 +243,13 @@ class LegacyConverter:
         self.release = str(release or "").strip()
         self.filename_pattern = str(filename_pattern or "").strip()
         self.swift_servers = list(swift_servers or [])
-        self.fill_fix_examples = bool(fill_fix_examples)
+        if repair_examples is None:
+            repair_examples = True if fill_fix_examples is None else bool(fill_fix_examples)
+        if complete_examples is None:
+            complete_examples = False if fill_fix_examples is None else bool(fill_fix_examples)
+        self.repair_examples = bool(repair_examples)
+        self.complete_examples = bool(complete_examples)
+        self.fill_fix_examples = self.repair_examples or self.complete_examples
         self.example_seed_values_path = Path(example_seed_values_path) if example_seed_values_path else None
         self.example_semantic_rules_path = Path(example_semantic_rules_path) if example_semantic_rules_path else None
         self.example_seed_values: Dict[str, List[str]] = {}
@@ -1396,7 +1404,7 @@ class LegacyConverter:
         stats = self._example_fix_stats
         if any(stats.get(key, 0) for key in ("kept", "completed", "repaired", "best_effort", "impossible", "complex")):
             self.log(
-                "Repair and complete examples: "
+                "Repair/complete examples: "
                 f"kept {stats['kept']}, completed {stats['completed']}, "
                 f"repaired {stats['repaired']}, best-effort {stats['best_effort']}, "
                 f"impossible {stats.get('impossible', 0)}, complex {stats.get('complex', 0)}."
@@ -1440,6 +1448,18 @@ class LegacyConverter:
                 include_semantic_placeholder=not has_allowed_values,
             )
         ]
+
+        if invalid_existing_reasons and not self.repair_examples:
+            return
+        if not original or original.lower() == "nan":
+            if not self.complete_examples:
+                return
+        elif valid_existing and not invalid_existing_reasons and not self.complete_examples:
+            if trace_kept:
+                self._record_example_trace(schema_name or dt.name, dt, "KEPT", original, original, "valid existing examples")
+            self._example_fix_stats["kept"] += 1
+            return
+
         examples, reason = self._build_example_candidates(dt, valid_existing, category=category)
         used_best_effort = False
 
@@ -6037,8 +6057,20 @@ class LegacyConverter:
         override_field / override_value: replace value for one field (other Bad Request violations)
         array_item_index: 0 = first array item, 1 = second array item (shifts rotation)
         """
-        # Per-type rotation counter (shared across the whole call so siblings rotate)
-        type_counters: Dict[str, int] = {}
+        class ExampleGenerationContext:
+            """Scoped counters for one structural container in the example tree."""
+
+            def __init__(self, base_offset: int = 0) -> None:
+                self.base_offset = base_offset
+                self.counters: Dict[str, int] = {}
+
+            def child_scope(self, base_offset: int = 0) -> 'ExampleGenerationContext':
+                return ExampleGenerationContext(base_offset=base_offset)
+
+            def next_offset(self, dtype_key: str) -> int:
+                count = self.counters.get(dtype_key, 0)
+                self.counters[dtype_key] = count + 1
+                return self.base_offset + count
 
         def _coerce_numeric_example(raw_value: Any, numeric_type: str) -> Any:
             """Preserve integer-looking number examples without forcing a trailing '.0'."""
@@ -6069,26 +6101,17 @@ class LegacyConverter:
 
             return raw_value
 
-        def get_rotated_value(dtype: str, dt: Optional['DataType'], item_offset: int = 0, is_array_item: bool = False) -> Any:
-            """Pick example value using per-type rotation + item_offset for array diversity."""
+        def get_rotated_value(
+            dtype: str,
+            dt: Optional['DataType'],
+            context: ExampleGenerationContext,
+        ) -> Any:
+            """Pick example value using the current structural container scope."""
             examples = self._get_example_values(dt)
             low = dtype.lower() if dtype else "string"
 
             if examples:
-                # For array items, return the full examples list (or subset) instead of single value
-                if is_array_item:
-                    count = type_counters.get(low, 0)
-                    # Return all examples as array, or single example if only one exists
-                    if len(examples) >= 2:
-                        # Rotate starting point for diversity across different arrays
-                        start_idx = (count + item_offset) % len(examples)
-                        type_counters[low] = count + 1
-                        return [examples[(start_idx + i) % len(examples)] for i in range(min(2, len(examples)))]
-                    return [examples[0]]
-                
-                count = type_counters.get(low, 0)
-                idx = (count + item_offset) % len(examples)
-                type_counters[low] = count + 1
+                idx = context.next_offset(low) % len(examples)
                 raw = examples[idx]
                 # Coerce to numeric if the DataType says so
                 if dt:
@@ -6108,9 +6131,9 @@ class LegacyConverter:
                 synthetic = self._generate_constraint_compliant_value(
                     low_t,
                     dt,
-                    item_offset=item_offset,
+                    item_offset=context.next_offset(low),
                 )
-                return [synthetic] if is_array_item else synthetic
+                return synthetic
 
         # Build parent → children tree.
         # IMPORTANT: legacy structures can contain duplicate field names under different parents.
@@ -6149,7 +6172,11 @@ class LegacyConverter:
                 children_of[p_uid] = []
             children_of[p_uid].append(uid)
 
-        def build_node(uid: str, item_offset: int = 0) -> Any:
+        def build_node(
+            uid: str,
+            context: ExampleGenerationContext,
+            container_offset: int = 0,
+        ) -> Any:
             dtype = node_dtype.get(uid, "string")
             low_dtype = dtype.lower()
             dt = self._resolve_leaf_dt(dtype, ep_filename)
@@ -6157,6 +6184,7 @@ class LegacyConverter:
 
             # --- ARRAY ---
             if low_dtype == "array" or (dt and dt.type.lower() == "array"):
+                array_context = context.child_scope(base_offset=container_offset)
                 items_type_name = node_items.get(uid, "")
                 if not items_type_name and dt:
                     items_type_name = dt.items_type or ""
@@ -6165,16 +6193,18 @@ class LegacyConverter:
 
                 if my_children:
                     # Array of objects defined inline
+                    item1_context = array_context.child_scope(base_offset=0)
                     item1 = {
-                        node_name[c]: build_node(c, item_offset=0)
+                        node_name[c]: build_node(c, item1_context)
                         for c in my_children
                         if node_name.get(c) != omit_field or override_field is not None
                     }
                     # Check if we have enough examples for a second distinct item
-                    can_make_second = _can_diversify(my_children, item_offset=1)
+                    can_make_second = _can_diversify(my_children)
                     if can_make_second:
+                        item2_context = array_context.child_scope(base_offset=1)
                         item2 = {
-                            node_name[c]: build_node(c, item_offset=1)
+                            node_name[c]: build_node(c, item2_context)
                             for c in my_children
                             if node_name.get(c) != omit_field or override_field is not None
                         }
@@ -6185,24 +6215,21 @@ class LegacyConverter:
                     return [{}]
                 else:
                     # Array of scalars
-                    v1 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=0, is_array_item=True)
-                    if isinstance(v1, list) and len(v1) >= 2:
-                        # Already got multiple values from examples list
-                        return v1
-                    # Try to get a second distinct value for diversity
-                    v2 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=1, is_array_item=True)
-                    if isinstance(v2, list):
-                        return [v1[0] if isinstance(v1, list) else v1, v2[0]]
-                    return [v1[0] if isinstance(v1, list) else v1, v2] if v2 is not None else [v1[0] if isinstance(v1, list) else v1]
+                    v1 = get_rotated_value(items_type_name or items_low, items_dt, array_context)
+                    if _has_multiple_examples_for_type(items_type_name or items_low, items_dt):
+                        v2 = get_rotated_value(items_type_name or items_low, items_dt, array_context)
+                        return [v1, v2]
+                    return [v1]
 
             # --- OBJECT ---
             if low_dtype == "object" or (dt and dt.type.lower() == "object" and my_children):
+                object_context = context.child_scope(base_offset=container_offset)
                 result = {}
                 for c in my_children:
                     cname = node_name.get(c)
                     if cname == omit_field:
                         continue
-                    val = build_node(c, item_offset=item_offset)
+                    val = build_node(c, object_context)
                     if cname == override_field:
                         val = override_value
                     if override_fields and cname in override_fields:
@@ -6211,18 +6238,27 @@ class LegacyConverter:
                 return result
 
             # --- SCALAR (possibly a named schema that resolves to a scalar type) ---
-            val = get_rotated_value(dtype, dt, item_offset=item_offset)
+            val = get_rotated_value(dtype, dt, context)
             if node_name.get(uid) == override_field:
                 val = override_value
             if override_fields and node_name.get(uid) in override_fields:
                 val = override_fields.get(node_name.get(uid))
             return val
 
-        def _can_diversify(child_uids: List[str], item_offset: int) -> bool:
-            """Check whether at least one child has >1 example value (enables 2nd array item)."""
+        def _has_multiple_examples_for_type(dtype: str, dt: Optional['DataType']) -> bool:
+            examples = self._get_example_values(dt)
+            if len(examples) >= 2:
+                return True
+            return not examples and bool(dt)
+
+        def _can_diversify(child_uids: List[str]) -> bool:
+            """Check whether a direct child can produce a distinct second array item."""
             for c in child_uids:
                 dtype = node_dtype.get(c, "string")
+                low_dtype = dtype.lower()
                 dt = self._resolve_leaf_dt(dtype, ep_filename)
+                if low_dtype == "array" or (dt and dt.type.lower() == "array"):
+                    continue
                 examples = self._get_example_values(dt)
                 if len(examples) >= 2:
                     return True
@@ -6230,13 +6266,14 @@ class LegacyConverter:
 
         # Step 3: build root dict
         result = {}
+        root_context = ExampleGenerationContext(base_offset=array_item_index)
         for uid in ordered_uids:
             if not is_root(uid):
                 continue
             name = node_name.get(uid)
             if name == omit_field:
                 continue
-            val = build_node(uid, item_offset=array_item_index)
+            val = build_node(uid, root_context)
             if name == override_field:
                 val = override_value
             if override_fields and name in override_fields:
