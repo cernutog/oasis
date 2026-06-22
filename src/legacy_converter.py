@@ -8,8 +8,12 @@ import os
 import shutil
 import re
 import copy
+import textwrap
+import math
+import warnings
 from pathlib import Path
 from collections import OrderedDict
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Dict, List, Tuple, Optional, Any
 import pandas as pd
@@ -18,6 +22,16 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment
 from openpyxl.utils import get_column_letter
 import yaml
+
+try:
+    from .swift_services import ensure_swift_server_rows_in_workbook
+except ImportError:
+    from swift_services import ensure_swift_server_rows_in_workbook
+
+
+EXAMPLE_TRACE_IMPOSSIBLE_MARKER = "[[OASIS_EXAMPLE_TRACE_IMPOSSIBLE]]"
+EXAMPLE_TRACE_COMPLEX_MARKER = "[[OASIS_EXAMPLE_TRACE_COMPLEX]]"
+OPENPYXL_DATA_VALIDATION_EXTENSION_WARNING = "Data Validation extension is not supported and will be removed"
 
 
 @dataclass
@@ -35,6 +49,156 @@ class DataType:
     example: str = ""
     items_type: str = ""
     source_file: str = "" # Track origin for collision resolution
+    source_sheet: str = ""
+    source_row: int = 0
+
+
+DEFAULT_LEGACY_EXAMPLE_SEED_VALUES = {
+    "bic": ["IPSDITM1", "DEUTDEFFXXX", "BNPAFRPP", "IPSDITM1XXX", "DEUTDEFF", "BNPAFRPPXXX"],
+    "bic8": ["IPSDITM1", "DEUTDEFF", "BNPAFRPP"],
+    "bic11": ["IPSDITM1XXX", "DEUTDEFFXXX", "BNPAFRPPXXX"],
+    "iban": ["IT60X0542811101000000123456", "DE89370400440532013000", "FR1420041010050500013M02606"],
+    "currency": ["EUR", "USD", "GBP"],
+    "country": ["IT", "DE", "FR"],
+    "email": ["operations@example.com", "support@example.com", "api.owner@example.com"],
+    "url": ["https://api.example.com/resource", "https://docs.example.com/api", "https://portal.example.com/callback"],
+    "filename": ["banking-data.xml", "banking-report.csv", "banking-document.txt"],
+    "uuid": ["550e8400-e29b-41d4-a716-446655440000", "6f9619ff-8b86-d011-b42d-00cf4fc964ff", "123e4567-e89b-12d3-a456-426614174000"],
+    "date": ["2026-01-31", "2026-06-30", "2026-12-31"],
+    "datetime": ["2026-01-31T10:15:30", "2026-06-30T12:00:00", "2026-12-31T23:59:59", "2026-01-31T10:15:30Z", "2026-06-30T12:00:00Z", "2026-12-31T23:59:59Z"],
+    "amount": ["100.00", "250.50", "1000.00"],
+    "integer": ["1", "2", "3"],
+    "number": ["1.0", "2.5", "3.75"],
+    "boolean": ["true", "false"],
+    "description": ["Lorem ipsum dolor sit amet", "Banking service description", "Operational service description"],
+    "reference": ["REF2026001", "REF2026002", "REF2026003"],
+    "request_id": ["REQ2026000001", "REQ2026000002", "REQ2026000003"],
+    "message_id": ["MSG2026000001", "MSG2026000002", "MSG2026000003"],
+    "transaction_id": ["TRX2026000001", "TRX2026000002", "TRX2026000003"],
+    "instruction_id": ["INS2026000001", "INS2026000002", "INS2026000003"],
+    "operation_id": ["OP2026000001", "OP2026000002", "OP2026000003"],
+    "identifier": ["ID2026000001", "ID2026000002", "ID2026000003"],
+    "user_id": ["USR00001", "USR00002", "USR00003"],
+    "account": ["IT60X0542811101000000123456", "DE89370400440532013000", "BE68539007547034"],
+    "dca": ["IPSDITM1DCA0001", "DEUTDEFFDCA0001", "BNPAFRPPDCA0001"],
+    "status": ["ACCP", "PDNG", "RJCT"],
+    "type": ["BANKING", "REPORT", "MESSAGE"],
+    "network": ["PRIMARY", "SECONDARY", "BACKUP"],
+    "product": ["SCT", "RT1", "STEP2"],
+    "cycle": ["01", "02", "03"],
+    "offset": ["0", "100", "200"],
+    "sequence": ["1", "2", "3"],
+    "time": ["10:15", "12:00", "23:59", "10:15:30", "12:00:00", "23:59:59"],
+    "period": ["2026Q1", "2026Q2", "2026Q3"],
+    "xml": ["<Document/>", "<Message/>", "<Report/>"],
+    "aos": ["A01", "A02", "A03"],
+    "flag": ["Y", "N"],
+    "profile": ["STANDARD", "ADVANCED", "DEFAULT"],
+    "role": ["REQUESTOR", "AUTHORIZER", "CONFIRMER"],
+    "service": ["SCT", "RT1", "STEP2"],
+    "module": ["MODULE01", "MODULE02", "MODULE03"],
+    "channel": ["PRIMARY", "SECONDARY", "BACKUP"],
+    "duration": ["01d 11h 21m 05s", "00d 02h 30m 00s", "02d 00h 00m 00s"],
+    "lac": ["LAC001", "LAC002", "LAC003"],
+    "sign": ["POS", "NEG"],
+    "direction": ["SNT", "RCV", "IN"],
+    "settlement_method": ["LQPS", "RT1A", "TDCA"],
+    "csm": ["RT1", "TIPS", "RT1-TIPS"],
+    "pointer": ["001C", "002L", "003C"],
+    "field_name": ["Fieldname01", "Fieldname02", "Fieldname03"],
+    "field_value": ["Fieldvalue01", "Fieldvalue02", "Fieldvalue03"],
+    "validation_detail": ["must match pattern", "invalid value", "missing required field"],
+    "network_address": ["cn=bank01,cn=sag2,cn=memb,o=itsimitt,o=swift", "cn=bank02,cn=sag2,cn=memb,o=deutdeff,o=swift", "cn=bank03,cn=sag2,cn=memb,o=bnpafrpp,o=swift"],
+    "count": ["1", "5", "12"],
+    "routing_table": ["P", "RE"],
+    "operation": ["FREEZE", "UNFREEZE", "UPDATE"],
+    "reason": ["VALIDATION", "TECHNICAL", "BUSINESS"],
+    "endpoint": ["https://api.example.com/service", "https://api.example.com/status", "https://api.example.com/messages"],
+    "file_size": ["1024", "2048", "4096"],
+    "certificate": ["CERTIFICATE01", "CERTIFICATE02", "CERTIFICATE03"],
+    "code": ["CODE001", "CODE002", "CODE003"],
+    "error_code": ["ERR001", "ERR002", "ERR003"],
+    "name": ["Banking Service", "Operational Service", "Reference Service"],
+    "generic": ["Banking value", "Operational value", "Reference value"],
+}
+
+LEGACY_GENERATED_EXAMPLE_SEED_VALUES = {
+    "filename": ["payment-instructions.xml", "settlement-report.csv", "reconciliation-data.json"],
+    "generic": ["sampleValue", "exampleValue", "testValue"],
+    "time": ["10:15:30", "12:00:00", "23:59:59"],
+}
+
+DEFAULT_LEGACY_EXAMPLE_SEMANTIC_RULES = {
+    "overrides": {
+        "exact": {},
+        "compact_exact": {},
+    },
+    "placeholder_patterns": {
+        "categories": {
+            "bic": [r"^([A-Z0-9])\1+$"],
+            "bic8": [r"^([A-Z0-9])\1+$"],
+            "bic11": [r"^([A-Z0-9])\1+$"],
+        },
+    },
+    "exclusions": {
+        "filename": {
+            "exact": ["FileStatus", "FileReference"],
+        },
+    },
+    "rules": [
+        {"category": "request_id", "compact_contains": ["requestid"]},
+        {"category": "message_id", "compact_contains": ["messageid", "msgid"]},
+        {"category": "transaction_id", "compact_contains": ["transactionid", "endtoendid", "txid"]},
+        {"category": "instruction_id", "compact_contains": ["instructionid"]},
+        {"category": "operation_id", "compact_contains": ["operationid"]},
+        {"category": "user_id", "compact_exact": ["user"], "compact_contains": ["userid", "userissr", "userissuer", "usersprvr", "supervisor"]},
+        {"category": "identifier", "compact_suffix": ["id"], "compact_contains": ["identifier"]},
+        {"category": "field_name", "compact_exact": ["field", "fieldname"]},
+        {"category": "field_value", "compact_exact": ["value", "fieldvalue"]},
+        {"category": "validation_detail", "compact_contains": ["errordetails"]},
+        {"category": "filename", "contains": ["filename", "file name"]},
+        {"category": "xml", "compact_contains": ["originalxml"], "compact_suffix": ["xml", "data"]},
+        {"category": "datetime", "format": ["date-time", "datetime"], "contains": ["datetime", "timestamp", "yyyy-mm-ddthh"], "compact_suffix": ["dttm", "datetime"]},
+        {"category": "date", "format": ["date"], "contains": ["date", "yyyy-mm-dd"], "compact_suffix": ["dt", "date"]},
+        {"category": "time", "format": ["time"], "compact_regex": [".*time$"]},
+        {"category": "period", "contains": ["period", "quarter"], "compact_exact": ["year", "month", "day"]},
+        {"category": "description", "contains": ["description"]},
+        {"category": "error_code", "contains": ["errorcode", "error code"]},
+        {"category": "reference", "contains": ["reference"], "compact_suffix": ["ref"], "compact_contains": ["rfrnc"]},
+        {"category": "amount", "contains": ["amount"]},
+        {"category": "endpoint", "compact_suffix": ["endpoint"], "compact_contains": ["apiendpoint"]},
+        {"category": "file_size", "compact_contains": ["filesize"]},
+        {"category": "reason", "contains": ["reason"], "compact_contains": ["rsn"]},
+        {"category": "direction", "compact_exact": ["sentreceived", "trxdirection"], "contains": ["direction"]},
+        {"category": "settlement_method", "compact_contains": ["settmethod", "settlementmethod"]},
+        {"category": "csm", "compact_exact": ["csm"]},
+        {"category": "pointer", "compact_exact": ["pointer"]},
+        {"category": "count", "compact_prefix": ["num", "totnum"], "compact_suffix": ["count"]},
+        {"category": "network_address", "compact_suffix": ["netad"]},
+        {"category": "status", "contains": ["status", "state"], "compact_suffix": ["sts"], "compact_contains": ["msgsts"]},
+        {"category": "type", "compact_contains": ["type"], "compact_suffix": ["tp"]},
+        {"category": "aos", "compact_exact": ["ao"], "compact_contains": ["aos"]},
+        {"category": "network", "contains": ["network"], "compact_contains": ["netwopt", "outputnet"]},
+        {"category": "product", "contains": ["product"]},
+        {"category": "channel", "contains": ["channel"], "compact_exact": ["requestedthrough"]},
+        {"category": "cycle", "contains": ["cycle"]},
+        {"category": "offset", "compact_exact": ["offset"]},
+        {"category": "sequence", "contains": ["sequence"]},
+        {"category": "flag", "contains": ["flag", "indicator"], "compact_suffix": ["indic", "req", "rqst"], "compact_exact": ["bool", "booleanvalue"], "allowed_values_subset": ["0", "1", "Y", "N", "YES", "NO", "TRUE", "FALSE"]},
+        {"category": "profile", "contains": ["profile"]},
+        {"category": "role", "contains": ["role"], "compact_exact": ["requestor", "authorizer", "confirmer"]},
+        {"category": "service", "compact_exact": ["service"], "compact_suffix": ["service"]},
+        {"category": "module", "contains": ["module"]},
+        {"category": "duration", "contains": ["duration"]},
+        {"category": "lac", "compact_exact": ["lac"], "compact_prefix": ["lac"]},
+        {"category": "sign", "compact_exact": ["sign"]},
+        {"category": "routing_table", "compact_contains": ["routingtable"]},
+        {"category": "operation", "compact_exact": ["freezeunfreeze"], "compact_contains": ["operation"]},
+        {"category": "certificate", "compact_contains": ["authenticationca"]},
+        {"category": "code", "contains": ["code"]},
+        {"category": "name", "contains": ["name"], "compact_suffix": ["name"]},
+    ],
+}
 
 
 class LegacyConverter:
@@ -54,6 +218,13 @@ class LegacyConverter:
         contact_url: str = "",
         release: str = "",
         filename_pattern: str = "",
+        swift_servers: Optional[List[Dict[str, str]]] = None,
+        fill_fix_examples: Optional[bool] = None,
+        repair_examples: Optional[bool] = None,
+        complete_examples: Optional[bool] = None,
+        example_seed_values_path: Optional[Any] = None,
+        example_semantic_rules_path: Optional[Any] = None,
+        example_tracing_enabled: bool = True,
     ):
         self.input_dir = Path(input_dir)
         self.output_dir = Path(output_dir)
@@ -71,12 +242,30 @@ class LegacyConverter:
         self.contact_url = str(contact_url or "").strip()
         self.release = str(release or "").strip()
         self.filename_pattern = str(filename_pattern or "").strip()
+        self.swift_servers = list(swift_servers or [])
+        if repair_examples is None:
+            repair_examples = True if fill_fix_examples is None else bool(fill_fix_examples)
+        if complete_examples is None:
+            complete_examples = False if fill_fix_examples is None else bool(fill_fix_examples)
+        self.repair_examples = bool(repair_examples)
+        self.complete_examples = bool(complete_examples)
+        self.fill_fix_examples = self.repair_examples or self.complete_examples
+        self.example_seed_values_path = Path(example_seed_values_path) if example_seed_values_path else None
+        self.example_semantic_rules_path = Path(example_semantic_rules_path) if example_semantic_rules_path else None
+        self.example_seed_values: Dict[str, List[str]] = {}
+        self.example_semantic_rules: Dict[str, Any] = {}
+        self._example_semantic_rule_warnings = set()
+        self.example_schema_fields: Dict[str, set] = {}
+        self.example_tracing_enabled = bool(example_tracing_enabled)
         
         # Internal registry
         self.global_schemas: Dict[str, DataType] = {} # out_name -> DataType
         self.used_names = set()
         self.fingerprints = {} # fingerprint -> out_name
         self.output_names = {} # (filename, original_name) -> out_name
+        self.source_schema_names = set() # normalized DataType names read from Excel
+        self.generated_collision_names = set() # output names created only to resolve collisions
+        self.generated_collision_families: Dict[str, str] = {} # generated output name -> source family
         
         # Double-pass state
         self.raw_data_types: Dict[str, Dict[str, DataType]] = {} # file_key -> {norm_name -> DataType}
@@ -85,6 +274,8 @@ class LegacyConverter:
         
         # Operation IDs mapping
         self.filename_to_opid = {}
+        self.missing_index_files: List[str] = []
+        self.invalid_allowed_value_errors: List[Dict[str, str]] = []
         self.filename_to_path: Dict[str, str] = {}  # filename_stem -> API path
         self.emitted_wrappers = set()
         self.emitted_inline_components = set()
@@ -102,6 +293,9 @@ class LegacyConverter:
         self.filename_to_error_response: Dict[str, str] = {}  # ep_filename -> ErrorResponse variant name
         self.error_response_variant_rows: Dict[str, List[Tuple[str, str, str, str, str, str, str]]] = {}
         self.error_response_description_candidates: Dict[str, Dict[Tuple[str, str, str, str, str, str], Dict[str, Dict[str, Any]]]] = {}
+        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0, "impossible": 0, "complex": 0}
+        self._example_trace_rows: List[Dict[str, str]] = []
+        self.example_generation_errors: List[Dict[str, str]] = []
 
     def _resolve_internal_master_dir(self):
         """Finds 'Templates Master' folder as an internal resource."""
@@ -133,6 +327,89 @@ class LegacyConverter:
         cloned = copy.deepcopy(source_dt)
         cloned.name = target_name
         self.global_schemas[target_name] = cloned
+
+    def _array_alias_item_schema(self, alias_name: str, dt: Optional[DataType]) -> Optional[DataType]:
+        """Return the component schema represented by a legacy array alias.
+
+        Legacy templates can define a named Data Type as an array while endpoint
+        sheets use that name as the item schema of a property-level array.  In
+        that form the array cardinality belongs to the property row, while the
+        named component represents the array item.
+        """
+        if not alias_name or not dt or not dt.type or dt.type.lower() != "array":
+            return None
+        items_name = self._clean_value(dt.items_type)
+        if not items_name:
+            return None
+
+        item_low = items_name.lower()
+        if item_low == "object":
+            return DataType(
+                name=alias_name,
+                type="object",
+                description=dt.description,
+                source_file=dt.source_file,
+                source_sheet=dt.source_sheet,
+                source_row=dt.source_row,
+            )
+        if item_low in {"string", "number", "integer", "boolean"}:
+            return DataType(
+                name=alias_name,
+                type=item_low,
+                format=dt.format,
+                description=dt.description,
+                pattern_eba=dt.pattern_eba,
+                regex=dt.regex,
+                allowed_values=dt.allowed_values,
+                example=dt.example,
+                source_file=dt.source_file,
+                source_sheet=dt.source_sheet,
+                source_row=dt.source_row,
+            )
+
+        _item_out, item_dt = self._resolve_data_type(
+            items_name,
+            dt.source_file if dt.source_file != "$global" else None,
+        )
+        if not item_dt:
+            return None
+
+        cloned = copy.deepcopy(item_dt)
+        cloned.name = alias_name
+        if dt.description:
+            cloned.description = dt.description
+        cloned.source_file = dt.source_file
+        return cloned
+
+    def _apply_schema_rename_to_blocks(
+        self,
+        blocks: List[Tuple[str, List[List[Any]]]],
+        mapping: Dict[str, str],
+    ) -> List[Tuple[str, List[List[Any]]]]:
+        """Apply final schema-name compaction to blocks and their internal root parent edge."""
+        out_blocks: List[Tuple[str, List[List[Any]]]] = []
+        for block_name, block_rows in blocks:
+            new_block_name = mapping.get(block_name, block_name)
+            new_rows: List[List[Any]] = []
+            for row in block_rows:
+                rr = list(row)
+                # Update Schema Name (col F, index 5)
+                if len(rr) > 5 and isinstance(rr[5], str) and rr[5]:
+                    rr[5] = mapping.get(rr[5], rr[5])
+                # Update Items Type (col E, index 4)
+                if len(rr) > 4 and isinstance(rr[4], str) and rr[4]:
+                    rr[4] = mapping.get(rr[4], rr[4])
+                # Update root schema name in column A when parent is empty.
+                if len(rr) > 1 and (rr[1] == "" or rr[1] is None):
+                    if len(rr) > 0 and isinstance(rr[0], str) and rr[0]:
+                        rr[0] = new_block_name
+                # Parent is an internal tree edge. If the block root was renamed,
+                # direct children must point at the renamed root, not the pre-compaction name.
+                elif len(rr) > 1 and rr[1] == block_name:
+                    rr[1] = new_block_name
+                new_rows.append(rr)
+            out_blocks.append((new_block_name, new_rows))
+        return out_blocks
 
     def _usage_context_kind(self, usage_ctx: Optional[str]) -> str:
         text = str(usage_ctx or "")
@@ -166,6 +443,9 @@ class LegacyConverter:
             
         if index_path.exists():
             self._pre_read_index(index_path)
+            if self.missing_index_files:
+                self.log("ERROR: Conversion aborted because $index.xlsx references missing endpoint templates.")
+                return False
 
         # Validate: at least one endpoint file must exist before proceeding.
         ep_candidates = [
@@ -180,11 +460,21 @@ class LegacyConverter:
             return False
 
         self.log("Collecting data types from all endpoints...")
+        self.invalid_allowed_value_errors = []
         self._collect_all_data_types()
+        if self.invalid_allowed_value_errors:
+            self._log_invalid_allowed_value_errors()
+            return False
         
         self.log("Performing naming and usage analysis pass...")
         self._perform_naming_and_usage_pass()
         self.log(f"  Loaded {len(self.global_schemas)} unique global schemas.")
+
+        if self.fill_fix_examples:
+            self._fill_and_fix_consolidated_examples()
+            if self.example_generation_errors:
+                self._log_example_generation_errors()
+                return False
 
         # 2. Index Phase
         if index_path.exists():
@@ -213,8 +503,31 @@ class LegacyConverter:
         # 11. Final Summary
         if self.tracing_enabled:
             self.run_standalone_check(str(self.output_dir))
+        if self.fill_fix_examples:
+            self._log_example_repair_report()
         self.log(f"Conversion complete. Output: {self.output_dir.as_posix()}")
         return True
+
+    def _open_excel_file(self, path):
+        """Open an Excel workbook for reading without surfacing openpyxl's noisy validation warning."""
+        with self._suppress_openpyxl_data_validation_warning():
+            return pd.ExcelFile(path)
+
+    def _read_excel_sheet(self, *args, **kwargs):
+        """Read an Excel sheet without surfacing openpyxl's noisy validation warning."""
+        with self._suppress_openpyxl_data_validation_warning():
+            return pd.read_excel(*args, **kwargs)
+
+    @contextmanager
+    def _suppress_openpyxl_data_validation_warning(self):
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=re.escape(OPENPYXL_DATA_VALIDATION_EXTENSION_WARNING),
+                category=UserWarning,
+                module=r"openpyxl\.worksheet\._reader",
+            )
+            yield
 
 
     def _collect_all_data_types(self):
@@ -237,11 +550,11 @@ class LegacyConverter:
         """Collect data types from a single file's 'Data Type' sheet."""
         xl = None
         try:
-            xl = pd.ExcelFile(file_path)
+            xl = self._open_excel_file(file_path)
             if "Data Type" not in xl.sheet_names:
                 return
 
-            df = pd.read_excel(xl, sheet_name="Data Type", dtype=str, header=None)
+            df = self._read_excel_sheet(xl, sheet_name="Data Type", dtype=str, header=None)
             header_keywords = ["name", "type", "description"]
             header_row_idx = self._find_header_row(df, header_keywords)
 
@@ -270,12 +583,13 @@ class LegacyConverter:
             all_c = gv(["allowed value", "allowed"])
             ex_c = gv(["example"])
 
-            for _, row in df.iterrows():
+            for row_offset, (_, row) in enumerate(df.iterrows()):
                 name = self._clean_value(row.get(name_c, ""))
                 if not name or str(name).lower() == "nan":
                     continue
 
                 norm_name = self._to_pascal_case(name)
+                self.source_schema_names.add(norm_name)
                 dt = DataType(
                     name=norm_name,
                     type=self._clean_value(row.get(type_c, "string")),
@@ -288,7 +602,14 @@ class LegacyConverter:
                     allowed_values=self._clean_value(row.get(all_c, "")),
                     example=self._clean_value(row.get(ex_c, "")),
                     items_type=self._clean_value(row.get(items_c, "")),
-                    source_file=file_key
+                    source_file=file_key,
+                    source_sheet="Data Type",
+                    source_row=header_row_idx + 2 + row_offset,
+                )
+                self._record_invalid_allowed_values(
+                    dt,
+                    file_path=file_path,
+                    excel_row=header_row_idx + 2 + row_offset,
                 )
 
                 # Defer registration naming
@@ -298,13 +619,117 @@ class LegacyConverter:
         finally:
             self._close_excel_file(xl)
 
+    def _record_invalid_allowed_values(self, dt: DataType, file_path: Path, excel_row: int) -> None:
+        """Record blocking mismatches between a Data Type row and its allowed values."""
+        allowed = self._split_allowed_value_tokens(dt.allowed_values)
+        if not allowed:
+            return
+
+        reason = self._allowed_values_type_mismatch_reason(dt, allowed)
+        if not reason:
+            return
+
+        self.invalid_allowed_value_errors.append(
+            {
+                "template": str(file_path),
+                "sheet": "Data Type",
+                "row": str(excel_row),
+                "field": dt.name,
+                "type": str(dt.type or "").strip() or "string",
+                "allowed_values": str(dt.allowed_values or "").strip(),
+                "reason": reason,
+            }
+        )
+
+    def _split_allowed_value_tokens(self, raw: Any) -> List[str]:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return []
+        return [part.strip() for part in re.split(r"[;,]", text) if part and part.strip()]
+
+    def _unquote_allowed_value(self, value: str) -> str:
+        text = str(value or "").strip()
+        if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+            return text[1:-1].strip()
+        return text
+
+    def _allowed_values_type_mismatch_reason(self, dt: DataType, allowed: List[str]) -> str:
+        dtype = str(dt.type or "string").strip().lower()
+        normalized = [self._unquote_allowed_value(value) for value in allowed]
+
+        if dtype in {"", "string"}:
+            return ""
+
+        if dtype in {"integer", "int"}:
+            for value in normalized:
+                try:
+                    int(value)
+                except (TypeError, ValueError):
+                    return "integer allowed values must be valid integers."
+            return ""
+
+        if dtype in {"number", "float", "double", "decimal"}:
+            for value in normalized:
+                try:
+                    float(value.replace(",", "."))
+                except (AttributeError, TypeError, ValueError):
+                    return "number allowed values must be valid numbers."
+            return ""
+
+        if dtype == "boolean":
+            if any(value.lower() not in {"true", "false"} for value in normalized):
+                return "boolean allowed values must be true/false."
+            return ""
+
+        if dtype in {"array", "object", "schema"}:
+            return f"{dtype} data types cannot define scalar allowed values."
+
+        return ""
+
+    def _log_invalid_allowed_value_errors(self) -> None:
+        issues = sorted(
+            self.invalid_allowed_value_errors,
+            key=lambda issue: (
+                Path(issue.get("template", "")).name.lower(),
+                int(issue.get("row", "0") or 0),
+                issue.get("field", "").lower(),
+            ),
+        )
+        self.log("")
+        self.log("=== CONVERSION BLOCKED: TEMPLATE DATA ERRORS ===")
+        self.log(f"{len(issues)} issue(s) found. Fix the Excel templates, then run conversion again.")
+        self.log("")
+        self.log("+-- ACTION REQUIRED ----------------------------------------+")
+        self.log("| Fix the Allowed value column in the Data Type sheet.      |")
+        self.log("| Ensure each Allowed value matches its declared Type.      |")
+        self.log("| For boolean fields use true,false instead of 0,1.         |")
+        self.log("| If 0/1 is intended, change Type or use true,false.        |")
+        self.log("+-----------------------------------------------------------+")
+        self.log("")
+        self.log("ISSUES")
+        self.log("")
+        for index, issue in enumerate(issues, start=1):
+            template = str(issue.get("template", ""))
+            self.log(f"[{index}] {Path(template).name}")
+            self.log(f"    Template: {template}")
+            self.log(f"    Sheet: {issue['sheet']}")
+            self.log(f"    Row: {issue['row']}")
+            self.log(f"    Field: {issue['field']}")
+            self.log(f"    Type: {issue['type']}")
+            self.log(f"    Allowed value: {issue['allowed_values']}")
+            self.log(f"    Problem: {issue['reason']}")
+            self.log("")
+        self.log("CONVERSION FAILED")
+        self.log("No files were converted.")
+
     def _register_data_type(self, file_key: str, norm_name: str, dt: DataType):
         """Registers a data type, deduplicating by content and handling name collisions."""
-        # Fingerprint for deduplication (exclude source_file and pattern_eba).
+        # Fingerprint for deduplication (exclude provenance/reporting-only fields
+        # and pattern_eba).
         # 'name' is INCLUDED so that differently-named DataTypes (e.g. BIC8 vs
         # SenderBIC) are kept separate even when their structural content is identical.
         # Optionally include description/examples depending on preferences.
-        excluded = {'source_file', 'pattern_eba'}
+        excluded = {'source_file', 'source_sheet', 'source_row', 'pattern_eba'}
         if not self.include_descriptions_in_collision:
             excluded.add('description')
         if not self.include_examples_in_collision:
@@ -396,7 +821,10 @@ class LegacyConverter:
         # 2. Name collision handling for new unique content
         output_name = norm_name
         counter = 1
-        while output_name in self.used_names:
+        while (
+            output_name in self.used_names
+            or (output_name != norm_name and output_name in self.source_schema_names)
+        ):
             output_name = f"{norm_name}{counter}"
             counter += 1
             
@@ -405,6 +833,9 @@ class LegacyConverter:
         self.used_names.add(output_name)
         self.fingerprints[fingerprint] = output_name
         self.output_names[mapping_key] = output_name
+        if output_name != norm_name:
+            self.generated_collision_names.add(output_name)
+            self.generated_collision_families[output_name] = norm_name
         return output_name
 
     def _is_valid_example_set(self, dt: Optional[DataType], example_text: Any) -> bool:
@@ -431,10 +862,11 @@ class LegacyConverter:
             if allowed and val not in allowed:
                 return False
 
-        regex_raw = str(dt.regex or "").strip()
-        if regex_raw and regex_raw.lower() != "nan":
+        for regex_raw in self._example_constraint_patterns(dt):
             try:
-                if re.fullmatch(regex_raw, val) is None:
+                # OAS/JSON Schema pattern uses search semantics, not full-string
+                # matching. Anchors in the source regex still enforce full matches.
+                if re.search(regex_raw, val) is None:
                     return False
             except re.error:
                 # Ignore malformed regex values here rather than rejecting otherwise
@@ -452,13 +884,13 @@ class LegacyConverter:
                 return False
             if min_raw and min_raw.lower() != "nan":
                 try:
-                    if intval < int(float(min_raw.replace(",", "."))):
+                    if intval < float(min_raw.replace(",", ".")):
                         return False
                 except Exception:
                     pass
             if max_raw and max_raw.lower() != "nan":
                 try:
-                    if intval > int(float(max_raw.replace(",", "."))):
+                    if intval > float(max_raw.replace(",", ".")):
                         return False
                 except Exception:
                     pass
@@ -489,17 +921,1644 @@ class LegacyConverter:
         # Default string validation: length constraints.
         if min_raw and min_raw.lower() != "nan":
             try:
-                if len(val) < int(float(min_raw.replace(",", "."))):
+                if len(val) < int(math.ceil(float(min_raw.replace(",", ".")))):
                     return False
             except Exception:
                 pass
         if max_raw and max_raw.lower() != "nan":
             try:
-                if len(val) > int(float(max_raw.replace(",", "."))):
+                if len(val) > int(math.floor(float(max_raw.replace(",", ".")))):
                     return False
             except Exception:
                 pass
         return True
+
+    def _example_constraint_patterns(self, dt: DataType) -> List[str]:
+        patterns: List[str] = []
+        regex_text = self._normalize_regex_pattern(dt.regex)
+        if regex_text:
+            patterns.append(regex_text)
+
+        pattern_eba = str(dt.pattern_eba or "").strip()
+        if pattern_eba and pattern_eba.lower() != "nan":
+            converted = self._eba_pattern_to_regex(pattern_eba)
+            if converted:
+                pattern_text = converted
+            elif self._looks_like_regex_pattern(pattern_eba):
+                pattern_text = self._normalize_regex_pattern(pattern_eba)
+            else:
+                pattern_text = ""
+            if pattern_text and pattern_text not in patterns:
+                patterns.append(pattern_text)
+        return patterns
+
+    def _normalize_regex_pattern(self, raw: Any) -> str:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return ""
+        if text.startswith("/") and text.endswith("/") and len(text) > 1:
+            text = text[1:-1]
+        return text
+
+    def _looks_like_regex_pattern(self, raw: Any) -> bool:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return False
+        upper = text.upper()
+        if "!" in text or "YYYY" in upper or "HH" in upper:
+            return False
+        return any(token in text for token in ("[", "]", "\\", "^", "$", "(", ")", "{", "}"))
+
+    def _eba_pattern_to_regex(self, raw: Any) -> str:
+        text = str(raw or "").strip()
+        if "!" not in text:
+            return ""
+
+        char_classes = {
+            "a": "[A-Z]",
+            "c": "[A-Z0-9]",
+            "d": "[0-9]",
+            "n": "[0-9]",
+            "x": r"[A-Za-z0-9 /?:().,'+\-]",
+        }
+
+        def parse_segment(segment: str) -> str:
+            out = []
+            i = 0
+            while i < len(segment):
+                ch = segment[i]
+                if ch.isspace():
+                    i += 1
+                    continue
+                if ch == "[":
+                    end = segment.find("]", i + 1)
+                    if end == -1:
+                        return ""
+                    inner = parse_segment(segment[i + 1:end])
+                    if not inner:
+                        return ""
+                    out.append(f"(?:{inner})?")
+                    i = end + 1
+                    continue
+
+                fixed = re.match(r"(\d+)!\s*([A-Za-z])", segment[i:])
+                if fixed:
+                    count = fixed.group(1)
+                    kind = fixed.group(2).lower()
+                    cls = char_classes.get(kind)
+                    if not cls:
+                        return ""
+                    out.append(f"{cls}{{{count}}}")
+                    i += fixed.end()
+                    continue
+
+                ranged = re.match(r"(\d+)\*(\d+)\s*([A-Za-z])", segment[i:])
+                if ranged:
+                    min_count = ranged.group(1)
+                    max_count = ranged.group(2)
+                    kind = ranged.group(3).lower()
+                    cls = char_classes.get(kind)
+                    if not cls:
+                        return ""
+                    out.append(f"{cls}{{{min_count},{max_count}}}")
+                    i += ranged.end()
+                    continue
+
+                if ch in "-./:":
+                    out.append(re.escape(ch))
+                    i += 1
+                    continue
+                return ""
+            return "".join(out)
+
+        return parse_segment(text)
+
+    def _load_example_seed_values(self) -> Dict[str, List[str]]:
+        seeds = {key: list(values) for key, values in DEFAULT_LEGACY_EXAMPLE_SEED_VALUES.items()}
+        path = self.example_seed_values_path
+        if path:
+            try:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                if not path.exists():
+                    with open(path, "w", encoding="utf-8") as f:
+                        yaml.safe_dump(seeds, f, sort_keys=True, allow_unicode=True)
+                    self.log(f"Created legacy example seed values config: {path}")
+                else:
+                    should_rewrite_config = False
+                    with open(path, "r", encoding="utf-8") as f:
+                        loaded = yaml.safe_load(f) or {}
+                    if isinstance(loaded, dict):
+                        for key, values in loaded.items():
+                            if isinstance(values, list):
+                                clean = [str(v).strip() for v in values if str(v).strip()]
+                                if clean:
+                                    clean_key = str(key).strip().lower()
+                                    legacy_default = LEGACY_GENERATED_EXAMPLE_SEED_VALUES.get(clean_key)
+                                    if legacy_default and clean == legacy_default:
+                                        should_rewrite_config = True
+                                    else:
+                                        seeds[clean_key] = clean
+                        missing_keys = set(DEFAULT_LEGACY_EXAMPLE_SEED_VALUES) - set(str(k).strip().lower() for k in loaded)
+                        if missing_keys:
+                            should_rewrite_config = True
+                    if should_rewrite_config:
+                        with open(path, "w", encoding="utf-8") as f:
+                            yaml.safe_dump(seeds, f, sort_keys=True, allow_unicode=True)
+                        self.log(f"Updated legacy example seed values config: {path}")
+            except Exception as exc:
+                self.log(f"Warning: Could not load legacy example seed values config: {exc}")
+        return seeds
+
+    def _load_example_semantic_rules(self) -> Dict[str, Any]:
+        rules_config = copy.deepcopy(DEFAULT_LEGACY_EXAMPLE_SEMANTIC_RULES)
+        if not self.example_seed_values:
+            self.example_seed_values = self._load_example_seed_values()
+        path = self.example_semantic_rules_path
+        if not path:
+            return rules_config
+
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if not path.exists():
+                with open(path, "w", encoding="utf-8") as f:
+                    yaml.safe_dump(rules_config, f, sort_keys=False, allow_unicode=True)
+                self.log(f"Created legacy example semantic rules config: {path}")
+                return rules_config
+
+            with open(path, "r", encoding="utf-8") as f:
+                loaded = yaml.safe_load(f) or {}
+            if not isinstance(loaded, dict):
+                self._warn_example_semantic_rule("semantic rules config root is not a mapping; using defaults")
+                return rules_config
+
+            loaded_overrides = loaded.get("overrides")
+            if isinstance(loaded_overrides, dict):
+                for section in ("exact", "compact_exact"):
+                    values = loaded_overrides.get(section)
+                    if isinstance(values, dict):
+                        rules_config.setdefault("overrides", {}).setdefault(section, {})
+                        rules_config["overrides"][section].update(values)
+
+            loaded_exclusions = loaded.get("exclusions")
+            if isinstance(loaded_exclusions, dict):
+                for category, matchers in loaded_exclusions.items():
+                    if not isinstance(matchers, dict):
+                        continue
+                    target = rules_config.setdefault("exclusions", {}).setdefault(str(category), {})
+                    for matcher, values in matchers.items():
+                        merged = list(target.get(matcher, []))
+                        for value in self._semantic_values(values):
+                            if value not in merged:
+                                merged.append(value)
+                        target[matcher] = merged
+
+            loaded_placeholder_patterns = loaded.get("placeholder_patterns")
+            if isinstance(loaded_placeholder_patterns, dict):
+                target = rules_config.setdefault("placeholder_patterns", {})
+                loaded_global = loaded_placeholder_patterns.get("global")
+                if loaded_global is not None:
+                    merged = list(target.get("global", []))
+                    for value in self._semantic_values(loaded_global):
+                        if value not in merged:
+                            merged.append(value)
+                    target["global"] = merged
+
+                loaded_categories = loaded_placeholder_patterns.get("categories")
+                if isinstance(loaded_categories, dict):
+                    target_categories = target.setdefault("categories", {})
+                    for category, patterns in loaded_categories.items():
+                        clean_category = str(category or "").strip().lower()
+                        if not clean_category:
+                            continue
+                        merged = list(target_categories.get(clean_category, []))
+                        for value in self._semantic_values(patterns):
+                            if value not in merged:
+                                merged.append(value)
+                        target_categories[clean_category] = merged
+
+            loaded_rules = loaded.get("rules")
+            if isinstance(loaded_rules, list):
+                rules_config["rules"] = [rule for rule in loaded_rules if isinstance(rule, dict)]
+        except Exception as exc:
+            self.log(f"Warning: Could not load legacy example semantic rules config: {exc}")
+
+        return rules_config
+
+    def _get_example_semantic_rules(self) -> Dict[str, Any]:
+        if not self.example_semantic_rules:
+            self.example_semantic_rules = self._load_example_semantic_rules()
+        return self.example_semantic_rules
+
+    def _known_example_categories(self) -> set:
+        categories = set(DEFAULT_LEGACY_EXAMPLE_SEED_VALUES) | {"generic"}
+        if self.example_seed_values:
+            categories.update(str(key).strip().lower() for key in self.example_seed_values if str(key).strip())
+        return categories
+
+    def _warn_example_semantic_rule(self, message: str) -> None:
+        if message in self._example_semantic_rule_warnings:
+            return
+        self._example_semantic_rule_warnings.add(message)
+        self.log(f"Warning: Legacy example semantic rule ignored: {message}")
+
+    def _semantic_values(self, values: Any) -> List[str]:
+        if values is None:
+            return []
+        if isinstance(values, (list, tuple, set)):
+            return [str(value).strip() for value in values if str(value).strip()]
+        text = str(values).strip()
+        return [text] if text else []
+
+    def _compact_semantic_name(self, value: Any) -> str:
+        return re.sub(r"[^a-z0-9]", "", str(value or "").lower())
+
+    def _semantic_rule_category(self, raw_category: Any) -> str:
+        category = str(raw_category or "").strip().lower()
+        if category in self._known_example_categories():
+            return category
+        if category:
+            self._warn_example_semantic_rule(f"unknown category '{category}'")
+        return ""
+
+    def _configured_exact_category(self, dt: DataType, compact_name: str) -> str:
+        rules_config = self._get_example_semantic_rules()
+        overrides = rules_config.get("overrides", {})
+        if not isinstance(overrides, dict):
+            return ""
+
+        name_key = str(dt.name or "").strip().lower()
+        exact = overrides.get("exact", {})
+        if isinstance(exact, dict):
+            normalized_exact = {str(key).strip().lower(): value for key, value in exact.items()}
+            if name_key in normalized_exact:
+                return self._semantic_rule_category(normalized_exact[name_key])
+
+        compact_exact = overrides.get("compact_exact", {})
+        if isinstance(compact_exact, dict):
+            normalized_compact = {self._compact_semantic_name(key): value for key, value in compact_exact.items()}
+            if compact_name in normalized_compact:
+                return self._semantic_rule_category(normalized_compact[compact_name])
+        return ""
+
+    def _configured_semantic_category(
+        self,
+        dt: DataType,
+        text: str,
+        compact_name: str,
+        allowed_tokens: set,
+        dtype: str,
+        fmt: str,
+    ) -> str:
+        rules_config = self._get_example_semantic_rules()
+        rules = rules_config.get("rules", [])
+        if not isinstance(rules, list):
+            return ""
+
+        name_lower = str(dt.name or "").strip().lower()
+        for rule in rules:
+            if not isinstance(rule, dict):
+                continue
+            category = self._semantic_rule_category(rule.get("category"))
+            if not category:
+                continue
+            if self._semantic_rule_excludes(category, name_lower, text, compact_name):
+                continue
+            if self._semantic_rule_matches(rule, name_lower, text, compact_name, allowed_tokens, dtype, fmt):
+                return category
+        return ""
+
+    def _semantic_rule_excludes(self, category: str, name_lower: str, text: str, compact_name: str) -> bool:
+        rules_config = self._get_example_semantic_rules()
+        exclusions = rules_config.get("exclusions", {})
+        if not isinstance(exclusions, dict):
+            return False
+        matchers = exclusions.get(category, {})
+        if not isinstance(matchers, dict):
+            return False
+        return self._semantic_rule_matches(matchers, name_lower, text, compact_name, set(), "", "")
+
+    def _semantic_rule_matches(
+        self,
+        rule: Dict[str, Any],
+        name_lower: str,
+        text: str,
+        compact_name: str,
+        allowed_tokens: set,
+        dtype: str,
+        fmt: str,
+    ) -> bool:
+        if self._semantic_list_contains(rule.get("type"), dtype):
+            return True
+        if self._semantic_list_contains(rule.get("format"), fmt):
+            return True
+        if self._semantic_list_contains(rule.get("exact"), name_lower):
+            return True
+        if self._semantic_list_contains(rule.get("compact_exact"), compact_name, compact=True):
+            return True
+        if self._semantic_text_contains(rule.get("contains"), text):
+            return True
+        if self._semantic_text_contains(rule.get("compact_contains"), compact_name, compact=True):
+            return True
+        if self._semantic_text_prefix(rule.get("prefix"), name_lower):
+            return True
+        if self._semantic_text_suffix(rule.get("suffix"), name_lower):
+            return True
+        if self._semantic_text_prefix(rule.get("compact_prefix"), compact_name, compact=True):
+            return True
+        if self._semantic_text_suffix(rule.get("compact_suffix"), compact_name, compact=True):
+            return True
+
+        subset_values = {value.upper() for value in self._semantic_values(rule.get("allowed_values_subset"))}
+        if subset_values and allowed_tokens and allowed_tokens.issubset(subset_values):
+            return True
+
+        any_values = {value.upper() for value in self._semantic_values(rule.get("allowed_values_any"))}
+        if any_values and allowed_tokens and allowed_tokens.intersection(any_values):
+            return True
+
+        for pattern in self._semantic_values(rule.get("compact_regex")):
+            try:
+                if re.fullmatch(pattern, compact_name):
+                    return True
+            except re.error as exc:
+                self._warn_example_semantic_rule(f"invalid compact_regex '{pattern}': {exc}")
+        return False
+
+    def _semantic_list_contains(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        needles = self._semantic_values(values)
+        if compact:
+            needles = [self._compact_semantic_name(value) for value in needles]
+        else:
+            needles = [value.lower() for value in needles]
+        return target in needles
+
+    def _semantic_text_contains(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        for value in self._semantic_values(values):
+            needle = self._compact_semantic_name(value) if compact else value.lower()
+            if needle and needle in target:
+                return True
+        return False
+
+    def _semantic_text_prefix(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        for value in self._semantic_values(values):
+            needle = self._compact_semantic_name(value) if compact else value.lower()
+            if needle and target.startswith(needle):
+                return True
+        return False
+
+    def _semantic_text_suffix(self, values: Any, target: str, compact: bool = False) -> bool:
+        if not target:
+            return False
+        for value in self._semantic_values(values):
+            needle = self._compact_semantic_name(value) if compact else value.lower()
+            if needle and target.endswith(needle):
+                return True
+        return False
+
+    def _fill_and_fix_consolidated_examples(self, trace_kept: bool = False) -> None:
+        self.example_seed_values = self._load_example_seed_values()
+        self.example_semantic_rules = self._load_example_semantic_rules()
+        self._example_fix_stats = {"kept": 0, "completed": 0, "repaired": 0, "best_effort": 0, "impossible": 0, "complex": 0}
+        self._example_trace_rows = []
+        self.example_generation_errors = []
+
+        for schema_name, dt in sorted(self.global_schemas.items(), key=lambda item: item[0].lower()):
+            self._fill_and_fix_examples_for_data_type(dt, schema_name=schema_name, trace_kept=trace_kept)
+
+    def _record_example_generation_error(
+        self,
+        schema_name: str,
+        dt: DataType,
+        severity: str,
+        reason: str,
+    ) -> None:
+        self.example_generation_errors.append(
+            {
+                "template": str(dt.source_file or ""),
+                "field": str(dt.name or schema_name or ""),
+                "source_field": str(dt.name or ""),
+                "sheet": str(dt.source_sheet or "Data Type"),
+                "row": str(dt.source_row or ""),
+                "type": str(dt.type or "string"),
+                "min": str(dt.min_val or ""),
+                "max": str(dt.max_val or ""),
+                "pattern_eba": str(dt.pattern_eba or ""),
+                "regex": str(dt.regex or ""),
+                "allowed_values": str(dt.allowed_values or ""),
+                "example": str(dt.example or ""),
+                "severity": severity or "error",
+                "reason": reason or "no valid constraint-compliant example",
+            }
+        )
+
+    def _log_example_generation_errors(self) -> None:
+        issues = sorted(
+            self.example_generation_errors,
+            key=lambda issue: (
+                issue.get("template", "").lower(),
+                issue.get("field", "").lower(),
+                issue.get("reason", "").lower(),
+            ),
+        )
+        self.log("")
+        self.log("=== CONVERSION BLOCKED: EXAMPLE GENERATION ERRORS ===")
+        self.log(f"{len(issues)} issue(s) found. Fix the Excel templates, then run conversion again.")
+        self.log("")
+        self.log("+-- ACTION REQUIRED ----------------------------------------+")
+        self.log("| Provide valid examples in the Data Type sheet or fix      |")
+        self.log("| contradictory/too-complex constraints. OASIS will not     |")
+        self.log("| generate invalid or empty OAS examples as a fallback.     |")
+        self.log("+-----------------------------------------------------------+")
+        self.log("")
+        self.log("ISSUES")
+        self.log("")
+        for index, issue in enumerate(issues, start=1):
+            self.log(f"[{index}] {issue.get('field', '')}")
+            if issue.get("template"):
+                self.log(f"    Template: {issue['template']}")
+            self.log(f"    Source field: {issue.get('source_field', '')}")
+            if issue.get("sheet"):
+                self.log(f"    Sheet: {issue['sheet']}")
+            if issue.get("row"):
+                self.log(f"    Row: {issue['row']}")
+            self.log(f"    Type: {issue.get('type', '')}")
+            self.log(f"    Min: {issue.get('min', '')}")
+            self.log(f"    Max: {issue.get('max', '')}")
+            if issue.get("pattern_eba"):
+                self.log(f"    PatternEba: {issue['pattern_eba']}")
+            if issue.get("regex"):
+                self.log(f"    Regex: {issue['regex']}")
+            if issue.get("allowed_values"):
+                self.log(f"    Allowed value: {issue['allowed_values']}")
+            if issue.get("example"):
+                self.log(f"    Example: {issue['example']}")
+            self.log(f"    Problem: {issue.get('reason', '')}")
+
+    def _log_example_repair_report(self) -> None:
+        stats = self._example_fix_stats
+        if any(stats.get(key, 0) for key in ("kept", "completed", "repaired", "best_effort", "impossible", "complex")):
+            self.log(
+                "Repair/complete examples: "
+                f"kept {stats['kept']}, completed {stats['completed']}, "
+                f"repaired {stats['repaired']}, best-effort {stats['best_effort']}, "
+                f"impossible {stats.get('impossible', 0)}, complex {stats.get('complex', 0)}."
+            )
+        if self.example_tracing_enabled:
+            self._log_example_trace_summary()
+
+    def _fill_and_fix_examples_for_data_type(self, dt: DataType, schema_name: str = "", trace_kept: bool = False) -> None:
+        if not self.example_seed_values:
+            self.example_seed_values = self._load_example_seed_values()
+        dtype = str(dt.type or "string").strip().lower()
+        if dtype in ("object", "array"):
+            return
+
+        original = str(dt.example or "").strip()
+        existing = [p.strip() for p in re.split(r"[;\n]", original) if p and p.strip()]
+        category = self._classify_example_category(dt)
+        has_allowed_values = bool(self._split_example_values(dt.allowed_values))
+        valid_existing = [
+            v
+            for v in existing
+            if not self._example_token_invalid_reason(
+                dt,
+                v,
+                category=category,
+                include_semantic_placeholder=not has_allowed_values,
+            )
+        ]
+        invalid_existing_reasons = [
+            self._example_token_invalid_reason(
+                dt,
+                value,
+                category=category,
+                include_semantic_placeholder=not has_allowed_values,
+            )
+            for value in existing
+            if self._example_token_invalid_reason(
+                dt,
+                value,
+                category=category,
+                include_semantic_placeholder=not has_allowed_values,
+            )
+        ]
+
+        if invalid_existing_reasons and not self.repair_examples:
+            return
+        if not original or original.lower() == "nan":
+            if not self.complete_examples:
+                return
+        elif valid_existing and not invalid_existing_reasons and not self.complete_examples:
+            if trace_kept:
+                self._record_example_trace(schema_name or dt.name, dt, "KEPT", original, original, "valid existing examples")
+            self._example_fix_stats["kept"] += 1
+            return
+
+        examples, reason = self._build_example_candidates(dt, valid_existing, category=category)
+        used_best_effort = False
+
+        if not examples:
+            fallback = self._best_effort_example(dt)
+            if fallback and self._is_valid_example_token(dt, fallback):
+                examples = [fallback]
+                reason = "best-effort fallback"
+                used_best_effort = True
+            else:
+                issue_severity, issue_reason = self._example_constraint_issue(dt)
+                action = "BEST EFFORT"
+                severity = ""
+                trace_reason = "no valid constraint-compliant example"
+                if issue_severity == "impossible":
+                    action = "IMPOSSIBLE"
+                    severity = "impossible"
+                    trace_reason = issue_reason
+                    self._example_fix_stats["impossible"] += 1
+                elif issue_severity == "complex":
+                    action = "TOO COMPLEX"
+                    severity = "complex"
+                    trace_reason = issue_reason
+                    self._example_fix_stats["complex"] += 1
+                elif original and original.lower() != "nan":
+                    self._example_fix_stats["best_effort"] += 1
+
+                self._record_example_generation_error(
+                    schema_name or dt.name,
+                    dt,
+                    severity or "error",
+                    trace_reason,
+                )
+
+                if original and original.lower() != "nan":
+                    dt.example = ""
+                    self._example_fix_stats["repaired"] += 1
+                if severity or (original and original.lower() != "nan"):
+                    self._record_example_trace(
+                        schema_name or dt.name,
+                        dt,
+                        action if severity else "REPAIRED",
+                        original,
+                        "",
+                        trace_reason,
+                        severity=severity,
+                    )
+                return
+        elif any(not self._is_valid_example_token(dt, value) for value in examples):
+            used_best_effort = True
+
+        new_value = "; ".join(str(value) for value in examples[:3])
+        if not new_value:
+            return
+
+        action, trace_reason = self._example_trace_action_and_reason(
+            original,
+            existing,
+            invalid_existing_reasons,
+            examples[:3],
+            reason,
+        )
+
+        if action == "REPAIRED":
+            action = "REPAIRED"
+            self._example_fix_stats["repaired"] += 1
+        elif action == "COMPLETED":
+            self._example_fix_stats["completed"] += 1
+        else:
+            self._example_fix_stats["kept"] += 1
+
+        if used_best_effort:
+            self._example_fix_stats["best_effort"] += 1
+            if action == "KEPT":
+                action = "BEST EFFORT"
+
+        dt.example = new_value
+
+        if action != "KEPT" or trace_kept:
+            self._record_example_trace(schema_name or dt.name, dt, action, original, new_value, trace_reason)
+
+    def _example_trace_action_and_reason(
+        self,
+        original: str,
+        existing: List[str],
+        invalid_existing_reasons: List[str],
+        examples: List[str],
+        base_reason: str,
+    ) -> Tuple[str, str]:
+        if invalid_existing_reasons:
+            reason = next((item for item in invalid_existing_reasons if item), "constraint mismatch")
+            return "REPAIRED", f"repaired invalid example: {reason}"
+
+        if not original or original.lower() == "nan":
+            return "COMPLETED", self._completed_example_reason(base_reason)
+
+        normalized_existing = [str(value).strip() for value in existing if str(value).strip()]
+        normalized_examples = [str(value).strip() for value in examples if str(value).strip()]
+        if normalized_examples == normalized_existing:
+            return "KEPT", base_reason
+
+        return "COMPLETED", self._completed_example_reason(base_reason)
+
+    def _completed_example_reason(self, base_reason: str) -> str:
+        if base_reason == "allowed values":
+            return "completed missing examples from allowed values"
+        if base_reason.startswith("semantic category:"):
+            return f"completed missing examples from {base_reason}"
+        if base_reason == "regex fallback":
+            return "completed missing examples from regex alternatives"
+        if base_reason:
+            return f"completed missing examples from {base_reason}"
+        return "completed missing examples"
+
+    def _example_token_invalid_reason(
+        self,
+        dt: DataType,
+        token: str,
+        category: str = "",
+        include_semantic_placeholder: bool = False,
+    ) -> str:
+        val = str(token or "").strip()
+        if not val:
+            return "empty example"
+
+        allowed_raw = str(dt.allowed_values or "").strip()
+        if allowed_raw and allowed_raw.lower() != "nan":
+            allowed = [p.strip() for p in re.split(r"[;,]", allowed_raw) if p.strip()]
+            if allowed and val not in allowed:
+                return "allowed values mismatch"
+
+        for regex_raw in self._example_constraint_patterns(dt):
+            try:
+                # OAS/JSON Schema pattern uses search semantics, not full-string
+                # matching. Anchors in the source regex still enforce full matches.
+                if re.search(regex_raw, val) is None:
+                    return "regex mismatch"
+            except re.error:
+                return "invalid regex constraint"
+
+        type_lower = str(dt.type or "string").strip().lower()
+        min_raw = str(dt.min_val or "").strip()
+        max_raw = str(dt.max_val or "").strip()
+
+        if type_lower in ("integer", "int"):
+            try:
+                number = int(val.replace(",", "."))
+            except Exception:
+                return "type mismatch"
+            return self._numeric_example_range_issue(number, min_raw, max_raw)
+
+        if type_lower in ("number", "float", "double", "decimal"):
+            try:
+                number = float(val.replace(",", "."))
+            except Exception:
+                return "type mismatch"
+            return self._numeric_example_range_issue(number, min_raw, max_raw)
+
+        if type_lower == "boolean" and val.lower() not in ("true", "false", "yes", "no", "1", "0"):
+            return "type mismatch"
+
+        length_issue = self._string_example_length_issue(val, min_raw, max_raw)
+        if length_issue:
+            return length_issue
+
+        if include_semantic_placeholder:
+            placeholder_reason = self._semantic_placeholder_reason(category or self._classify_example_category(dt), val)
+            if placeholder_reason:
+                return placeholder_reason
+
+        return ""
+
+    def _semantic_placeholder_reason(self, category: str, value: str) -> str:
+        text = str(value or "").strip()
+        if not text:
+            return ""
+        rules_config = self._get_example_semantic_rules()
+        placeholder_patterns = rules_config.get("placeholder_patterns", {})
+        if not isinstance(placeholder_patterns, dict):
+            return ""
+
+        patterns: List[str] = []
+        patterns.extend(self._semantic_values(placeholder_patterns.get("global")))
+        category_patterns = placeholder_patterns.get("categories", {})
+        clean_category = str(category or "").strip().lower()
+        if isinstance(category_patterns, dict) and clean_category:
+            patterns.extend(self._semantic_values(category_patterns.get(clean_category)))
+
+        for pattern in patterns:
+            try:
+                if re.fullmatch(pattern, text):
+                    return "semantic placeholder"
+            except re.error as exc:
+                self._warn_example_semantic_rule(f"invalid placeholder pattern '{pattern}': {exc}")
+        return ""
+
+    def _numeric_example_range_issue(self, value: Any, min_raw: str, max_raw: str) -> str:
+        if min_raw and min_raw.lower() != "nan":
+            try:
+                if value < float(min_raw.replace(",", ".")):
+                    return "minimum value not met"
+            except Exception:
+                pass
+        if max_raw and max_raw.lower() != "nan":
+            try:
+                if value > float(max_raw.replace(",", ".")):
+                    return "maximum value exceeded"
+            except Exception:
+                pass
+        return ""
+
+    def _string_example_length_issue(self, value: str, min_raw: str, max_raw: str) -> str:
+        if min_raw and min_raw.lower() != "nan":
+            try:
+                if len(value) < int(math.ceil(float(min_raw.replace(",", ".")))):
+                    return "minLength not met"
+            except Exception:
+                pass
+        if max_raw and max_raw.lower() != "nan":
+            try:
+                if len(value) > int(math.floor(float(max_raw.replace(",", ".")))):
+                    return "maxLength exceeded"
+            except Exception:
+                pass
+        return ""
+
+    def _build_example_candidates(
+        self,
+        dt: DataType,
+        valid_existing: List[str],
+        category: str = "",
+    ) -> Tuple[List[str], str]:
+        allowed = self._split_example_values(dt.allowed_values)
+        if allowed:
+            return (
+                self._unique_valid_examples(dt, valid_existing + allowed, limit=min(3, len(allowed))),
+                "allowed values",
+            )
+
+        category = category or self._classify_example_category(dt)
+        candidates: List[str] = []
+        candidates.extend(valid_existing)
+        candidates.extend(self.example_seed_values.get(category, []))
+        candidates.extend(self._semantic_constraint_candidates(category, dt))
+        reason = f"semantic category: {category}" if category != "generic" else "generic seed values"
+
+        dtype = str(dt.type or "string").strip().lower()
+        if dtype in ("integer", "int"):
+            midpoint = self._numeric_midpoint(dt, integer=True)
+            if midpoint is not None:
+                candidates.append(str(midpoint))
+            candidates.extend(self.example_seed_values.get("integer", []))
+            candidates.extend(["1", "2", "3"])
+            reason = "numeric type: integer"
+        elif dtype in ("number", "float", "double", "decimal"):
+            midpoint = self._numeric_midpoint(dt, integer=False)
+            if midpoint is not None:
+                candidates.append(str(midpoint))
+            candidates.extend(self.example_seed_values.get("number", []))
+            candidates.extend(["1.0", "2.5", "3.75"])
+            reason = "numeric type: number"
+        elif dtype == "boolean":
+            candidates.extend(self.example_seed_values.get("boolean", []))
+            reason = "boolean type"
+        else:
+            had_semantic_candidates = bool(candidates)
+            for pattern in self._example_constraint_patterns(dt):
+                generated_values = self._generate_valid_examples_from_regex(pattern, limit=3)
+                if generated_values:
+                    candidates.extend(generated_values)
+                    if not had_semantic_candidates and category == "generic":
+                        reason = "regex fallback"
+            constrained_string = self._fit_string_bounds(dt, self.example_seed_values.get(category, ["Banking value"])[0])
+            if constrained_string:
+                candidates.append(constrained_string)
+            candidates.extend(self.example_seed_values.get("generic", []))
+
+        examples = self._unique_valid_examples(dt, candidates, limit=3)
+        return examples, reason
+
+    def _example_constraint_issue(self, dt: DataType) -> Tuple[str, str]:
+        dtype = str(dt.type or "string").strip().lower()
+        min_val = self._parse_float(dt.min_val)
+        max_val = self._parse_float(dt.max_val)
+
+        if min_val is not None and max_val is not None and min_val > max_val:
+            return "impossible", f"impossible constraints: min {dt.min_val} > max {dt.max_val}"
+
+        if dtype in ("integer", "int"):
+            min_int = int(math.ceil(min_val)) if min_val is not None else None
+            max_int = int(math.floor(max_val)) if max_val is not None else None
+            if min_int is not None and max_int is not None and min_int > max_int:
+                return "impossible", f"impossible integer range: no integer between {dt.min_val} and {dt.max_val}"
+        elif dtype not in ("number", "float", "double", "decimal", "boolean", "object", "array"):
+            min_count = int(math.ceil(min_val)) if min_val is not None else 0
+            max_count = int(math.floor(max_val)) if max_val is not None else None
+            if max_count is not None and max_count < min_count:
+                return "impossible", f"impossible length range: minLength {dt.min_val} > maxLength {dt.max_val}"
+
+        allowed = self._split_example_values(dt.allowed_values)
+        if allowed and not any(self._is_valid_example_token(dt, value) for value in allowed):
+            return "impossible", "impossible constraints: no allowed value satisfies type/pattern/range constraints"
+
+        for pattern in self._example_constraint_patterns(dt):
+            if self._regex_is_too_complex_for_example_generation(pattern):
+                return "complex", f"too complex regex for automatic example generation: {pattern}"
+
+        return "", ""
+
+    def _regex_is_too_complex_for_example_generation(self, pattern: str) -> bool:
+        text = str(pattern or "").strip()
+        if not text:
+            return False
+        try:
+            re.compile(text)
+        except re.error:
+            return True
+        if self._generate_valid_examples_from_regex(text, limit=1):
+            return False
+        return True
+
+    def _record_example_trace(
+        self,
+        schema_name: str,
+        dt: DataType,
+        action: str,
+        before: str,
+        after: str,
+        reason: str,
+        severity: str = "",
+    ) -> None:
+        self._example_trace_rows.append(
+            {
+                "schema": schema_name or dt.name,
+                "type": str(dt.type or "string"),
+                "action": action,
+                "before": before if before and before.lower() != "nan" else "<empty>",
+                "after": after,
+                "reason": reason,
+                "severity": severity,
+            }
+        )
+
+    def _record_example_schema_field(self, schema_name: str, field_context: str) -> None:
+        schema = str(schema_name or "").strip()
+        field = str(field_context or "").strip()
+        if not schema or not field:
+            return
+        self.example_schema_fields.setdefault(schema, set()).add(field)
+
+    def _example_trace_fields(self, schema_name: str) -> List[str]:
+        fields = sorted(self.example_schema_fields.get(str(schema_name or "").strip(), []), key=lambda value: value.lower())
+        return fields or [""]
+
+    def _wrap_example_trace_cell(self, value: Any, width: int) -> List[str]:
+        text = str(value or "")
+        if not text:
+            return [""]
+        wrapped: List[str] = []
+        for line in text.splitlines() or [""]:
+            wrapped.extend(
+                textwrap.wrap(
+                    line,
+                    width=width,
+                    break_long_words=True,
+                    break_on_hyphens=False,
+                )
+                or [""]
+            )
+        return wrapped or [""]
+
+    def _log_example_trace_summary(self) -> None:
+        if not self._example_trace_rows:
+            return
+
+        columns = [
+            ("schema", "SCHEMA/FIELD"),
+            ("field", "FIELD/USAGE"),
+            ("type", "TYPE"),
+            ("action", "ACTION"),
+            ("before", "BEFORE"),
+            ("after", "AFTER"),
+            ("reason", "REASON"),
+        ]
+
+        display_rows: List[Dict[str, str]] = []
+        for row in self._example_trace_rows:
+            fields = self._example_trace_fields(row.get("schema", ""))
+            for idx, field in enumerate(fields):
+                display_rows.append(
+                    {
+                        "schema": str(row.get("schema", "")) if idx == 0 else "",
+                        "field": field,
+                        "type": str(row.get("type", "")) if idx == 0 else "",
+                        "action": str(row.get("action", "")) if idx == 0 else "",
+                        "before": str(row.get("before", "")) if idx == 0 else "",
+                        "after": str(row.get("after", "")) if idx == 0 else "",
+                        "reason": str(row.get("reason", "")) if idx == 0 else "",
+                        "severity": str(row.get("severity", "")),
+                    }
+                )
+
+        def col_width(key: str, label: str, max_width: Optional[int] = None) -> int:
+            value_width = max((len(str(row.get(key, ""))) for row in display_rows), default=0)
+            if max_width:
+                value_width = min(max_width, value_width)
+            return max(len(label), value_width)
+
+        widths = {
+            "schema": col_width("schema", "SCHEMA/FIELD"),
+            "field": col_width("field", "FIELD/USAGE", 72),
+            "type": col_width("type", "TYPE"),
+            "action": col_width("action", "ACTION"),
+            "before": col_width("before", "BEFORE", 32),
+            "after": col_width("after", "AFTER", 48),
+            "reason": col_width("reason", "REASON", 40),
+        }
+        header = (
+            f"| {'SCHEMA/FIELD':<{widths['schema']}} | {'FIELD/USAGE':<{widths['field']}} | {'TYPE':<{widths['type']}} | "
+            f"{'ACTION':<{widths['action']}} | {'BEFORE':<{widths['before']}} | "
+            f"{'AFTER':<{widths['after']}} | {'REASON':<{widths['reason']}} |"
+        )
+        sep = "-" * len(header)
+        self.detail_log("\n" + "=" * len(header))
+        self.detail_log("EXAMPLE TRACER")
+        self.detail_log("=" * len(header))
+        self.detail_log(header)
+        self.detail_log(sep)
+        for record_idx, trace_row in enumerate(self._example_trace_rows):
+            fields = self._example_trace_fields(trace_row.get("schema", ""))
+            severity = str(trace_row.get("severity", ""))
+            for field_idx, field in enumerate(fields):
+                row = {
+                    "schema": str(trace_row.get("schema", "")) if field_idx == 0 else "",
+                    "field": field,
+                    "type": str(trace_row.get("type", "")) if field_idx == 0 else "",
+                    "action": str(trace_row.get("action", "")) if field_idx == 0 else "",
+                    "before": str(trace_row.get("before", "")) if field_idx == 0 else "",
+                    "after": str(trace_row.get("after", "")) if field_idx == 0 else "",
+                    "reason": str(trace_row.get("reason", "")) if field_idx == 0 else "",
+                }
+                wrapped = {
+                    key: self._wrap_example_trace_cell(row.get(key, ""), widths[key])
+                    for key, _label in columns
+                }
+                line_count = max(len(parts) for parts in wrapped.values())
+                for line_idx in range(line_count):
+                    values = {
+                        key: wrapped[key][line_idx] if line_idx < len(wrapped[key]) else ""
+                        for key, _label in columns
+                    }
+                    line = (
+                        f"| {values['schema']:<{widths['schema']}} | "
+                        f"{values['field']:<{widths['field']}} | "
+                        f"{values['type']:<{widths['type']}} | "
+                        f"{values['action']:<{widths['action']}} | "
+                        f"{values['before']:<{widths['before']}} | "
+                        f"{values['after']:<{widths['after']}} | "
+                        f"{values['reason']:<{widths['reason']}} |"
+                    )
+                    self._detail_log_example_trace_line(line, severity)
+            if record_idx < len(self._example_trace_rows) - 1:
+                self.detail_log(sep)
+        self.detail_log("=" * len(header) + "\n")
+
+    def _detail_log_example_trace_line(self, line: str, severity: str = "") -> None:
+        if severity == "impossible":
+            self.detail_log(f"{EXAMPLE_TRACE_IMPOSSIBLE_MARKER}{line}")
+        elif severity == "complex":
+            self.detail_log(f"{EXAMPLE_TRACE_COMPLEX_MARKER}{line}")
+        else:
+            self.detail_log(line)
+
+    def _split_example_values(self, raw: Any) -> List[str]:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return []
+        return [part.strip() for part in re.split(r"[;,]", text) if part and part.strip()]
+
+    def _unique_valid_examples(self, dt: DataType, candidates: List[Any], limit: int = 3) -> List[str]:
+        out: List[str] = []
+        seen = set()
+        for candidate in candidates:
+            value = str(candidate or "").strip()
+            if not value or value in seen:
+                continue
+            if self._is_valid_example_token(dt, value):
+                out.append(value)
+                seen.add(value)
+            if len(out) >= limit:
+                break
+        return out
+
+    def _constraint_semantic_category(self, dt: DataType) -> str:
+        patterns = self._example_constraint_patterns(dt)
+        raw_pattern = str(dt.pattern_eba or "").strip()
+        if raw_pattern and raw_pattern.lower() != "nan":
+            patterns.append(raw_pattern)
+        text = " ".join(patterns).lower().replace(" ", "")
+        if not text:
+            return ""
+
+        bic_category = self._classify_bic_variant(dt, text)
+        if bic_category:
+            return bic_category
+
+        digit_4 = r"(?:\[0-9\]|\\d)\{4(?:,4)?\}"
+        digit_2 = r"(?:\[0-9\]|\\d)\{2(?:,2)?\}"
+        dash = r"(?:\\-|-)"
+        colon = r"(?:\\:|:)"
+        date_pattern = rf"{digit_4}{dash}{digit_2}{dash}{digit_2}"
+        time_pattern = rf"{digit_2}{colon}{digit_2}(?:{colon}{digit_2})?"
+        has_date = bool(re.search(date_pattern, text)) or "yyyy-mm-dd" in text
+        has_time = bool(re.search(time_pattern, text)) or "hh:mm" in text
+
+        if has_date and has_time:
+            return "datetime"
+        if has_date:
+            return "date"
+        if has_time:
+            return "time"
+
+        if re.search(r"(?:\[0-9a-f\]|\\w)\{8", text) and "-" in text and "{4" in text and "{12" in text:
+            return "uuid"
+        return ""
+
+    def _semantic_constraint_candidates(self, category: str, dt: DataType) -> List[str]:
+        if category == "bic":
+            return ["IPSDITM1", "DEUTDEFFXXX", "BNPAFRPP"]
+        if category == "datetime":
+            return [
+                "2026-01-31T10:15:30",
+                "2026-06-30T12:00:00",
+                "2026-12-31T23:59:59",
+                "2026-01-31T10:15:30.000001",
+                "2026-06-30T12:00:00.000001",
+                "2026-12-31T23:59:59.000001",
+                "2026-01-31T10:15:30Z",
+                "2026-06-30T12:00:00Z",
+                "2026-12-31T23:59:59Z",
+            ]
+        if category == "date":
+            return ["2026-01-31", "2026-06-30", "2026-12-31"]
+        if category == "time":
+            return ["10:15", "12:00", "23:59", "10:15:30", "12:00:00", "23:59:59"]
+        return []
+
+    def _classify_example_category(self, dt: DataType) -> str:
+        dtype = str(dt.type or "").strip().lower()
+        fmt = str(dt.format or "").strip().lower()
+        text = " ".join(
+            [
+                str(dt.name or ""),
+                str(dt.description or ""),
+                str(dt.pattern_eba or ""),
+                str(dt.regex or ""),
+                fmt,
+            ]
+        ).lower()
+        compact_name = self._compact_semantic_name(dt.name)
+        allowed_tokens = {value.upper() for value in self._split_example_values(dt.allowed_values)}
+
+        configured_exact = self._configured_exact_category(dt, compact_name)
+        if configured_exact:
+            return configured_exact
+
+        if dtype == "boolean":
+            return "boolean"
+        if dtype in ("integer", "int"):
+            return "integer"
+        if dtype in ("number", "float", "double", "decimal"):
+            if any(word in text for word in ("amount", "amt", "price", "balance", "fee", "total")):
+                return "amount"
+            return "number"
+        if allowed_tokens and allowed_tokens.issubset({"0", "1", "Y", "N", "YES", "NO", "TRUE", "FALSE"}):
+            return "flag"
+
+        constraint_category = self._constraint_semantic_category(dt)
+        if constraint_category:
+            return constraint_category
+
+        if "iban" in text:
+            return "iban"
+        if "bic" in text or "swift" in text or "[a-z0-9]{4,4}[a-z]{2,2}[a-z0-9]{2,2}" in text:
+            bic_category = self._classify_bic_variant(dt, text)
+            if bic_category:
+                return bic_category
+            return "bic"
+        if "dca" in compact_name or "dedicatedcashaccount" in compact_name:
+            return "dca"
+        if "account" in text:
+            return "account"
+        if "currency" in text or "ccy" in text:
+            return "currency"
+        if "country" in text or "countrycode" in text:
+            return "country"
+        if "email" in text or fmt == "email":
+            return "email"
+        if "url" in text or "uri" in text or fmt in ("uri", "url"):
+            return "url"
+        if "uuid" in text or fmt == "uuid" or compact_name == "uetr":
+            return "uuid"
+
+        configured = self._configured_semantic_category(dt, text, compact_name, allowed_tokens, dtype, fmt)
+        if configured:
+            return configured
+
+        if compact_name in ("field", "fieldname"):
+            return "field_name"
+        if compact_name in ("value", "fieldvalue"):
+            return "field_value"
+        if "errordetails" in compact_name:
+            return "validation_detail"
+        if "filename" in text or "file name" in text:
+            return "filename"
+        if "originalxml" in compact_name or compact_name.endswith("xml") or compact_name.endswith("data"):
+            return "xml"
+        if (
+            fmt in ("date-time", "datetime")
+            or "datetime" in text
+            or "timestamp" in text
+            or "yyyy-mm-ddthh" in text
+            or compact_name.endswith("dttm")
+            or compact_name.endswith("datetime")
+        ):
+            return "datetime"
+        if (
+            fmt == "date"
+            or re.search(r"\bdate\b", text)
+            or "yyyy-mm-dd" in text
+            or compact_name.endswith("dt")
+            or compact_name.endswith("date")
+        ):
+            return "date"
+        if fmt == "time" or re.fullmatch(r".*time", compact_name):
+            return "time"
+        if "period" in text or "quarter" in text or compact_name in ("year", "month", "day"):
+            return "period"
+        if "description" in text:
+            return "description"
+        if "errorcode" in text or "error code" in text:
+            return "error_code"
+        if "requestid" in compact_name:
+            return "request_id"
+        if "messageid" in compact_name or "msgid" in compact_name:
+            return "message_id"
+        if "transactionid" in compact_name or "txid" in compact_name or "endtoendid" in compact_name:
+            return "transaction_id"
+        if "instructionid" in compact_name:
+            return "instruction_id"
+        if "operationid" in compact_name:
+            return "operation_id"
+        if "userid" in compact_name or compact_name == "user":
+            return "user_id"
+        if compact_name.endswith("id") or "identifier" in compact_name:
+            return "identifier"
+        if "reference" in text or compact_name.endswith("ref") or re.search(r"\bref(erence)?\b", text):
+            return "reference"
+        if "rfrnc" in compact_name:
+            return "reference"
+        if "amount" in text:
+            return "amount"
+        if compact_name.endswith("endpoint") or "apiendpoint" in compact_name:
+            return "endpoint"
+        if "filesize" in compact_name:
+            return "file_size"
+        if "reason" in text or "rsn" in compact_name:
+            return "reason"
+        if compact_name in ("sentreceived", "trxdirection") or "direction" in text:
+            return "direction"
+        if "settmethod" in compact_name or "settlementmethod" in compact_name:
+            return "settlement_method"
+        if compact_name == "csm":
+            return "csm"
+        if compact_name == "pointer":
+            return "pointer"
+        if compact_name.startswith("num") or compact_name.startswith("totnum") or compact_name.endswith("count"):
+            return "count"
+        if compact_name.endswith("netad"):
+            return "network_address"
+        if "status" in text or "state" in text:
+            return "status"
+        if compact_name.endswith("sts") or "msgsts" in compact_name:
+            return "status"
+        if "type" in compact_name or compact_name.endswith("tp"):
+            return "type"
+        if "aos" in compact_name:
+            return "aos"
+        if compact_name == "ao":
+            return "aos"
+        if "network" in text:
+            return "network"
+        if "netwopt" in compact_name or "outputnet" in compact_name:
+            return "network"
+        if "product" in text:
+            return "product"
+        if "channel" in text:
+            return "channel"
+        if compact_name == "requestedthrough":
+            return "channel"
+        if "cycle" in text:
+            return "cycle"
+        if compact_name == "offset":
+            return "offset"
+        if "sequence" in text:
+            return "sequence"
+        if "flag" in text or "indicator" in text or compact_name.endswith("indic"):
+            return "flag"
+        if "profile" in text:
+            return "profile"
+        if "role" in text:
+            return "role"
+        if compact_name == "service" or compact_name.endswith("service"):
+            return "service"
+        if "module" in text:
+            return "module"
+        if "duration" in text:
+            return "duration"
+        if compact_name.startswith("lac") or compact_name == "lac":
+            return "lac"
+        if compact_name == "sign":
+            return "sign"
+        if compact_name in ("bool", "booleanvalue") or compact_name.endswith("req") or compact_name.endswith("rqst"):
+            return "flag"
+        if compact_name in ("requestor", "authorizer", "confirmer"):
+            return "role"
+        if compact_name in ("userissr", "userissuer", "usersprvr", "supervisor"):
+            return "user_id"
+        if "routingtable" in compact_name:
+            return "routing_table"
+        if "operation" in compact_name or compact_name == "freezeunfreeze":
+            return "operation"
+        if "authenticationca" in compact_name:
+            return "certificate"
+        if "code" in text:
+            return "code"
+        if re.search(r"\bname\b", text) or compact_name.endswith("name"):
+            return "name"
+        return "generic"
+
+    def _classify_bic_variant(self, dt: DataType, text: str) -> str:
+        min_length = self._parse_float(dt.min_val)
+        max_length = self._parse_float(dt.max_val)
+        if min_length == 11 and max_length == 11:
+            return "bic11"
+        if min_length == 8 and max_length == 8:
+            return "bic8"
+
+        constraint_shape = self._bic_constraint_shape(dt)
+        if constraint_shape:
+            return constraint_shape
+
+        compact = re.sub(r"[^a-z0-9]", "", text.lower())
+        if "bic11" in compact or "bic11only" in compact:
+            return "bic11"
+        if "bic8" in compact:
+            return "bic8"
+        return ""
+
+    def _bic_constraint_shape(self, dt: DataType) -> str:
+        patterns = " ".join(self._example_constraint_patterns(dt)).lower().replace(" ", "")
+        structural_patterns = patterns.replace("(", "").replace(")", "")
+        if not structural_patterns:
+            return ""
+        bic_base = r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}"
+        bic_suffix = r"\[a-z0-9\]\{3,3\}"
+        compact_structural = structural_patterns.replace("?:", "")
+        if re.search(bic_base + r".*" + bic_suffix + r"\?", compact_structural) or (
+            re.search(bic_base, compact_structural) and re.search(bic_suffix, compact_structural) and "|" in compact_structural
+        ):
+            return "bic"
+        if re.search(bic_base + r".*" + bic_suffix, compact_structural):
+            return "bic11"
+        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}\[a-z0-9\]\{3,3\}", structural_patterns):
+            return "bic11"
+        if re.search(r"\[a-z0-9\]\{4,4\}\[a-z\]\{2,2\}\[a-z0-9\]\{2,2\}(?!\[a-z0-9\]\{3,3\})", structural_patterns):
+            return "bic8"
+        bic_base_short = r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}"
+        bic_suffix_short = r"\[a-z0-9\]\{3\}"
+        if re.search(bic_base_short + r".*" + bic_suffix_short + r"\?", compact_structural) or (
+            re.search(bic_base_short, compact_structural) and re.search(bic_suffix_short, compact_structural) and "|" in compact_structural
+        ):
+            return "bic"
+        if re.search(bic_base_short + r".*" + bic_suffix_short, compact_structural):
+            return "bic11"
+        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}\[a-z0-9\]\{3\}", structural_patterns):
+            return "bic11"
+        if re.search(r"\[a-z0-9\]\{4\}\[a-z\]\{2\}\[a-z0-9\]\{2\}(?!\[a-z0-9\]\{3\})", structural_patterns):
+            return "bic8"
+        return ""
+
+    def _best_effort_example(self, dt: DataType) -> str:
+        dtype = str(dt.type or "string").strip().lower()
+        if dtype in ("integer", "int"):
+            value = self._numeric_midpoint(dt, integer=True)
+            return "" if value is None else str(value)
+        if dtype in ("number", "float", "double", "decimal"):
+            value = self._numeric_midpoint(dt, integer=False)
+            return "" if value is None else str(value)
+        if dtype == "boolean":
+            for value in self.example_seed_values.get("boolean", ["true", "false"]):
+                if self._is_valid_example_token(dt, value):
+                    return value
+            return ""
+        category = self._classify_example_category(dt)
+        for value in self.example_seed_values.get(category, []):
+            if self._is_valid_example_token(dt, value):
+                return value
+        for value in self._semantic_constraint_candidates(category, dt):
+            if self._is_valid_example_token(dt, value):
+                return value
+        for pattern in self._example_constraint_patterns(dt):
+            generated_values = self._generate_valid_examples_from_regex(pattern, limit=1)
+            for generated in generated_values:
+                if self._is_valid_example_token(dt, generated):
+                    return generated
+        generic = self.example_seed_values.get("generic", ["Banking value"])[0]
+        fitted = self._fit_string_bounds(dt, generic)
+        return fitted if self._is_valid_example_token(dt, fitted) else ""
+
+    def _numeric_midpoint(self, dt: DataType, integer: bool) -> Any:
+        min_val = self._parse_float(dt.min_val)
+        max_val = self._parse_float(dt.max_val)
+        if min_val is not None and max_val is not None and min_val > max_val:
+            return None
+        if integer:
+            min_int = int(math.ceil(min_val)) if min_val is not None else None
+            max_int = int(math.floor(max_val)) if max_val is not None else None
+            if min_int is not None and max_int is not None:
+                if min_int > max_int:
+                    return None
+                return min_int + ((max_int - min_int) // 2)
+            if min_int is not None:
+                return min_int
+            if max_int is not None:
+                return max_int
+            return 1
+        if min_val is not None and max_val is not None:
+            value = (min_val + max_val) / 2
+        elif min_val is not None:
+            value = min_val
+        elif max_val is not None:
+            value = max_val
+        else:
+            value = 1
+        return int(round(value)) if integer else value
+
+    def _parse_float(self, raw: Any) -> Optional[float]:
+        text = str(raw or "").strip()
+        if not text or text.lower() == "nan":
+            return None
+        try:
+            return float(text.replace(",", "."))
+        except Exception:
+            return None
+
+    def _fit_string_bounds(self, dt: DataType, value: str) -> str:
+        text = value or "Banking value"
+        min_len = self._parse_float(dt.min_val)
+        max_len = self._parse_float(dt.max_val)
+        min_count = int(math.ceil(min_len)) if min_len is not None else 0
+        max_count = int(math.floor(max_len)) if max_len is not None else None
+        if max_count is not None and max_count < min_count:
+            return ""
+        if max_count is not None and len(text) > max_count:
+            text = text[:max_count]
+        if len(text) < min_count:
+            text = text + ("X" * (min_count - len(text)))
+        return text
+
+    def _generate_valid_from_regex(self, pattern: str) -> Optional[str]:
+        examples = self._generate_valid_examples_from_regex(pattern, limit=1)
+        return examples[0] if examples else None
+
+    def _generate_valid_examples_from_regex(self, pattern: str, limit: int = 3) -> List[str]:
+        original = str(pattern or "").strip()
+        if not original or limit <= 0:
+            return []
+
+        candidates: List[str] = []
+        stripped = self._strip_regex_anchors(original)
+        alternatives = self._split_top_level_regex_alternatives(stripped)
+        source_patterns = alternatives if len(alternatives) > 1 else [original]
+
+        for source in source_patterns:
+            generated = self._generate_from_simple_regex(source)
+            if generated:
+                candidates.append(generated)
+
+        if len(source_patterns) > 1:
+            generated = self._generate_from_simple_regex(original)
+            if generated:
+                candidates.append(generated)
+
+        out: List[str] = []
+        seen = set()
+        for generated in candidates:
+            if not generated or generated in seen:
+                continue
+            try:
+                if re.fullmatch(original, generated) is not None:
+                    out.append(generated)
+                    seen.add(generated)
+            except re.error:
+                return []
+            if len(out) >= limit:
+                break
+        return out
+
+    def _generate_from_simple_regex(self, pattern: str) -> Optional[str]:
+        text = str(pattern or "").strip()
+        if not text:
+            return None
+        text = self._strip_regex_anchors(text)
+        if any(marker in text for marker in ("(?", "\\p", "\\P", "\\1", "\\2")):
+            return None
+
+        alternatives = self._split_top_level_regex_alternatives(text)
+        if len(alternatives) > 1:
+            for alternative in alternatives:
+                generated = self._generate_from_simple_regex(alternative)
+                if generated:
+                    return generated
+            return None
+
+        out = ""
+        i = 0
+        while i < len(text):
+            ch = text[i]
+            token = ""
+            if ch == "[":
+                end = self._find_regex_class_end(text, i)
+                if end == -1:
+                    return None
+                token = self._sample_char_from_class(text[i + 1:end])
+                i = end + 1
+            elif ch == "\\" and i + 1 < len(text):
+                nxt = text[i + 1]
+                token = {"d": "1", "w": "A", "s": " "}.get(nxt, nxt)
+                i += 2
+            elif ch == "(":
+                end = self._find_regex_group_end(text, i)
+                if end == -1:
+                    return None
+                alternatives = self._split_top_level_regex_alternatives(text[i + 1:end])
+                selected = alternatives[0] if alternatives else ""
+                token = self._generate_from_simple_regex(selected) if selected else ""
+                if token is None:
+                    token = ""
+                i = end + 1
+            elif ch == ".":
+                token = "A"
+                i += 1
+            elif ch in "+*)|":
+                return None
+            elif ch == "?":
+                i += 1
+                continue
+            else:
+                token = ch
+                i += 1
+
+            repeat = 1
+            if i < len(text) and text[i] == "{":
+                end = text.find("}", i + 1)
+                if end == -1:
+                    return None
+                repeat_parts = text[i + 1:end].split(",", 1)
+                repeat_text = repeat_parts[0].strip()
+                try:
+                    repeat = max(0, int(repeat_text)) if repeat_text else 0
+                    if repeat == 0 and len(repeat_parts) > 1:
+                        upper_text = repeat_parts[1].strip()
+                        if not upper_text or int(upper_text) > 0:
+                            repeat = 1
+                except ValueError:
+                    repeat = 1
+                i = end + 1
+            elif i < len(text) and text[i] == "+":
+                repeat = 1
+                i += 1
+            elif i < len(text) and text[i] == "*":
+                repeat = 1
+                i += 1
+            elif i < len(text) and text[i] == "?":
+                repeat = 1
+                i += 1
+            out += token * repeat
+
+        return out or None
+
+    def _strip_regex_anchors(self, text: str) -> str:
+        if text.startswith("^"):
+            text = text[1:]
+        if text.endswith("$") and not self._is_escaped_at(text, len(text) - 1):
+            text = text[:-1]
+        return text
+
+    def _is_escaped_at(self, text: str, index: int) -> bool:
+        backslashes = 0
+        cursor = index - 1
+        while cursor >= 0 and text[cursor] == "\\":
+            backslashes += 1
+            cursor -= 1
+        return backslashes % 2 == 1
+
+    def _split_top_level_regex_alternatives(self, text: str) -> List[str]:
+        alternatives: List[str] = []
+        depth = 0
+        in_class = False
+        escaped = False
+        start = 0
+        for index, ch in enumerate(text):
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if in_class:
+                if ch == "]":
+                    in_class = False
+                continue
+            if ch == "[":
+                in_class = True
+                continue
+            if ch == "(":
+                depth += 1
+                continue
+            if ch == ")" and depth > 0:
+                depth -= 1
+                continue
+            if ch == "|" and depth == 0:
+                alternatives.append(text[start:index])
+                start = index + 1
+        alternatives.append(text[start:])
+        return [alternative for alternative in alternatives if alternative != ""]
+
+    def _find_regex_class_end(self, text: str, start: int) -> int:
+        escaped = False
+        for index in range(start + 1, len(text)):
+            ch = text[index]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == "]":
+                return index
+        return -1
+
+    def _find_regex_group_end(self, text: str, start: int) -> int:
+        depth = 0
+        in_class = False
+        escaped = False
+        for index in range(start, len(text)):
+            ch = text[index]
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if in_class:
+                if ch == "]":
+                    in_class = False
+                continue
+            if ch == "[":
+                in_class = True
+                continue
+            if ch == "(":
+                depth += 1
+                continue
+            if ch == ")":
+                depth -= 1
+                if depth == 0:
+                    return index
+        return -1
+
+    def _sample_char_from_class(self, cls: str) -> str:
+        if cls.startswith("^"):
+            for candidate in ("A", "B", "1", "X", "a", "_", "-"):
+                try:
+                    if re.fullmatch(f"[{cls}]", candidate):
+                        return candidate
+                except re.error:
+                    break
+            return "A"
+        if "A-Z" in cls:
+            return "A"
+        if "a-z" in cls:
+            return "a"
+        if "0-9" in cls or "\\d" in cls:
+            return "1"
+        for ch in cls:
+            if ch not in "^-":
+                return ch
+        return "A"
 
     def _record_merge_provenance(self, out_name: str, field: str, value: str, file_key: str) -> None:
         if not out_name or not field or value is None:
@@ -626,7 +2685,11 @@ class LegacyConverter:
         self.log(header)
         self.log(sep)
         
-        sorted_names = sorted(self.schema_usage.keys(), key=lambda x: x.lower())
+        def _schema_name_sort_key(value: str) -> Tuple[str, str]:
+            text = str(value)
+            return (text.lower(), text)
+
+        sorted_names = sorted(self.schema_usage.keys(), key=_schema_name_sort_key)
         
         # Group schema names by base stem for collision/split analysis.
         # We handle two distinct cases:
@@ -666,6 +2729,8 @@ class LegacyConverter:
 
         # 1) Explicit split detection: base may already end with digits (Bic11 -> Bic111)
         for name in sorted_names:
+            if name in self.source_schema_names and name not in self.generated_collision_names:
+                continue
             found = _find_split_base(name, all_names_set)
             if not found:
                 continue
@@ -681,6 +2746,8 @@ class LegacyConverter:
         for name in sorted_names:
             if name in variant_to_base:
                 continue
+            if name in self.source_schema_names and name not in self.generated_collision_names:
+                continue
             m = re.search(r'^(.*?)(\d+)$', str(name))
             if not m:
                 continue
@@ -694,7 +2761,7 @@ class LegacyConverter:
         final_groups: Dict[str, List[str]] = {}
 
         # 1. Base names: always show base, plus any numeric variants (even with gaps)
-        for base in sorted(base_names, key=lambda x: str(x).lower()):
+        for base in sorted(base_names, key=_schema_name_sort_key):
             variants = []
             variants.extend(base_to_variants.get(base, []))
             variants.extend(stem_to_variants.get(base, []))
@@ -706,7 +2773,7 @@ class LegacyConverter:
         # Only group when the smallest numeric suffix is 1: collision naming always starts
         # from 1 (Foo → Foo1 → Foo2 …).  Schemas like Bic8/Bic11/Bic81 have semantic names
         # (not collision-generated) and must NOT be grouped as spurious collision variants.
-        for stem, variants in sorted(stem_to_variants.items(), key=lambda kv: str(kv[0]).lower()):
+        for stem, variants in sorted(stem_to_variants.items(), key=lambda kv: _schema_name_sort_key(kv[0])):
             if stem in base_names:
                 continue
             variants = sorted(variants, key=lambda t: t[0])
@@ -1365,13 +3432,13 @@ class LegacyConverter:
         
         xl_idx = None
         try:
-            xl_idx = pd.ExcelFile(index_file)
+            xl_idx = self._open_excel_file(index_file)
             
             # 1. Load Schemas for definition details AND build reference graph
             # schema_refs: name -> set of schema names directly referenced (via Schema Name or Items Data Type cols)
             schema_refs: Dict[str, set] = {}
             if "Schemas" in xl_idx.sheet_names:
-                df_s = pd.read_excel(xl_idx, sheet_name="Schemas", dtype=str, header=None)
+                df_s = self._read_excel_sheet(xl_idx, sheet_name="Schemas", dtype=str, header=None)
                 header_idx = self._find_header_row(df_s, ["name", "type"])
                 if header_idx != -1:
                     header_vals = [str(c).strip().lower() for c in df_s.iloc[header_idx]]
@@ -1474,7 +3541,7 @@ class LegacyConverter:
             ep_files = []
             op_id_norms: set = set()  # lowercased operationId stems
             if "Paths" in xl_idx.sheet_names:
-                df_p = pd.read_excel(xl_idx, sheet_name="Paths", dtype=str, header=None)
+                df_p = self._read_excel_sheet(xl_idx, sheet_name="Paths", dtype=str, header=None)
                 h_idx = self._find_header_row(df_p, ["excel file", "operationid"])
                 if h_idx != -1:
                     h_vals = [str(c).strip().lower() for c in df_p.iloc[h_idx]]
@@ -1504,7 +3571,7 @@ class LegacyConverter:
                 
                 xl_ep = None
                 try:
-                    xl_ep = pd.ExcelFile(fpath)
+                    xl_ep = self._open_excel_file(fpath)
 
                     # --- Wrapper usage seeding fallback ---
                     # Some endpoint artifacts do not reliably carry the wrapper name in each sheet.
@@ -1542,7 +3609,7 @@ class LegacyConverter:
                     # Load inline component schemas from this endpoint's Schemas sheet
                     # (register definitions only; usages are resolved transitively below)
                     if "Schemas" in xl_ep.sheet_names:
-                        df_ep_s = pd.read_excel(xl_ep, sheet_name="Schemas", dtype=str, header=None)
+                        df_ep_s = self._read_excel_sheet(xl_ep, sheet_name="Schemas", dtype=str, header=None)
                         h_ep = self._find_header_row(df_ep_s, ["name", "type"])
                         if h_ep != -1:
                             h_ep_vals = [str(c).strip().lower() for c in df_ep_s.iloc[h_ep]]
@@ -1563,7 +3630,7 @@ class LegacyConverter:
                     for sheet_name in xl_ep.sheet_names:
                         if sheet_name in ["General Description", "Paths", "Tags", "Schemas"]: continue
 
-                        df = pd.read_excel(xl_ep, sheet_name=sheet_name, dtype=str, header=None)
+                        df = self._read_excel_sheet(xl_ep, sheet_name=sheet_name, dtype=str, header=None)
 
                         # Find a 'schema name' or 'data type' column.
                         schema_col = -1
@@ -1671,7 +3738,10 @@ class LegacyConverter:
                 self.schema_usage.setdefault(k, [])
 
             # Keep only root-level schema names
-            self.schema_usage = {k: self.schema_usage.get(k, []) for k in _hnp}
+            self.schema_usage = {
+                k: self.schema_usage.get(k, [])
+                for k in sorted(_hnp, key=lambda value: (str(value).lower(), str(value)))
+            }
 
             self._log_usage_summary()
 
@@ -1685,6 +3755,163 @@ class LegacyConverter:
             return False
         finally:
             self._close_excel_file(xl_idx)
+
+    def run_standalone_example_trace(self, folder_path, repair_files: bool = False) -> bool:
+        """Analyze or repair schema examples in already-converted template workbooks."""
+        p = Path(folder_path)
+        if not p.exists() or not p.is_dir():
+            self.log(f"Error: Invalid template folder: {folder_path}")
+            return False
+
+        workbooks = [
+            path for path in sorted(list(p.glob("*.xlsx")) + list(p.glob("*.xlsm")))
+            if not path.name.startswith("~")
+        ]
+        if not workbooks:
+            self.log(f"Error: No template workbooks found in {folder_path}")
+            return False
+
+        self.log(f"Analyzing examples in: {p.name}")
+        self.global_schemas = {}
+        self.example_schema_fields = {}
+
+        for workbook_path in workbooks:
+            for schema_name, dt in self._read_workbook_schema_examples(workbook_path).items():
+                if schema_name not in self.global_schemas:
+                    self.global_schemas[schema_name] = dt
+
+        if not self.global_schemas:
+            self.log("Error: No Schemas sheets with schema definitions found.")
+            return False
+
+        self.log(f"  Loaded {len(self.global_schemas)} consolidated schemas.")
+        self._fill_and_fix_consolidated_examples(trace_kept=True)
+        self._log_example_repair_report()
+
+        if repair_files:
+            updated = self._write_repaired_examples_to_workbooks(workbooks)
+            self.log(f"  Repaired examples written to {updated} workbook(s).")
+        return True
+
+    def _read_workbook_schema_examples(self, workbook_path: Path) -> Dict[str, DataType]:
+        xl = None
+        out: Dict[str, DataType] = {}
+        try:
+            xl = self._open_excel_file(workbook_path)
+            if "Schemas" not in xl.sheet_names:
+                return out
+
+            df = self._read_excel_sheet(xl, sheet_name="Schemas", dtype=str, header=None)
+            header_idx = self._find_header_row(df, ["name", "type"])
+            if header_idx == -1:
+                return out
+
+            headers = [str(c).strip().lower() for c in df.iloc[header_idx]]
+            df.columns = headers
+            df = df.iloc[header_idx + 1:].reset_index(drop=True)
+
+            def get_col(row, exact_kws, partial_kws=None):
+                for c in df.columns:
+                    if str(c) in exact_kws:
+                        return self._clean_value(row.get(c))
+                if partial_kws:
+                    for c in df.columns:
+                        if any(kw in str(c) for kw in partial_kws):
+                            return self._clean_value(row.get(c))
+                return ""
+
+            primitives = {"string", "number", "integer", "boolean", "array", "object", "schema"}
+            for _, row in df.iterrows():
+                name = get_col(row, ["name"])
+                parent = get_col(row, ["parent"])
+                raw_type = (get_col(row, ["type"]) or "string").lower()
+                schema_ref = get_col(row, ["schema name"], ["schema name"])
+                if parent and schema_ref:
+                    self._record_example_schema_field(schema_ref, f"{parent}.{name}" if name else parent)
+                if not name or parent or raw_type in ("object", "array", "schema"):
+                    continue
+                if name.lower() in primitives:
+                    continue
+
+                out[name] = DataType(
+                    name=name,
+                    type=raw_type,
+                    format=get_col(row, ["format"]),
+                    min_val=get_col(row, ["minimum"], ["min "]),
+                    max_val=get_col(row, ["maximum"], ["max "]),
+                    description=get_col(row, ["description"], ["desc"]),
+                    pattern_eba=get_col(row, ["pattern eba"], ["pattern"]),
+                    regex=get_col(row, ["regex"]),
+                    allowed_values=get_col(row, ["enum", "allowed value"]),
+                    example=get_col(row, ["example"], ["examp"]),
+                    items_type=get_col(row, ["items type"], ["items data type"]),
+                    source_file=workbook_path.name,
+                )
+        except Exception as exc:
+            self.log(f"Warning: Could not read schemas from {workbook_path.name}: {exc}")
+        finally:
+            self._close_excel_file(xl)
+        return out
+
+    def _write_repaired_examples_to_workbooks(self, workbooks: List[Path]) -> int:
+        updated_count = 0
+        for workbook_path in workbooks:
+            wb = None
+            try:
+                wb = load_workbook(workbook_path)
+                if "Schemas" not in wb.sheetnames:
+                    continue
+                ws = wb["Schemas"]
+                header_row = None
+                name_col = None
+                example_col = None
+                parent_col = None
+
+                for row_idx in range(1, min(ws.max_row, 15) + 1):
+                    values = [
+                        str(ws.cell(row=row_idx, column=col).value or "").strip().lower()
+                        for col in range(1, ws.max_column + 1)
+                    ]
+                    if "name" in values and "type" in values:
+                        header_row = row_idx
+                        for col_idx, value in enumerate(values, start=1):
+                            if value == "name":
+                                name_col = col_idx
+                            elif "example" in value:
+                                example_col = col_idx
+                            elif value == "parent":
+                                parent_col = col_idx
+                        break
+
+                if not header_row or not name_col:
+                    continue
+                if not example_col:
+                    example_col = ws.max_column + 1
+                    ws.cell(row=header_row, column=example_col, value="Example")
+
+                changed = False
+                for row_idx in range(header_row + 1, ws.max_row + 1):
+                    raw_name = ws.cell(row=row_idx, column=name_col).value
+                    raw_parent = ws.cell(row=row_idx, column=parent_col).value if parent_col else None
+                    raw_example = ws.cell(row=row_idx, column=example_col).value
+                    name = "" if raw_name is None else self._clean_value(raw_name)
+                    parent = "" if raw_parent is None else self._clean_value(raw_parent)
+                    if not name or parent or name not in self.global_schemas:
+                        continue
+                    repaired = self.global_schemas[name].example
+                    current_example = "" if raw_example is None else self._clean_value(raw_example)
+                    if repaired and current_example != repaired:
+                        ws.cell(row=row_idx, column=example_col, value=repaired)
+                        changed = True
+
+                if changed:
+                    wb.save(workbook_path)
+                    updated_count += 1
+            except Exception as exc:
+                self.log(f"Warning: Could not write repaired examples to {workbook_path.name}: {exc}")
+            finally:
+                self._close_workbook(wb)
+        return updated_count
     
     def _inject_schema_references(self, folder: Path, index_file: Path, ep_files: list):
         """Create a 'Schema References' sheet in $index.xlsx with merged cells and hyperlinks."""
@@ -1857,11 +4084,12 @@ class LegacyConverter:
 
     def _pre_read_index(self, index_path: Path):
         """Pre-read index to map filenames to operationIds."""
+        self.missing_index_files = []
         xl = None
         try:
-            xl = pd.ExcelFile(index_path)
+            xl = self._open_excel_file(index_path)
             if "Paths" in xl.sheet_names:
-                df = pd.read_excel(xl, sheet_name="Paths", dtype=str, header=None)
+                df = self._read_excel_sheet(xl, sheet_name="Paths", dtype=str, header=None)
                 header_row_idx = self._find_header_row(df, ["excel file", "operationid"])
                 if header_row_idx == -1: return
                 
@@ -1894,7 +4122,14 @@ class LegacyConverter:
                                 # Also map without extension for robustness
                                 self.filename_to_opid[actual_fname.replace(".xlsx", "").replace(".xlsm", "")] = opid
                             else:
-                                self.log(f"  WARNING: File '{entry_name}' from index not found in {self.input_dir}")
+                                self.missing_index_files.append(entry_name)
+                if self.missing_index_files:
+                    self.log(
+                        "ERROR: $index.xlsx references missing endpoint templates. "
+                        "Conversion cannot continue until the index or source folder is fixed."
+                    )
+                    for missing_name in self.missing_index_files:
+                        self.log(f"  - Missing file from index: {missing_name}")
         except Exception as e:
             self.log(f"Error pre-reading index: {e}")
         finally:
@@ -1916,7 +4151,7 @@ class LegacyConverter:
         xl_legacy = None
         try:
             wb = load_workbook(output_path)
-            xl_legacy = pd.ExcelFile(legacy_path)
+            xl_legacy = self._open_excel_file(legacy_path)
 
             # 1. General Description
             self._convert_general_description(wb, xl_legacy)
@@ -1996,9 +4231,10 @@ class LegacyConverter:
     def _convert_general_description(self, wb, xl_legacy):
         """Convert General Description sheet."""
         ws = wb["General Description"]
+        ensure_swift_server_rows_in_workbook(wb, self.swift_servers)
         
         # Read legacy key-value format
-        df = pd.read_excel(xl_legacy, sheet_name="General Description", dtype=str, header=None)
+        df = self._read_excel_sheet(xl_legacy, sheet_name="General Description", dtype=str, header=None)
         
         # Build key-value map
         kv_map = {}
@@ -2033,8 +4269,8 @@ class LegacyConverter:
             "info title": (4, 2),
             "info contact name": (5, 2),
             "info contact url": (6, 2),
-            "release": (9, 2),
-            "filename pattern": (10, 2)
+            "release": (11, 2),
+            "filename pattern": (12, 2)
         }
         
         for key, (row, col) in mappings.items():
@@ -2048,9 +4284,9 @@ class LegacyConverter:
         if self.contact_url:
             ws.cell(row=6, column=2).value = self.contact_url
         if self.release:
-            ws.cell(row=9, column=2).value = self.release
+            ws.cell(row=11, column=2).value = self.release
         if self.filename_pattern:
-            ws.cell(row=10, column=2).value = self.filename_pattern
+            ws.cell(row=12, column=2).value = self.filename_pattern
 
         # Servers
         if "servers url" in kv_map:
@@ -2061,12 +4297,13 @@ class LegacyConverter:
                 r = server_rows[i]
                 ws.cell(row=r, column=2).value = url
                 ws.cell(row=r, column=4).value = desc
+
     
     def _convert_paths(self, wb, xl_legacy):
         """Convert Paths sheet."""
         ws = wb["Paths"]
         
-        df = pd.read_excel(xl_legacy, sheet_name="Paths", dtype=str)
+        df = self._read_excel_sheet(xl_legacy, sheet_name="Paths", dtype=str)
         header_row_idx = self._find_header_row(df, ["excel file", "path"])
         
         if header_row_idx == -1:
@@ -2196,12 +4433,12 @@ class LegacyConverter:
                 ep_files.append((p, p.name))
                 seen.add(p.name)
         for ep_file, ep_fname in ep_files:
-            xl = pd.ExcelFile(ep_file)
+            xl = self._open_excel_file(ep_file)
             
             # 1.1 Params
             for sheet_name in ["Path", "Header"]:
                 if sheet_name in xl.sheet_names:
-                    df = pd.read_excel(xl, sheet_name=sheet_name, dtype=str, header=None)
+                    df = self._read_excel_sheet(xl, sheet_name=sheet_name, dtype=str, header=None)
                     # Legacy templates use "Type"/"Element" headers; converted use "Name"/"Type"
                     header_row_idx = self._find_header_row(df, ["name", "type", "element", "constraint"])
                     if header_row_idx != -1:
@@ -2341,10 +4578,10 @@ class LegacyConverter:
 
             self._close_excel_file(xl)
 
-        # 2a. Transitively expand referenced_data_types: array DataTypes whose
-        #     items_type is itself a named DataType (e.g. AosId → AosIdItem)
-        #     are not encountered as direct property types in endpoint sheets,
-        #     so they would be missed without this expansion.
+        # 2a. Transitively expand referenced_data_types for true array
+        #     components. Legacy array aliases are skipped here because their
+        #     referenced component represents the item schema, not the array
+        #     container.
         _prim_expand = {"string", "number", "integer", "boolean", "array", "object"}
         _expand_pending = set(referenced_data_types)
         _expand_visited: set = set()
@@ -2355,6 +4592,8 @@ class LegacyConverter:
             _expand_visited.add(_ename)
             _edt = self.global_schemas.get(_ename)
             if not _edt or _edt.type.lower() != "array" or not _edt.items_type:
+                continue
+            if self._array_alias_item_schema(_ename, _edt) is not None:
                 continue
             _eitems = self._recursive_resolve_items(
                 _edt.items_type,
@@ -2368,8 +4607,7 @@ class LegacyConverter:
         global_blocks = []
         for out_name in sorted(referenced_data_types):
             if out_name in self.emitted_wrappers: continue
-            # Skip schemas already emitted as structured named-array inline components
-            # (they were written with proper type=array + children via named_array_key_map)
+            # Skip schemas already emitted as structured inline components.
             if out_name in self.emitted_inline_components: continue
 
             # Only skip true primitive schema names. Named DataTypes such as
@@ -2380,20 +4618,21 @@ class LegacyConverter:
 
             dt = self.global_schemas.get(out_name)
             if not dt: continue
+            emit_dt = self._array_alias_item_schema(out_name, dt) or dt
             
-            # Resolve Items Type recursively if it's an array
-            # Rule: only inline if name is 'object' or 'array'
-            items_out = dt.items_type
-            if dt.type.lower() == "array" and dt.items_type:
+            # Resolve items recursively for true array components. Legacy array
+            # aliases have already been converted to their item schema above.
+            items_out = emit_dt.items_type
+            if emit_dt.type.lower() == "array" and emit_dt.items_type:
                 # Use recursive resolution helper
-                items_out = self._recursive_resolve_items(dt.items_type, dt.source_file)
+                items_out = self._recursive_resolve_items(emit_dt.items_type, emit_dt.source_file)
             
             # Only emit pattern_eba when there IS a regex; old tool never emitted
             # EBA-only patterns (e.g. '4!c2!a2!c') as OAS pattern values.
-            emit_pat_eba = dt.pattern_eba if dt.regex else ""
-            row = [out_name, "", dt.description, dt.type if dt.type else "string",
-                   items_out, "", dt.format, "", dt.min_val, dt.max_val,
-                   emit_pat_eba, dt.regex, dt.allowed_values, dt.example, ""]
+            emit_pat_eba = emit_dt.pattern_eba if emit_dt.regex else ""
+            row = [out_name, "", emit_dt.description, emit_dt.type if emit_dt.type else "string",
+                   items_out, "", emit_dt.format, "", emit_dt.min_val, emit_dt.max_val,
+                   emit_pat_eba, emit_dt.regex, emit_dt.allowed_values, emit_dt.example, ""]
             global_blocks.append((out_name, [row]))
 
         # 3. Final Write-back with Cosmetics
@@ -2457,31 +4696,15 @@ class LegacyConverter:
                         _refs.add(_it2)
             return _refs
 
-        def _apply_rename_to_blocks(_blocks: List[Tuple[str, List[List[Any]]]], mapping: Dict[str, str]) -> List[Tuple[str, List[List[Any]]]]:
-            out_blocks: List[Tuple[str, List[List[Any]]]] = []
-            for _bn2, _br2 in _blocks:
-                new_bn = mapping.get(_bn2, _bn2)
-                new_rows: List[List[Any]] = []
-                for _row2 in _br2:
-                    rr = list(_row2)
-                    # Update Schema Name (col F, index 5)
-                    if len(rr) > 5 and isinstance(rr[5], str) and rr[5]:
-                        rr[5] = mapping.get(rr[5], rr[5])
-                    # Update Items Type (col E, index 4)
-                    if len(rr) > 4 and isinstance(rr[4], str) and rr[4]:
-                        rr[4] = mapping.get(rr[4], rr[4])
-                    # Update root schema name in column A when parent is empty
-                    if len(rr) > 1 and (rr[1] == "" or rr[1] is None):
-                        if len(rr) > 0 and isinstance(rr[0], str) and rr[0]:
-                            rr[0] = new_bn
-                    new_rows.append(rr)
-                out_blocks.append((new_bn, new_rows))
-            return out_blocks
-
         # Build variant sets by stem
         names_in_blocks = [n for n, _r in all_blocks]
         stem_map: Dict[str, Dict[str, Any]] = {}
         for nm in names_in_blocks:
+            # Numeric suffixes in names read from Excel are part of the source
+            # name (e.g. Bic8, Bic11), not proof of a generated collision.
+            if nm in self.source_schema_names and nm not in self.generated_collision_names:
+                stem_map.setdefault(str(nm), {"base": True, "nums": []})
+                continue
             m = re.search(r"^(.*?)(\d+)$", str(nm))
             if not m:
                 stem_map.setdefault(str(nm), {"base": True, "nums": []})
@@ -2547,7 +4770,7 @@ class LegacyConverter:
                 used_after.add(new_nm)
 
         if rename_map:
-            all_blocks = _apply_rename_to_blocks(all_blocks, rename_map)
+            all_blocks = self._apply_schema_rename_to_blocks(all_blocks, rename_map)
 
             # Keep registries aligned for tracing / later lookups
             try:
@@ -2563,6 +4786,14 @@ class LegacyConverter:
                 self.output_names = {
                     key: rename_map.get(out_name, out_name)
                     for key, out_name in self.output_names.items()
+                }
+                self.generated_collision_names = {
+                    rename_map.get(name, name)
+                    for name in self.generated_collision_names
+                }
+                self.generated_collision_families = {
+                    rename_map.get(name, name): family
+                    for name, family in self.generated_collision_families.items()
                 }
                 self.fingerprints = {
                     fp: rename_map.get(out_name, out_name)
@@ -2707,7 +4938,7 @@ class LegacyConverter:
         xl = None
         try:
             wb = load_workbook(output_path)
-            xl = pd.ExcelFile(legacy_path)
+            xl = self._open_excel_file(legacy_path)
 
             # Use FILENAME as wrapper base (matching old tool behaviour),
             # NOT the operationId from the index which may differ.
@@ -2767,12 +4998,12 @@ class LegacyConverter:
         
         # Path parameters
         if "Path" in xl.sheet_names:
-            df = pd.read_excel(xl, sheet_name="Path", dtype=str)
+            df = self._read_excel_sheet(xl, sheet_name="Path", dtype=str)
             params.extend(self._parse_params(df, "path"))
         
         # Header parameters
         if "Header" in xl.sheet_names:
-            df = pd.read_excel(xl, sheet_name="Header", dtype=str)
+            df = self._read_excel_sheet(xl, sheet_name="Header", dtype=str)
             params.extend(self._parse_params(df, "header"))
             
         ep_filename = wb.properties.title if hasattr(wb, 'properties') and wb.properties.title else None
@@ -2815,8 +5046,8 @@ class LegacyConverter:
         if wrapper_name not in self.emitted_wrappers:
             return
 
-        # B1 marks requestBody required in the generated template.
-        ws.cell(row=1, column=2).value = "M"
+        # C1 marks requestBody required; B1 is reserved for requestBody description.
+        ws.cell(row=1, column=3).value = "M"
             
         # Media Type row with schema reference to wrapper
         # Properties are already defined in the component schema - no need to duplicate inline
@@ -2842,7 +5073,7 @@ class LegacyConverter:
             # Extract description from legacy title
             desc = ""
             try:
-                df = pd.read_excel(xl, sheet_name=code, dtype=str, header=None)
+                df = self._read_excel_sheet(xl, sheet_name=code, dtype=str, header=None)
                 if not df.empty:
                     title_row = df.iloc[0].dropna().tolist()
                     for val in title_row:
@@ -3094,7 +5325,7 @@ class LegacyConverter:
     
     def _read_legacy_structure(self, xl, sheet_name: str) -> List[Tuple]:
         """Read legacy Body/Response structure: (name, parent, description, type, mandatory)."""
-        df = pd.read_excel(xl, sheet_name=sheet_name, dtype=str, header=None)
+        df = self._read_excel_sheet(xl, sheet_name=sheet_name, dtype=str, header=None)
         
         # Representative keywords for header detection
         header_keywords = ["name", "element", "type", "parent", "data type", "description", "mandatory"]
@@ -3194,10 +5425,11 @@ class LegacyConverter:
                 if norm_dt and norm_dt not in self._current_children_map:
                     self._current_children_map[norm_dt] = frozenset(parent_children[cn.lower()])
 
-        def _unique_inline_component_name(base_name: str) -> str:
+        def _unique_inline_component_name(base_name: str, extra_reserved: Optional[set] = None) -> str:
             candidate = base_name
             i = 1
-            reserved = reserved_names or set()
+            reserved = set(reserved_names or set())
+            reserved.update(extra_reserved or set())
             registered_names = set(self.inline_component_fingerprints.values())
             while (candidate in reserved
                    or candidate in self.emitted_wrappers
@@ -3475,7 +5707,10 @@ class LegacyConverter:
                             if ex_sig and ex_sig != canon_ex:
                                 self._record_merge_provenance(existing, "example", ex_sig, ep_filename or "")
                     else:
-                        comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                        comp_name = _unique_inline_component_name(
+                            self._to_pascal_case(name),
+                            extra_reserved=set(self.global_schemas.keys()),
+                        )
                         array_items_ref_map[name_norm] = comp_name
                         array_key_map[key] = comp_name
                         self.inline_component_fingerprints[fp] = comp_name
@@ -3484,7 +5719,10 @@ class LegacyConverter:
                         self.inline_component_example_sig[comp_name] = ex_sig
                         self._clone_schema_variant(dt, comp_name)
                 else:
-                    comp_name = _unique_inline_component_name(self._to_pascal_case(name))
+                    comp_name = _unique_inline_component_name(
+                        self._to_pascal_case(name),
+                        extra_reserved=set(self.global_schemas.keys()),
+                    )
                     array_items_ref_map[name_norm] = comp_name
                     array_key_map[key] = comp_name
                     self._clone_schema_variant(dt, comp_name)
@@ -3554,6 +5792,8 @@ class LegacyConverter:
             resolved_type = "string"
             schema_name = ""
             items_type = ""
+            row_min = ""
+            row_max = ""
             
             name_out = str(name).strip() if name is not None else ""
             low_dtype = _norm(dtype)
@@ -3601,33 +5841,32 @@ class LegacyConverter:
                 resolved_type = dt.type.lower()
                 schema_name = ""
                 if resolved_type == "array":
-                    # Named-DataType array with children: emit as $ref to the schema.
-                    # The schema (type=array with items.properties) is emitted separately
-                    # via named_array_key_map to avoid the double-array anti-pattern.
                     if key_emit in named_array_key_map:
-                        resolved_type = "schema"
-                        schema_name = named_array_key_map[key_emit]
-                        items_type = ""
-                        referenced_data_types.add(schema_name)
+                        resolved_type = "array"
+                        schema_name = ""
+                        items_type = named_array_key_map[key_emit]
+                        if dt:
+                            row_min = dt.min_val
+                            row_max = dt.max_val
                     elif name_norm in named_array_items_ref_map:
-                        resolved_type = "schema"
-                        schema_name = named_array_items_ref_map[name_norm]
-                        items_type = ""
-                        referenced_data_types.add(schema_name)
+                        resolved_type = "array"
+                        schema_name = ""
+                        items_type = named_array_items_ref_map[name_norm]
+                        if dt:
+                            row_min = dt.min_val
+                            row_max = dt.max_val
                     elif key_emit in array_key_map:
                         items_type = array_key_map[key_emit]
                     elif name_norm in array_items_ref_map:
                         items_type = array_items_ref_map[name_norm]
                     else:
-                        # Named-DataType array with no inline children in this
-                        # endpoint sheet: emit as $ref so constraints (minItems/
-                        # maxItems) from the DataType sheet are preserved.
-                        # The component schema is emitted via global_blocks.
                         if out_name and out_name.lower() not in ["array", "object"]:
-                            resolved_type = "schema"
-                            schema_name = out_name
-                            items_type = ""
+                            resolved_type = "array"
+                            schema_name = ""
+                            items_type = out_name
                             referenced_data_types.add(out_name)
+                            row_min = dt.min_val
+                            row_max = dt.max_val
                         else:
                             it_to_resolve = items_type_row
                             if not it_to_resolve:
@@ -3653,6 +5892,12 @@ class LegacyConverter:
                 if _it_low not in ("string", "number", "integer", "boolean", "object", "array"):
                     referenced_data_types.add(items_type)
 
+            if resolved_type == "schema" and schema_name:
+                field_context = f"{actual_parent}.{name_out}" if actual_parent and name_out else name_out
+                if usage_ctx and field_context:
+                    field_context = f"{usage_ctx}: {field_context}"
+                self._record_example_schema_field(schema_name, field_context)
+
             # Convert mandatory
             mand_value = "M" if mandatory in ["M", "m", "Yes", "yes", "Y", "y"] else \
                          "O" if mandatory in ["O", "o", "No", "no", "N", "n"] else mandatory
@@ -3660,7 +5905,7 @@ class LegacyConverter:
             rows.append([
                 name_out, actual_parent, final_desc, resolved_type,
                 items_type, schema_name, "", mand_value,
-                "", "", "", "", "", "", "" # Col J-O: Min, Max, PatternEba, Regex, Allowed, Example
+                row_min, row_max, "", "", "", "", "" # Col J-O: Min, Max, PatternEba, Regex, Allowed, Example
             ])
 
         for (prop_low, prop_parent_low), comp_name in object_key_map.items():
@@ -3729,22 +5974,7 @@ class LegacyConverter:
             child_rows, _refs, nested_blocks = self._build_children_rows(comp_name, transformed, ep_filename, usage_ctx=usage_ctx)
             referenced_data_types.update(_refs)
 
-            # Determine the primitive items type of the named-array DataType so we
-            # can emit it correctly as  type=array, items=<primitive>.
-            dt_for_schema = self.global_schemas.get(comp_name)
-            items_primitive = "object"
-            if dt_for_schema and dt_for_schema.items_type:
-                items_primitive = self._recursive_resolve_items(
-                    dt_for_schema.items_type,
-                    dt_for_schema.source_file if dt_for_schema.source_file != "$global" else None,
-                )
-
-            # Emit root row as type=array (NOT object) so generator produces
-            # the correct  {type: array, items: {properties: ...}}  schema.
-            # Carry minItems/maxItems from the original DataType definition.
-            _na_min = dt_for_schema.min_val if dt_for_schema else ""
-            _na_max = dt_for_schema.max_val if dt_for_schema else ""
-            extra_schema_blocks.append([comp_name, "", "", "array", items_primitive, "", "", "", _na_min, _na_max, "", "", "", ""])
+            extra_schema_blocks.append([comp_name, "", "", "object", "", "", "", "", "", "", "", "", "", ""])
             extra_schema_blocks.extend(child_rows)
             extra_schema_blocks.extend(nested_blocks)
 
@@ -3781,6 +6011,27 @@ class LegacyConverter:
             return True
         return "string"
 
+    def _generate_constraint_compliant_value(
+        self,
+        dtype_lower: str,
+        dt: Optional['DataType'],
+        item_offset: int = 0,
+    ) -> Any:
+        """Return a fallback value that satisfies the DataType constraints when known."""
+        if dt is None:
+            return self._generate_synthetic_value(dtype_lower)
+
+        category = self._classify_example_category(dt)
+        examples, _reason = self._build_example_candidates(dt, [], category=category)
+        if examples:
+            return examples[item_offset % len(examples)]
+
+        fallback = self._best_effort_example(dt)
+        if fallback and self._is_valid_example_token(dt, fallback):
+            return fallback
+
+        return ""
+
     def _resolve_leaf_dt(self, dtype: str, ep_filename: Optional[str]) -> Optional['DataType']:
         """Resolve a field type to its DataType, or None for primitives."""
         if self._is_oas_primitive_name(dtype):
@@ -3806,8 +6057,20 @@ class LegacyConverter:
         override_field / override_value: replace value for one field (other Bad Request violations)
         array_item_index: 0 = first array item, 1 = second array item (shifts rotation)
         """
-        # Per-type rotation counter (shared across the whole call so siblings rotate)
-        type_counters: Dict[str, int] = {}
+        class ExampleGenerationContext:
+            """Scoped counters for one structural container in the example tree."""
+
+            def __init__(self, base_offset: int = 0) -> None:
+                self.base_offset = base_offset
+                self.counters: Dict[str, int] = {}
+
+            def child_scope(self, base_offset: int = 0) -> 'ExampleGenerationContext':
+                return ExampleGenerationContext(base_offset=base_offset)
+
+            def next_offset(self, dtype_key: str) -> int:
+                count = self.counters.get(dtype_key, 0)
+                self.counters[dtype_key] = count + 1
+                return self.base_offset + count
 
         def _coerce_numeric_example(raw_value: Any, numeric_type: str) -> Any:
             """Preserve integer-looking number examples without forcing a trailing '.0'."""
@@ -3838,26 +6101,17 @@ class LegacyConverter:
 
             return raw_value
 
-        def get_rotated_value(dtype: str, dt: Optional['DataType'], item_offset: int = 0, is_array_item: bool = False) -> Any:
-            """Pick example value using per-type rotation + item_offset for array diversity."""
+        def get_rotated_value(
+            dtype: str,
+            dt: Optional['DataType'],
+            context: ExampleGenerationContext,
+        ) -> Any:
+            """Pick example value using the current structural container scope."""
             examples = self._get_example_values(dt)
             low = dtype.lower() if dtype else "string"
 
             if examples:
-                # For array items, return the full examples list (or subset) instead of single value
-                if is_array_item:
-                    count = type_counters.get(low, 0)
-                    # Return all examples as array, or single example if only one exists
-                    if len(examples) >= 2:
-                        # Rotate starting point for diversity across different arrays
-                        start_idx = (count + item_offset) % len(examples)
-                        type_counters[low] = count + 1
-                        return [examples[(start_idx + i) % len(examples)] for i in range(min(2, len(examples)))]
-                    return [examples[0]]
-                
-                count = type_counters.get(low, 0)
-                idx = (count + item_offset) % len(examples)
-                type_counters[low] = count + 1
+                idx = context.next_offset(low) % len(examples)
                 raw = examples[idx]
                 # Coerce to numeric if the DataType says so
                 if dt:
@@ -3874,8 +6128,12 @@ class LegacyConverter:
                     low_t = dt.type.lower()
                 else:
                     low_t = low
-                synthetic = self._generate_synthetic_value(low_t)
-                return [synthetic] if is_array_item else synthetic
+                synthetic = self._generate_constraint_compliant_value(
+                    low_t,
+                    dt,
+                    item_offset=context.next_offset(low),
+                )
+                return synthetic
 
         # Build parent → children tree.
         # IMPORTANT: legacy structures can contain duplicate field names under different parents.
@@ -3914,7 +6172,11 @@ class LegacyConverter:
                 children_of[p_uid] = []
             children_of[p_uid].append(uid)
 
-        def build_node(uid: str, item_offset: int = 0) -> Any:
+        def build_node(
+            uid: str,
+            context: ExampleGenerationContext,
+            container_offset: int = 0,
+        ) -> Any:
             dtype = node_dtype.get(uid, "string")
             low_dtype = dtype.lower()
             dt = self._resolve_leaf_dt(dtype, ep_filename)
@@ -3922,6 +6184,7 @@ class LegacyConverter:
 
             # --- ARRAY ---
             if low_dtype == "array" or (dt and dt.type.lower() == "array"):
+                array_context = context.child_scope(base_offset=container_offset)
                 items_type_name = node_items.get(uid, "")
                 if not items_type_name and dt:
                     items_type_name = dt.items_type or ""
@@ -3930,16 +6193,18 @@ class LegacyConverter:
 
                 if my_children:
                     # Array of objects defined inline
+                    item1_context = array_context.child_scope(base_offset=0)
                     item1 = {
-                        node_name[c]: build_node(c, item_offset=0)
+                        node_name[c]: build_node(c, item1_context)
                         for c in my_children
                         if node_name.get(c) != omit_field or override_field is not None
                     }
                     # Check if we have enough examples for a second distinct item
-                    can_make_second = _can_diversify(my_children, item_offset=1)
+                    can_make_second = _can_diversify(my_children)
                     if can_make_second:
+                        item2_context = array_context.child_scope(base_offset=1)
                         item2 = {
-                            node_name[c]: build_node(c, item_offset=1)
+                            node_name[c]: build_node(c, item2_context)
                             for c in my_children
                             if node_name.get(c) != omit_field or override_field is not None
                         }
@@ -3950,24 +6215,21 @@ class LegacyConverter:
                     return [{}]
                 else:
                     # Array of scalars
-                    v1 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=0, is_array_item=True)
-                    if isinstance(v1, list) and len(v1) >= 2:
-                        # Already got multiple values from examples list
-                        return v1
-                    # Try to get a second distinct value for diversity
-                    v2 = get_rotated_value(items_type_name or items_low, items_dt, item_offset=1, is_array_item=True)
-                    if isinstance(v2, list):
-                        return [v1[0] if isinstance(v1, list) else v1, v2[0]]
-                    return [v1[0] if isinstance(v1, list) else v1, v2] if v2 is not None else [v1[0] if isinstance(v1, list) else v1]
+                    v1 = get_rotated_value(items_type_name or items_low, items_dt, array_context)
+                    if _has_multiple_examples_for_type(items_type_name or items_low, items_dt):
+                        v2 = get_rotated_value(items_type_name or items_low, items_dt, array_context)
+                        return [v1, v2]
+                    return [v1]
 
             # --- OBJECT ---
             if low_dtype == "object" or (dt and dt.type.lower() == "object" and my_children):
+                object_context = context.child_scope(base_offset=container_offset)
                 result = {}
                 for c in my_children:
                     cname = node_name.get(c)
                     if cname == omit_field:
                         continue
-                    val = build_node(c, item_offset=item_offset)
+                    val = build_node(c, object_context)
                     if cname == override_field:
                         val = override_value
                     if override_fields and cname in override_fields:
@@ -3976,18 +6238,27 @@ class LegacyConverter:
                 return result
 
             # --- SCALAR (possibly a named schema that resolves to a scalar type) ---
-            val = get_rotated_value(dtype, dt, item_offset=item_offset)
+            val = get_rotated_value(dtype, dt, context)
             if node_name.get(uid) == override_field:
                 val = override_value
             if override_fields and node_name.get(uid) in override_fields:
                 val = override_fields.get(node_name.get(uid))
             return val
 
-        def _can_diversify(child_uids: List[str], item_offset: int) -> bool:
-            """Check whether at least one child has >1 example value (enables 2nd array item)."""
+        def _has_multiple_examples_for_type(dtype: str, dt: Optional['DataType']) -> bool:
+            examples = self._get_example_values(dt)
+            if len(examples) >= 2:
+                return True
+            return not examples and bool(dt)
+
+        def _can_diversify(child_uids: List[str]) -> bool:
+            """Check whether a direct child can produce a distinct second array item."""
             for c in child_uids:
                 dtype = node_dtype.get(c, "string")
+                low_dtype = dtype.lower()
                 dt = self._resolve_leaf_dt(dtype, ep_filename)
+                if low_dtype == "array" or (dt and dt.type.lower() == "array"):
+                    continue
                 examples = self._get_example_values(dt)
                 if len(examples) >= 2:
                     return True
@@ -3995,13 +6266,14 @@ class LegacyConverter:
 
         # Step 3: build root dict
         result = {}
+        root_context = ExampleGenerationContext(base_offset=array_item_index)
         for uid in ordered_uids:
             if not is_root(uid):
                 continue
             name = node_name.get(uid)
             if name == omit_field:
                 continue
-            val = build_node(uid, item_offset=array_item_index)
+            val = build_node(uid, root_context)
             if name == override_field:
                 val = override_value
             if override_fields and name in override_fields:
@@ -4214,7 +6486,7 @@ class LegacyConverter:
             return []
 
         try:
-            df = pd.read_excel(xl_legacy, sheet_name=sheet_name, dtype=str, header=None)
+            df = self._read_excel_sheet(xl_legacy, sheet_name=sheet_name, dtype=str, header=None)
         except Exception:
             return []
 

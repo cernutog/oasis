@@ -1,6 +1,12 @@
 import pandas as pd
 import os
 import difflib
+import re
+
+try:
+    from .swift_services import SWIFT_SERVER_URL_KEY, read_swift_servers_from_general_description
+except ImportError:
+    from swift_services import SWIFT_SERVER_URL_KEY, read_swift_servers_from_general_description
 
 
 def load_excel_sheet(file_path, sheet_name):
@@ -63,13 +69,24 @@ def load_excel_sheet(file_path, sheet_name):
                                 df.attrs["response_description"] = str(desc).strip()
                                 break
                     
-                    # Specific metadata for "Body" sheet (B1=Required)
+                    # Specific metadata for "Body" sheet.
+                    # Official layout: B1=description, C1=required.
+                    # Legacy converted layout: B1=required, C1=description.
                     if sheet_name == "Body":
                         try:
-                            # Row 0, Col 1 is B1
                             b1_val = df_raw.iloc[0, 1]
-                            if pd.notna(b1_val):
-                                df.attrs["body_required"] = str(b1_val).strip()
+                            c1_val = df_raw.iloc[0, 2]
+                            b1_text = str(b1_val).strip() if pd.notna(b1_val) else ""
+                            c1_text = str(c1_val).strip() if pd.notna(c1_val) else ""
+                            if b1_text.upper() in {"M", "O"}:
+                                df.attrs["body_required"] = b1_text
+                                if c1_text:
+                                    df.attrs["body_description"] = c1_text
+                            else:
+                                if b1_text:
+                                    df.attrs["body_description"] = b1_text
+                                if c1_text:
+                                    df.attrs["body_required"] = c1_text
                         except Exception:
                             pass
                 except Exception:
@@ -130,6 +147,7 @@ def parse_info(df_info):
     """
     info = {"title": "API Specification", "version": "1.0.0"}  # Default
     servers = []
+    info["swift_servers"] = read_swift_servers_from_general_description(df_info)
 
     if df_info is not None:
         # Expecting col 0 to be key, col 1 to be val
@@ -163,7 +181,7 @@ def parse_info(df_info):
                 info["filename_pattern"] = str(val)
 
             # Servers (Inline)
-            if "servers" in key and "url" in key:
+            if key == "servers url":
                 server_obj = {"url": val}
                 # Check if description exists in column D (index 3)
                 if len(row) > 3:
@@ -171,6 +189,8 @@ def parse_info(df_info):
                     if pd.notna(desc_val) and str(desc_val).strip():
                         server_obj["description"] = str(desc_val).strip()
                 servers.append(server_obj)
+            elif key == SWIFT_SERVER_URL_KEY:
+                continue
 
     return info, servers
 
@@ -181,9 +201,6 @@ def parse_paths_index(df_paths):
     """
     operations = []
     if df_paths is not None:
-        # Print columns to help debugging
-        # print(f"DEBUG Paths cols: {df_paths.columns.tolist()}")
-
         # Ensure we locate the correct columns even if named 'Unnamed'
         # Heuristic: Find which column contains '/v1' to identify Path column
         path_col = None
@@ -205,6 +222,22 @@ def parse_paths_index(df_paths):
             if "Method" in col or "Unnamed: 3" == col:
                 method_col = col
 
+        def _looks_like_custom_extension(value):
+            if not isinstance(value, str):
+                return False
+            for line in value.splitlines():
+                stripped = line.strip()
+                if not stripped:
+                    continue
+                return bool(re.match(r"^x-[A-Za-z0-9_.-]+\s*:", stripped))
+            return False
+
+        extension_col = None
+        for col in df_paths.columns:
+            if str(col).strip().lower() in {"custom extensions", "custom extension"}:
+                extension_col = col
+                break
+
         # If still None, assume standard layout
         file_col = file_col or df_paths.columns[0]
         path_col = path_col or df_paths.columns[1]
@@ -215,6 +248,14 @@ def parse_paths_index(df_paths):
             if not isinstance(path_val, str) or not path_val.startswith("/"):
                 continue
 
+            extensions = None
+            if extension_col:
+                extensions = row.get(extension_col)
+            else:
+                unnamed_ext = row.get("Unnamed: 8")
+                if _looks_like_custom_extension(unnamed_ext):
+                    extensions = unnamed_ext
+
             op = {
                 "file": row.get(file_col),
                 "path": path_val,
@@ -223,7 +264,7 @@ def parse_paths_index(df_paths):
                 "description": row.get("Description") or row.get("Unnamed: 4"),
                 "operationId": row.get("OperationId") or row.get("Unnamed: 7"),
                 "tags": row.get("Tag") or row.get("Unnamed: 5"),
-                "extensions": row.get("Custom Extensions") or row.get("Unnamed: 8"),
+                "extensions": extensions,
             }
             operations.append(op)
     return operations

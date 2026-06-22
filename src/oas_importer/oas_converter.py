@@ -19,6 +19,7 @@ from src.generator_pkg.yaml_output import RawNumericValue, OASDumper, SafeLoader
 from .oas_parser import OASParser, OperationInfo
 from .schema_flattener import SchemaFlattener, FlatRow
 from .template_writer import TemplateExcelWriter
+from src.swift_services import ensure_swift_server_rows_in_workbook
 
 
 
@@ -146,7 +147,11 @@ class OASToExcelConverter:
         self.log(f"Generated {len(generated_files)} endpoint files.")
         return generated_files
     
-    def generate_index_file(self, output_path: str) -> str:
+    def generate_index_file(
+        self,
+        output_path: str,
+        info_overrides: Optional[Dict[str, Any]] = None,
+    ) -> str:
         """
         Generate the $index.xlsx file with API metadata.
         
@@ -169,7 +174,7 @@ class OASToExcelConverter:
         writer.load_template()
         
         # 1. General Description sheet
-        self._fill_general_description(writer)
+        self._fill_general_description(writer, info_overrides=info_overrides)
         
         # 2. Paths sheet
         self._fill_paths_sheet(writer)
@@ -193,7 +198,11 @@ class OASToExcelConverter:
         self.log(f"Generated Master Index: {output_path}")
         return output_path
     
-    def _fill_general_description(self, writer: TemplateExcelWriter) -> None:
+    def _fill_general_description(
+        self,
+        writer: TemplateExcelWriter,
+        info_overrides: Optional[Dict[str, Any]] = None,
+    ) -> None:
         """
         Fill General Description sheet with API info.
         
@@ -205,10 +214,14 @@ class OASToExcelConverter:
         Row 6: info contact url | value (B)
         Row 7: servers url | value (B) | servers description | value (D)
         Row 8: servers url | value (B) | servers description | value (D)
-        Row 9: release | value (B)
-        Row 10: filename pattern | value (B)
+        Row 9: swift servers url | value (B) | servers description | value (D)
+        Row 10: swift servers url | value (B) | servers description | value (D)
+        Row 11: release | value (B)
+        Row 12: filename pattern | value (B)
         """
         info = self.parser.get_info()
+        if info_overrides:
+            info.update({k: v for k, v in info_overrides.items() if v is not None})
         ws = writer.workbook['General Description']
         
         from .template_writer import DEFAULT_ALIGNMENT
@@ -240,12 +253,17 @@ class OASToExcelConverter:
             row = 7 + idx  # Row 7 for first server, row 8 for second
             set_cell(row, 2, server.get('url', ''))  # Col B: url
             set_cell(row, 4, server.get('description', ''))  # Col D: description
-        
-        # Row 9: release
-        set_cell(9, 2, info.get('release', ''))
-        
 
+        ensure_swift_server_rows_in_workbook(
+            writer.workbook,
+            info.get("swift_servers", []),
+        )
         
+        # Row 11: release
+        set_cell(11, 2, info.get('release', ''))
+
+        # Row 12: filename pattern
+        set_cell(12, 2, info.get('filename_pattern', ''))
 
     
     def _fill_paths_sheet(self, writer: TemplateExcelWriter) -> None:
@@ -513,6 +531,7 @@ class OASToExcelConverter:
                     
                 row_idx += 1
             
+        writer.add_schema_name_hyperlinks()
         self._autofit_columns(ws, max_cols=2)
 
 

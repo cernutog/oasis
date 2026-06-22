@@ -1,0 +1,36 @@
+{
+  "releases": [
+    {
+      "version": "3.0.20",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.20.json"
+    },
+    {
+      "version": "3.0.19",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.19.json"
+    },
+    {
+      "version": "3.0.18",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.18.json"
+    },
+    {
+      "version": "3.0.17",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.17.json"
+    },
+    {
+      "version": "3.0.16",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.16.json"
+    },
+    {
+      "version": "3.0.15",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.15.json"
+    },
+    {
+      "version": "3.0.14",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.14.json"
+    },
+    {
+      "version": "3.0.13",
+      "manifest_url": "https://raw.githubusercontent.com/cernutog/oasis/gh-pages/releases/v3.0.13.json"
+    }
+  ]
+}

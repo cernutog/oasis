@@ -8,6 +8,26 @@ from pathlib import Path
 # Standard relative imports for package structure
 from . import excel_parser as parser
 from .generator import OASGenerator
+from .preferences import (
+    DEFAULT_GENERATION_MODE,
+    GENERATION_MODE_STANDARD,
+    normalize_generation_mode,
+    normalize_x_info_options,
+)
+
+
+INDEX_FILENAME = "$index.xlsx"
+LEGACY_INDEX_FILENAME = "$index.xlsm"
+REQUIRED_INDEX_SHEETS = (
+    "General Description",
+    "Tags",
+    "Paths",
+    "Parameters",
+    "Headers",
+    "Schemas",
+    "Responses",
+)
+REQUIRED_OPERATION_SHEETS = ("Parameters",)
 
 
 def find_best_match_file(target, directory, files_list):
@@ -15,11 +35,108 @@ def find_best_match_file(target, directory, files_list):
     return parser.find_best_match_file(target, directory, files_list)
 
 
+def _excel_sheet_names(path):
+    xl = None
+    try:
+        xl = pd.ExcelFile(path)
+        return set(xl.sheet_names)
+    finally:
+        if xl is not None:
+            xl.close()
+
+
+def _format_missing_sheets_error(template_path, missing_sheets):
+    return [
+        "ERROR: Invalid converted template structure.",
+        f"Template: {template_path}",
+        f"Missing sheet(s): {', '.join(sorted(missing_sheets))}",
+        "Please make sure the selected folder contains a complete set of valid templates.",
+    ]
+
+
+def get_converted_template_validation_errors(base_dir):
+    """Return blocking validation errors for an OAS Generation input folder."""
+    base_path = Path(base_dir)
+    index_path = base_path / INDEX_FILENAME
+    legacy_index_path = base_path / LEGACY_INDEX_FILENAME
+
+    if not index_path.exists():
+        errors = ["ERROR: OAS Generation requires valid templates with $index.xlsx."]
+        if legacy_index_path.exists():
+            errors.append("The selected folder appears to contain legacy templates ($index.xlsm).")
+        errors.append("Please select a folder containing a complete set of valid templates.")
+        return errors
+
+    try:
+        index_sheet_names = _excel_sheet_names(index_path)
+    except Exception as exc:
+        return [
+            "ERROR: Invalid converted template structure.",
+            f"Template: {index_path}",
+            f"Cannot read workbook: {exc}",
+            "Please make sure the selected folder contains a complete set of valid templates.",
+        ]
+
+    missing_index_sheets = [name for name in REQUIRED_INDEX_SHEETS if name not in index_sheet_names]
+    if missing_index_sheets:
+        return _format_missing_sheets_error(index_path, missing_index_sheets)
+
+    df_paths = parser.load_excel_sheet(index_path, "Paths")
+    paths_list = parser.parse_paths_index(df_paths)
+    endpoint_files = sorted(
+        {
+            str(op.get("file")).strip()
+            for op in paths_list
+            if op.get("file") is not None and not pd.isna(op.get("file")) and str(op.get("file")).strip()
+        }
+    )
+
+    errors = []
+    for raw_file_name in endpoint_files:
+        endpoint_path = base_path / raw_file_name
+        if not endpoint_path.exists():
+            errors.extend(
+                [
+                    "ERROR: Invalid converted template structure.",
+                    f"Template: {index_path}",
+                    f"Missing endpoint file: {raw_file_name}",
+                    "Please make sure the selected folder contains a complete set of valid templates.",
+                ]
+            )
+            continue
+
+        try:
+            endpoint_sheet_names = _excel_sheet_names(endpoint_path)
+        except Exception as exc:
+            errors.extend(
+                [
+                    "ERROR: Invalid converted template structure.",
+                    f"Template: {endpoint_path}",
+                    f"Cannot read workbook: {exc}",
+                    "Please make sure the selected folder contains a complete set of valid templates.",
+                ]
+            )
+            continue
+
+        missing_endpoint_sheets = [
+            name for name in REQUIRED_OPERATION_SHEETS if name not in endpoint_sheet_names
+        ]
+        has_response_sheet = any(name.isdigit() for name in endpoint_sheet_names)
+        if not has_response_sheet:
+            missing_endpoint_sheets.append("<response sheet>")
+        if missing_endpoint_sheets:
+            errors.extend(_format_missing_sheets_error(endpoint_path, missing_endpoint_sheets))
+
+    return errors
+
+
 def generate_oas(
     base_dir,
     gen_30=True,
     gen_31=True,
     gen_swift=False,
+    generation_mode=DEFAULT_GENERATION_MODE,
+    x_info_options=None,
     output_dir=None,
     log_callback=print,
 ):
@@ -32,27 +149,25 @@ def generate_oas(
         log_callback(f"Error: Directory not found: {base_dir}")
         return
 
+    validation_errors = get_converted_template_validation_errors(base_dir)
+    if validation_errors:
+        for error in validation_errors:
+            log_callback(error)
+        return
+
+    generation_mode = normalize_generation_mode(generation_mode)
+    x_info_options = normalize_x_info_options(x_info_options)
     log_callback(f"Starting generation in: {base_dir}")
+    log_callback(f"Generation mode: {generation_mode}")
 
     # 1. Setup Paths
-    files_in_dir = os.listdir(base_dir)
-    
-    # Look for $index.xlsx directly (project standard is .xlsx, not .xlsm)
-    index_filename = "$index.xlsx"
-    if index_filename in files_in_dir:
-        index_path = os.path.join(base_dir, index_filename)
-    else:
-        # Fallback to fuzzy match for legacy support
-        index_path = find_best_match_file("$index.xlsx", base_dir, files_in_dir)
-    
-    if not index_path:
-        log_callback("Error: $index.xlsx not found in the specified directory.")
-        return
+    index_path = os.path.join(base_dir, INDEX_FILENAME)
 
     # 2. Parse Master Index
     log_callback(f"Parsing index: {os.path.basename(index_path)}")
     df_info = parser.load_excel_sheet(index_path, "General Description")
     info_data, inline_servers = parser.parse_info(df_info)
+    swift_servers_data = info_data.get("swift_servers", [])
 
     df_tags = parser.load_excel_sheet(index_path, "Tags")
     tags_data = parser.parse_tags(df_tags)
@@ -84,8 +199,8 @@ def generate_oas(
     for raw_file_name in unique_files:
         if not raw_file_name:
             continue
-        full_path = find_best_match_file(raw_file_name, base_dir, files_in_dir)
-        if full_path:
+        full_path = os.path.join(base_dir, raw_file_name)
+        if os.path.exists(full_path):
             # log_callback(f"  Parsing: {os.path.basename(full_path)}")
             op_det = parser.parse_operation_file(full_path)
             if op_det:
@@ -98,6 +213,62 @@ def generate_oas(
         gen_dir = os.path.join(base_dir, "generated")
     else:
         gen_dir = output_dir
+
+    schema_parent_issues = {}
+
+    def collect_schema_parent_issues(generator):
+        for issue in generator.get_schema_parent_issues():
+            key = (
+                issue.get("severity"),
+                issue.get("schema"),
+                issue.get("field"),
+                issue.get("parent"),
+                issue.get("status"),
+            )
+            schema_parent_issues[key] = issue
+
+    def format_schema_parent_issue(issue):
+        severity = issue.get("severity", "WARNING")
+        schema = issue.get("schema", "<schema>")
+        field = issue.get("field", "<field>")
+        parent = issue.get("parent", "<parent>")
+        return (
+            f"[{severity}] {schema}.{field} has a wrong parent ({parent}). "
+            "Fallback applied but correct result is not guaranteed."
+        )
+
+    def log_schema_parent_issue_report():
+        if not schema_parent_issues:
+            return
+
+        issues = sorted(
+            schema_parent_issues.values(),
+            key=lambda item: (
+                item.get("schema", ""),
+                item.get("field", ""),
+                item.get("parent", ""),
+                item.get("severity", ""),
+            ),
+        )
+        log_callback("")
+        log_callback("=== TEMPLATE ISSUES: BAD PARENTS ===")
+        log_callback(f"{len(issues)} wrong parent reference(s) found.")
+        log_callback("+-- ACTION REQUIRED ----------------------------------------+")
+        log_callback("| Fix the Parent column in $index.xlsx, sheet Schemas.      |")
+        log_callback("| Then regenerate the OAS.                                  |")
+        log_callback("+-----------------------------------------------------------+")
+        log_callback("")
+
+        current_schema = None
+        for issue in issues:
+            schema = issue.get("schema", "<schema>")
+            if schema != current_schema:
+                if current_schema is not None:
+                    log_callback("")
+                current_schema = schema
+                log_callback(f"Schema {schema}")
+            log_callback(f"  - {format_schema_parent_issue(issue)}")
+        log_callback("")
 
     # Output Map Directory and Cleanup
     map_dir = os.path.join(gen_dir, ".oasis_excel_maps")
@@ -156,13 +327,18 @@ def generate_oas(
 
     # Prepare Clean Info (Exclude internal fields)
     clean_info = info_data.copy()
-    for internal_key in ["filename_pattern"]:
+    for internal_key in ["filename_pattern", "swift_servers"]:
         clean_info.pop(internal_key, None)
 
     # 4. Generate OAS 3.0
     if gen_30:
         log_callback("Generating OAS 3.0...")
-        generator_30 = OASGenerator(version="3.0.0")
+        generator_30 = OASGenerator(
+            version="3.0.0",
+            generation_mode=generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         generator_30.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_30._record_source("tags", "$index.xlsx", "Tags")
@@ -172,8 +348,6 @@ def generate_oas(
             generator_30.oas["servers"] = servers_data
         if security_req:
             generator_30.oas["security"] = security_req
-
-        generator_30.build_paths(paths_list, operations_details)
 
         # Add Security Schemes to Components
         if security_schemes:
@@ -199,11 +373,17 @@ def generate_oas(
         map_30 = Path(map_dir) / (fname_30 + ".map.json")
         with open(map_30, "w", encoding="utf-8") as f:
             f.write(generator_30.get_source_map_json())
+        collect_schema_parent_issues(generator_30)
 
     # 5. Generate OAS 3.1
     if gen_31:
         log_callback("Generating OAS 3.1...")
-        generator_31 = OASGenerator(version="3.1.0")
+        generator_31 = OASGenerator(
+            version="3.1.0",
+            generation_mode=generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         generator_31.build_info(clean_info)
         # Always record tags source - needed for validation warnings even when tags are empty
         generator_31._record_source("tags", "$index.xlsx", "Tags")
@@ -230,12 +410,20 @@ def generate_oas(
         map_31 = Path(map_dir) / (fname_31 + ".map.json")
         with open(map_31, "w", encoding="utf-8") as f:
             f.write(generator_31.get_source_map_json())
+        collect_schema_parent_issues(generator_31)
 
     # 6. Generate SWIFT OAS (Customized)
     if gen_swift:
+        swift_generation_mode = GENERATION_MODE_STANDARD
+
         # SWIFT OAS 3.0
         log_callback("Generating SWIFT OAS 3.0...")
-        sw_gen_30 = OASGenerator(version="3.0.0")
+        sw_gen_30 = OASGenerator(
+            version="3.0.0",
+            generation_mode=swift_generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         sw_gen_30.build_info(clean_info)
         if tags_data:
             sw_gen_30.oas["tags"] = tags_data
@@ -244,7 +432,6 @@ def generate_oas(
         if security_req:
             sw_gen_30.oas["security"] = security_req
 
-        sw_gen_30.build_paths(paths_list, operations_details)
         if security_schemes:
             if "securitySchemes" not in components_data:
                 components_data["securitySchemes"] = {}
@@ -255,7 +442,10 @@ def generate_oas(
 
         # APPLY CUSTOMIZATION
         # Pass the filename of the corresponding standard OAS
-        sw_gen_30.apply_swift_customization(source_filename=build_filename("3.0"))
+        sw_gen_30.apply_swift_customization(
+            source_filename=build_filename("3.0"),
+            swift_servers=swift_servers_data,
+        )
 
         # Ensure OAS output folder exists
         os.makedirs(gen_dir, exist_ok=True)
@@ -269,10 +459,16 @@ def generate_oas(
         map_sw_30 = Path(map_dir) / (out_sw_30.name + ".map.json")
         with open(map_sw_30, "w", encoding="utf-8") as f:
             f.write(sw_gen_30.get_source_map_json())
+        collect_schema_parent_issues(sw_gen_30)
 
         # SWIFT OAS 3.1
         log_callback("Generating SWIFT OAS 3.1...")
-        sw_gen_31 = OASGenerator(version="3.1.0")
+        sw_gen_31 = OASGenerator(
+            version="3.1.0",
+            generation_mode=swift_generation_mode,
+            log_callback=log_callback,
+            x_info_options=x_info_options,
+        )
         sw_gen_31.build_info(clean_info)
         if tags_data:
             sw_gen_31.oas["tags"] = tags_data
@@ -286,7 +482,10 @@ def generate_oas(
 
         # APPLY CUSTOMIZATION
         # Pass the filename of the corresponding standard OAS
-        sw_gen_31.apply_swift_customization(source_filename=build_filename("3.1"))
+        sw_gen_31.apply_swift_customization(
+            source_filename=build_filename("3.1"),
+            swift_servers=swift_servers_data,
+        )
 
         out_sw_31 = Path(gen_dir) / build_filename("3.1", "SWIFT")
         log_callback(f"Writing OAS 3.1 (SWIFT) to: {out_sw_31.as_posix()}")
@@ -297,7 +496,9 @@ def generate_oas(
         map_sw_31 = Path(map_dir) / (out_sw_31.name + ".map.json")
         with open(map_sw_31, "w", encoding="utf-8") as f:
             f.write(sw_gen_31.get_source_map_json())
+        collect_schema_parent_issues(sw_gen_31)
 
+    log_schema_parent_issue_report()
     log_callback("\n=== OAS GENERATION COMPLETED ===\n")
 
 

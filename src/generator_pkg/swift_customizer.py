@@ -7,9 +7,29 @@ Contains functions to apply SWIFT-specific customizations to OpenAPI specificati
 import copy
 
 
-def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
+def _remove_response_content_examples(response: dict) -> None:
+    if not isinstance(response, dict):
+        return
+
+    content = response.get("content")
+    if not isinstance(content, dict):
+        return
+
+    for media_obj in content.values():
+        if not isinstance(media_obj, dict):
+            continue
+        media_obj.pop("example", None)
+        media_obj.pop("examples", None)
+
+
+def apply_swift_customization(
+    oas: dict,
+    source_filename: str = None,
+    include_x_info_customization: bool = True,
+    swift_servers: list[dict] | None = None,
+) -> None:
     """
-    Applies SWIFT-specific customizations (Hardcoded as per exception).
+    Applies SWIFT-specific customizations.
     
     :param oas: The OAS dictionary to modify in-place.
     :param source_filename: Optional filename of the base OAS file to reference in description.
@@ -18,22 +38,14 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
     if "info" not in oas:
         oas["info"] = {}
     
-    oas["info"]["x-info-customization"] = "SWIFT"
+    if include_x_info_customization:
+        oas["info"]["x-info-customization"] = "SWIFT"
     
     # If source_filename was passed, we might want to log it or ignore it based on request.
     # User specifically asked to REMOVE "Based on <filename>".
 
     # 1. SERVERS
-    oas["servers"] = [
-        {
-            "url": "https://api.swiftnet.sipn.swift.com/ebacl-fpad/v1",
-            "description": "Live environment",
-        },
-        {
-            "url": "https://api-test.swiftnet.sipn.swift.com/ebacl-fpad-pilot/v1",
-            "description": "Test environment",
-        },
-    ]
+    oas["servers"] = copy.deepcopy(swift_servers or [])
 
     # 2. GLOBAL SECURITY
     oas["security"] = [{"oauthBearerToken": []}]
@@ -123,6 +135,7 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
             }
 
     # 5. PATHS MODIFICATIONS
+    component_responses_used_as_400 = set()
     if "paths" in oas:
         for path_url, methods in oas["paths"].items():
             for method, op in methods.items():
@@ -144,6 +157,7 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
                                 "responses" in comps
                                 and ref_name in comps["responses"]
                             ):
+                                component_responses_used_as_400.add(ref_name)
                                 resp = copy.deepcopy(comps["responses"][ref_name])
                                 op["responses"][code] = resp
 
@@ -168,11 +182,7 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
                                         {"$ref": "#/components/schemas/Errors"},
                                     ]
                                 }
-                                # Remove examples from 400 responses (SWIFT requirement)
-                                if "example" in resp["content"]["application/json"]:
-                                    del resp["content"]["application/json"]["example"]
-                                if "examples" in resp["content"]["application/json"]:
-                                    del resp["content"]["application/json"]["examples"]
+                            _remove_response_content_examples(resp)
 
                         # 5.3 Inject Headers to Responses (X-Request-ID)
                         if "$ref" not in resp:
@@ -181,6 +191,9 @@ def apply_swift_customization(oas: dict, source_filename: str = None) -> None:
                             resp["headers"]["X-Request-ID"] = {
                                 "$ref": "#/components/headers/X-Request-ID"
                             }
+
+    for response_name in component_responses_used_as_400:
+        _remove_response_content_examples(comps.get("responses", {}).get(response_name))
 
     # 6. CLEANUP (Remove x-sandbox extensions)
     clean_sandbox_extensions(oas)

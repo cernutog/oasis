@@ -67,6 +67,11 @@ repro_*.py
 reproduce_*.py
 verify_*.py
 test_*.py
+!tests/regression/test_api_designer_foundation.py
+!tests/regression/test_api_designer_example_workspace.py
+!tests/regression/test_api_designer_oas_import.py
+!tests/regression/test_generation_order.py
+!tests/regression/test_legacy_example_semantics.py
 
 # Local test/debug helpers (do not commit)
 tests/_check*.py

@@ -1,6 +1,7 @@
 import webbrowser
 import shutil
 import difflib
+import subprocess
 try:
     import win32com.client
     HAS_COM = True
@@ -16,6 +17,8 @@ import os
 import sys
 import json
 import tempfile
+import queue
+from urllib.parse import parse_qs, urlparse
 
 # Conditional imports to support both development and PyInstaller frozen environments
 try:
@@ -24,37 +27,165 @@ try:
     from .linter import SpectralRunner
     from .charts import SemanticPieChart
     from .redoc_gen import RedocGenerator
-    from .preferences import PreferencesManager
+    from .preferences import (
+        DEFAULT_GENERATION_MODE,
+        GENERATION_MODES,
+        PreferencesManager,
+        normalize_generation_mode,
+        x_info_options_from_preferences,
+    )
     from .preferences_dialog import PreferencesDialog
-    from .doc_viewer import DockedDocViewer
+    from .doc_viewer import DockedDocViewer, get_window_visible_bounds, set_window_visible_bounds
     from .version import VERSION, FULL_VERSION
+    from .update_checker import check_for_update, load_update_release_index
     from .splash_screen import SplashScreen
     from .oas_importer.oas_converter import OASToExcelConverter
     from .oas_importer.oas_comparator import OASComparator
     from .legacy_converter import LegacyConverter
-    from .legacy_converter_dialog import LegacyConverterDialog
+    from .legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
+    from .conversion_metadata_preferences import load_metadata_preferences, save_metadata_preferences
+    from .swift_services import (
+        get_swift_service_servers,
+        has_swift_server_rows,
+        normalize_swift_services,
+        update_index_swift_servers,
+    )
+    from .legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from .legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from .oas_diff_dialog import OASDiffDialog
+    from .api_designer.designer_tab import ApiDesignerTab
+    from .oas_output_archive import (
+        archive_existing_oas_files,
+        build_expected_oas_filenames,
+        delete_existing_oas_files,
+        describe_archive_destinations,
+        filter_previous_oas_files,
+        list_existing_oas_files,
+    )
 except ImportError:
     # Fall back to absolute imports (works when frozen or run directly)
     import main as main_script
     from linter import SpectralRunner
     from charts import SemanticPieChart
     from redoc_gen import RedocGenerator
-    from preferences import PreferencesManager
+    from preferences import (
+        DEFAULT_GENERATION_MODE,
+        GENERATION_MODES,
+        PreferencesManager,
+        normalize_generation_mode,
+        x_info_options_from_preferences,
+    )
     from preferences_dialog import PreferencesDialog
-    from doc_viewer import DockedDocViewer
+    from doc_viewer import DockedDocViewer, get_window_visible_bounds, set_window_visible_bounds
     from version import VERSION, FULL_VERSION
+    from update_checker import check_for_update, load_update_release_index
     from splash_screen import SplashScreen
     from oas_importer.oas_converter import OASToExcelConverter
     from oas_importer.oas_comparator import OASComparator
     from legacy_converter import LegacyConverter
-    from legacy_converter_dialog import LegacyConverterDialog
+    from legacy_converter_dialog import LegacyConversionMetadataDialog, LegacyConverterDialog
+    from conversion_metadata_preferences import load_metadata_preferences, save_metadata_preferences
+    from swift_services import (
+        get_swift_service_servers,
+        has_swift_server_rows,
+        normalize_swift_services,
+        update_index_swift_servers,
+    )
+    from legacy_example_tracer_dialog import LegacyExampleTracerDialog
     from legacy_schema_tracer_dialog import LegacySchemaTracerDialog
     from oas_diff_dialog import OASDiffDialog
+    from api_designer.designer_tab import ApiDesignerTab
+    from oas_output_archive import (
+        archive_existing_oas_files,
+        build_expected_oas_filenames,
+        delete_existing_oas_files,
+        describe_archive_destinations,
+        filter_previous_oas_files,
+        list_existing_oas_files,
+    )
 
 from chlorophyll import CodeView
 import pygments.lexers
+
+
+def _clamped_center_geometry(
+    dialog_width,
+    dialog_height,
+    parent_x,
+    parent_y,
+    parent_width,
+    parent_height,
+    screen_width,
+    screen_height,
+):
+    if parent_width <= 1 or parent_height <= 1:
+        x = (screen_width // 2) - (dialog_width // 2)
+        y = (screen_height // 2) - (dialog_height // 2)
+    else:
+        x = parent_x + (parent_width // 2) - (dialog_width // 2)
+        y = parent_y + (parent_height // 2) - (dialog_height // 2)
+    max_x = max(screen_width - dialog_width, 0)
+    max_y = max(screen_height - dialog_height, 0)
+    x = min(max(int(x), 0), max_x)
+    y = min(max(int(y), 0), max_y)
+    return f"{dialog_width}x{dialog_height}+{x}+{y}"
+
+
+def _browser_safe_external_url(url):
+    """Prefer embedded web URLs when external links use app-specific protocols."""
+    text = str(url or "").strip()
+    parsed = urlparse(text)
+    if parsed.scheme.lower() == "msteams":
+        params = parse_qs(parsed.query)
+        for key in ("webUrl", "url"):
+            values = params.get(key)
+            if values:
+                candidate = str(values[0] or "").strip()
+                if candidate.startswith(("https://", "http://")):
+                    return candidate
+    return text
+
+
+def _windows_browser_executables():
+    """Return installed browser executables that bypass Windows protocol associations."""
+    candidates = []
+    for env_name, relative_path in (
+        ("ProgramFiles", os.path.join("Microsoft", "Edge", "Application", "msedge.exe")),
+        ("ProgramFiles(x86)", os.path.join("Microsoft", "Edge", "Application", "msedge.exe")),
+        ("ProgramFiles", os.path.join("Google", "Chrome", "Application", "chrome.exe")),
+        ("ProgramFiles(x86)", os.path.join("Google", "Chrome", "Application", "chrome.exe")),
+    ):
+        base_path = os.environ.get(env_name)
+        if base_path:
+            candidates.append(os.path.join(base_path, relative_path))
+    for executable_name in ("msedge", "chrome", "chromium"):
+        executable_path = shutil.which(executable_name)
+        if executable_path:
+            candidates.append(executable_path)
+
+    seen = set()
+    existing = []
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.abspath(candidate))
+        if normalized in seen or not os.path.exists(candidate):
+            continue
+        seen.add(normalized)
+        existing.append(candidate)
+    return existing
+
+
+def _open_announcement_url(url):
+    """Open announcement links in a browser, avoiding Teams desktop protocol capture."""
+    safe_url = _browser_safe_external_url(url)
+    if sys.platform.startswith("win") and safe_url.startswith(("https://", "http://")):
+        for browser_path in _windows_browser_executables():
+            try:
+                subprocess.Popen([browser_path, safe_url])
+                return
+            except OSError:
+                continue
+    webbrowser.open_new_tab(safe_url)
+
 
 # Set Theme
 # Set Theme - HANDLED IN MAIN.PY
@@ -231,6 +362,580 @@ class OASErrorDialog(ctk.CTkToplevel):
             self.on_close_callback()
         self.destroy()
 
+
+class OASOutputFolderDialog(ctk.CTkToplevel):
+    def __init__(self, parent, folder_path, file_count):
+        super().__init__(parent)
+        self.folder_path = folder_path
+        self.file_count = file_count
+        self.title("OAS Output Folder Not Empty")
+        self.geometry("620x260")
+        self.resizable(False, False)
+        self.choice = "cancel"
+
+        self.update_idletasks()
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() // 2) - 310
+            y = parent.winfo_y() + (parent.winfo_height() // 2) - 130
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except Exception:
+            pass
+
+        self.transient(parent)
+        self.grab_set()
+        self.after(200, self._set_icon)
+        self._build_ui()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self):
+        main_container = ctk.CTkFrame(self, fg_color="transparent")
+        main_container.pack(fill="both", expand=True, padx=20, pady=(0, 10))
+
+        content_frame = ctk.CTkFrame(main_container, fg_color="transparent")
+        content_frame.pack(fill="x", expand=True)
+
+        ctk.CTkLabel(
+            content_frame,
+            text="\u26A0",
+            text_color="#FBC02D",
+            font=ctk.CTkFont(size=52),
+        ).pack(side="left", padx=(10, 20))
+
+        msg_frame = ctk.CTkFrame(content_frame, fg_color="transparent")
+        msg_frame.pack(side="left", fill="both", expand=True)
+
+        ctk.CTkLabel(
+            msg_frame,
+            text=f"The OAS Output Folder already contains {self.file_count} OAS file(s).",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=("#000000", "#FFFFFF"),
+            anchor="w",
+            justify="left",
+        ).pack(fill="x")
+
+        path_label = ctk.CTkLabel(
+            msg_frame,
+            text=self.folder_path,
+            font=ctk.CTkFont(size=11),
+            text_color="#0A809E",
+            cursor="hand2",
+            anchor="w",
+            justify="left",
+        )
+        path_label.pack(fill="x", pady=(2, 5))
+        path_label.bind("<Button-1>", lambda _event: self._open_folder())
+
+        ctk.CTkLabel(
+            msg_frame,
+            text="What would you like to do before generating the new OAS files?",
+            font=ctk.CTkFont(size=12),
+            text_color="gray",
+            anchor="w",
+            justify="left",
+        ).pack(fill="x")
+
+        btn_container = ctk.CTkFrame(main_container, fg_color="transparent")
+        btn_container.pack(fill="x", side="bottom", pady=(0, 5))
+
+        row1 = ctk.CTkFrame(btn_container, fg_color="transparent")
+        row1.pack(side="top", pady=(0, 10))
+
+        ctk.CTkButton(
+            row1,
+            text="Keep Files",
+            width=120,
+            height=32,
+            command=lambda: self._set_choice("keep"),
+        ).pack(side="left", padx=5)
+        ctk.CTkButton(
+            row1,
+            text="Archive Files",
+            width=130,
+            height=32,
+            command=lambda: self._set_choice("archive"),
+        ).pack(side="left", padx=5)
+        ctk.CTkButton(
+            row1,
+            text="Delete Files",
+            width=120,
+            height=32,
+            fg_color="#D32F2F",
+            hover_color="#B71C1C",
+            command=lambda: self._set_choice("delete"),
+        ).pack(side="left", padx=5)
+
+        ctk.CTkButton(
+            btn_container,
+            text="Cancel",
+            width=120,
+            height=32,
+            command=lambda: self._set_choice("cancel"),
+        ).pack(side="top", pady=(0, 5))
+
+    def _set_choice(self, choice):
+        self.choice = choice
+        self.destroy()
+
+    def _open_folder(self):
+        if self.folder_path and os.path.exists(self.folder_path):
+            os.startfile(self.folder_path)
+
+
+class SwiftTemplateUpdateDialog(ctk.CTkToplevel):
+    def __init__(self, parent, swift_services):
+        super().__init__(parent)
+        self.swift_services = normalize_swift_services(swift_services)
+        self.result = None
+        self.title("Update Template for SWIFT")
+        self.geometry("620x260")
+        self.resizable(False, False)
+
+        self.update_idletasks()
+        try:
+            x = parent.winfo_x() + (parent.winfo_width() // 2) - 310
+            y = parent.winfo_y() + (parent.winfo_height() // 2) - 130
+            self.geometry(f"+{int(x)}+{int(y)}")
+        except Exception:
+            pass
+
+        self.transient(parent)
+        self.grab_set()
+        self.after(200, self._set_icon)
+        self._build_ui()
+        self.protocol("WM_DELETE_WINDOW", self._on_cancel)
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=20, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text="The selected template does not contain SWIFT server rows.",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        ctk.CTkLabel(
+            container,
+            text="Choose the service to write into $index.xlsx. Leave it empty to add the rows without server values.",
+            font=ctk.CTkFont(size=13),
+            justify="left",
+            wraplength=560,
+        ).pack(anchor="w", pady=(8, 18))
+
+        row = ctk.CTkFrame(container, fg_color="transparent")
+        row.pack(fill="x", pady=(0, 20))
+        ctk.CTkLabel(row, text="Service:", width=120, anchor="w").pack(side="left")
+        self.cbo_service = ctk.CTkComboBox(
+            row,
+            values=[""] + sorted(self.swift_services.keys()),
+            button_color="#0A809E",
+        )
+        self.cbo_service.pack(side="left", fill="x", expand=True)
+        self.cbo_service.set("")
+
+        buttons = ctk.CTkFrame(container, fg_color="transparent")
+        buttons.pack(fill="x", side="bottom")
+        ctk.CTkButton(
+            buttons,
+            text="Cancel",
+            width=110,
+            fg_color="gray50",
+            hover_color="gray40",
+            command=self._on_cancel,
+        ).pack(side="right", padx=(10, 0))
+        ctk.CTkButton(
+            buttons,
+            text="Update Template",
+            width=150,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._on_confirm,
+        ).pack(side="right")
+
+    def _on_confirm(self):
+        service_name = self.cbo_service.get().strip()
+        self.result = {
+            "swift_service": service_name,
+            "swift_servers": get_swift_service_servers(self.swift_services, service_name),
+        }
+        configured_servers = self.swift_services.get(service_name, {}).get("servers", [])
+        if len(configured_servers) > 2:
+            self.result["swift_server_warning"] = (
+                f"WARNING: Service '{service_name}' has {len(configured_servers)} configured servers; "
+                "only the first 2 were written to the template."
+            )
+        self.destroy()
+
+    def _on_cancel(self):
+        self.result = None
+        self.destroy()
+
+
+class OASWhatsNewDialog(ctk.CTkToplevel):
+    def __init__(self, parent, releases, on_close=None):
+        super().__init__(parent)
+        self._on_close_callback = on_close
+        self.title("What's New in OASIS")
+        self.resizable(True, True)
+        self.withdraw()
+
+        self.transient(parent)
+        self.protocol("WM_DELETE_WINDOW", self._close)
+        self.after(200, self._set_icon)
+        self._build_ui(releases)
+        self._show_centered(parent)
+
+    def _show_centered(self, parent):
+        try:
+            parent.update_idletasks()
+            self.update_idletasks()
+            geometry = _clamped_center_geometry(
+                dialog_width=max(self.winfo_reqwidth(), 620),
+                dialog_height=max(self.winfo_reqheight(), 430),
+                parent_x=parent.winfo_rootx(),
+                parent_y=parent.winfo_rooty(),
+                parent_width=parent.winfo_width(),
+                parent_height=parent.winfo_height(),
+                screen_width=self.winfo_screenwidth(),
+                screen_height=self.winfo_screenheight(),
+            )
+            self.geometry(geometry)
+        except Exception:
+            self.geometry("620x430")
+        self.deiconify()
+        self.update_idletasks()
+        self.grab_set()
+        self.focus_set()
+
+    def _close(self):
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        try:
+            callback = self._on_close_callback
+        except Exception:
+            callback = None
+        self.destroy()
+        if callback:
+            callback()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self, releases):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=22, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text="What's new",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        scroll = ctk.CTkScrollableFrame(container, fg_color="#F5F5F5")
+        scroll.pack(fill="both", expand=True, pady=(14, 14))
+
+        for release in reversed(releases):
+            header = release.version
+            if release.date:
+                header = f"{header} - {release.date}"
+            if release.title:
+                header = f"{header} - {release.title}"
+
+            ctk.CTkLabel(
+                scroll,
+                text=header,
+                font=ctk.CTkFont(size=14, weight="bold"),
+                text_color="#0A809E",
+                anchor="w",
+            ).pack(fill="x", padx=8, pady=(8, 2))
+
+            notes = release.release_notes or "No release notes available."
+            ctk.CTkLabel(
+                scroll,
+                text=notes,
+                font=ctk.CTkFont(size=12),
+                justify="left",
+                anchor="w",
+                wraplength=540,
+            ).pack(fill="x", padx=8, pady=(0, 10))
+
+        ctk.CTkButton(
+            container,
+            text="Close",
+            width=110,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._close,
+        ).pack(side="right")
+
+
+class OASUpdateAvailableDialog(ctk.CTkToplevel):
+    def __init__(
+        self,
+        parent,
+        current_version,
+        latest_version,
+        download_url,
+        release_notes,
+        announcement_url="",
+        whats_new_callback=None,
+    ):
+        super().__init__(parent)
+        self.download_url = download_url
+        self.announcement_url = announcement_url
+        self.whats_new_callback = whats_new_callback
+        self.title("OASIS Update Available")
+        self.resizable(False, False)
+        self.withdraw()
+
+        self.transient(parent)
+        self.after(200, self._set_icon)
+        self._build_ui(current_version, latest_version, release_notes)
+        self._show_centered(parent)
+
+    def _show_centered(self, parent):
+        try:
+            parent.update_idletasks()
+            self.update_idletasks()
+            width = max(self.winfo_reqwidth(), self.winfo_width(), 520)
+            height = max(self.winfo_reqheight(), self.winfo_height(), 280)
+            geometry = _clamped_center_geometry(
+                dialog_width=width,
+                dialog_height=height,
+                parent_x=parent.winfo_rootx(),
+                parent_y=parent.winfo_rooty(),
+                parent_width=parent.winfo_width(),
+                parent_height=parent.winfo_height(),
+                screen_width=self.winfo_screenwidth(),
+                screen_height=self.winfo_screenheight(),
+            )
+            self.geometry(geometry)
+            self.deiconify()
+            self.update_idletasks()
+            self.lift(parent)
+            self.grab_set()
+            self.focus_set()
+        except Exception:
+            self.geometry(
+                _clamped_center_geometry(
+                    dialog_width=520,
+                    dialog_height=280,
+                    parent_x=0,
+                    parent_y=0,
+                    parent_width=1,
+                    parent_height=1,
+                    screen_width=self.winfo_screenwidth(),
+                    screen_height=self.winfo_screenheight(),
+                )
+            )
+            self.deiconify()
+            self.update_idletasks()
+            self.lift()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _build_ui(self, current_version, latest_version, release_notes):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=22, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text="A new OASIS version is available",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color="#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        ctk.CTkLabel(
+            container,
+            text=f"Current version: {current_version}\nAvailable version: {latest_version}",
+            font=ctk.CTkFont(size=13),
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(14, 8))
+
+        if self.whats_new_callback:
+            notes = "Open the download page to get the latest executable. Use What's New to review release details."
+        else:
+            notes = release_notes.strip() if release_notes else "Open the download page to get the latest executable."
+        ctk.CTkLabel(
+            container,
+            text=notes,
+            font=ctk.CTkFont(size=12),
+            wraplength=470,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(0, 18))
+
+        buttons = ctk.CTkFrame(container, fg_color="transparent")
+        buttons.pack(fill="x", side="bottom")
+
+        ctk.CTkButton(
+            buttons,
+            text="Later",
+            width=110,
+            fg_color="#6C757D",
+            hover_color="#5A6268",
+            command=self.destroy,
+        ).pack(side="right", padx=(10, 0))
+
+        ctk.CTkButton(
+            buttons,
+            text="Open Download Page",
+            width=170,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            state="normal" if self.download_url else "disabled",
+            command=self._open_download_page,
+        ).pack(side="right")
+
+        if self.announcement_url:
+            ctk.CTkButton(
+                buttons,
+                text="Open Announcement",
+                width=160,
+                fg_color="#0A809E",
+                hover_color="#076075",
+                command=self._open_announcement,
+            ).pack(side="right", padx=(0, 10))
+
+        if self.whats_new_callback:
+            ctk.CTkButton(
+                buttons,
+                text="What's New",
+                width=120,
+                fg_color="#0A809E",
+                hover_color="#076075",
+                command=self._open_whats_new,
+            ).pack(side="right", padx=(0, 10))
+
+    def _open_download_page(self):
+        if self.download_url:
+            webbrowser.open_new_tab(self.download_url)
+        self.destroy()
+
+    def _open_announcement(self):
+        if self.announcement_url:
+            _open_announcement_url(self.announcement_url)
+
+    def _open_whats_new(self):
+        if self.whats_new_callback:
+            self.whats_new_callback(self)
+
+
+class OASUpdateMessageDialog(ctk.CTkToplevel):
+    def __init__(self, parent, title, heading, message, is_error=False):
+        super().__init__(parent)
+        self.title(title)
+        self.resizable(False, False)
+        self.withdraw()
+        self.transient(parent)
+        self.after(200, self._set_icon)
+        self._build_ui(heading, message, is_error)
+        self._show_centered(parent)
+
+    def _show_centered(self, parent):
+        try:
+            parent.update_idletasks()
+            self.update_idletasks()
+            width = max(self.winfo_reqwidth(), self.winfo_width(), 420)
+            height = max(self.winfo_reqheight(), self.winfo_height(), 190)
+            geometry = _clamped_center_geometry(
+                dialog_width=width,
+                dialog_height=height,
+                parent_x=parent.winfo_rootx(),
+                parent_y=parent.winfo_rooty(),
+                parent_width=parent.winfo_width(),
+                parent_height=parent.winfo_height(),
+                screen_width=self.winfo_screenwidth(),
+                screen_height=self.winfo_screenheight(),
+            )
+            self.geometry(geometry)
+        except Exception:
+            self.geometry("420x190")
+        self.deiconify()
+        self.update_idletasks()
+        self.lift(parent)
+        self.grab_set()
+        self.focus_set()
+
+    def _set_icon(self):
+        try:
+            icon_path = resource_path("icon.ico")
+            if os.path.exists(icon_path):
+                self.iconbitmap(icon_path)
+        except Exception:
+            pass
+
+    def _close(self):
+        try:
+            self.grab_release()
+        except Exception:
+            pass
+        self.destroy()
+
+    def _build_ui(self, heading, message, is_error):
+        container = ctk.CTkFrame(self, fg_color="transparent")
+        container.pack(fill="both", expand=True, padx=22, pady=20)
+
+        ctk.CTkLabel(
+            container,
+            text=heading,
+            font=ctk.CTkFont(size=16, weight="bold"),
+            text_color="#D83B3B" if is_error else "#0A809E",
+            anchor="w",
+        ).pack(fill="x")
+
+        ctk.CTkLabel(
+            container,
+            text=message,
+            font=ctk.CTkFont(size=12),
+            wraplength=370,
+            justify="left",
+            anchor="w",
+        ).pack(fill="x", pady=(14, 20))
+
+        ctk.CTkButton(
+            container,
+            text="OK",
+            width=110,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            command=self._close,
+        ).pack(side="right")
+
 import customtkinter as ctk
 from customtkinter import ThemeManager  # REQUIRED FOR DIRECT OVERRIDE
 import tkinter as tk
@@ -287,6 +992,7 @@ class OASGenApp(ctk.CTk):
 
         # Initialize Preferences Manager
         self.prefs_manager = PreferencesManager()
+        self._designer_enabled = bool(self.prefs_manager.get("enable_api_designer", False))
         self.log_window = None # Init before logging
         self.log_history = []
         
@@ -324,6 +1030,15 @@ class OASGenApp(ctk.CTk):
         self.tabview.grid(row=1, column=0, sticky="nsew", padx=20, pady=10)
 
         # Define Tabs Order
+        self.tab_designer = None
+        self.designer_tab = None
+        if self._designer_enabled:
+            self.tab_designer = self.tabview.add("Designer")
+            self.designer_tab = ApiDesignerTab(
+                self.tab_designer,
+                self.prefs_manager,
+                status_callback=self.log_app,
+            )
         self.tab_gen = self.tabview.add("OAS Generation")
         self.tab_val = self.tabview.add("Validation")
         
@@ -408,6 +1123,9 @@ class OASGenApp(ctk.CTk):
         self.var_31 = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_31", True))
         self.var_30 = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_30", True))
         self.var_swift = ctk.BooleanVar(value=self.prefs_manager.get("gen_oas_swift", False))
+        self.var_generation_mode = ctk.StringVar(
+            value=normalize_generation_mode(self.prefs_manager.get("generation_mode", DEFAULT_GENERATION_MODE))
+        )
 
         # Actions Frame (Row 1 - previously Row 2) - Unified Toolbar with Options
         self.frame_gen_act = ctk.CTkFrame(self.tab_gen, fg_color="transparent")
@@ -427,7 +1145,20 @@ class OASGenApp(ctk.CTk):
         self.chk_swift = ctk.CTkCheckBox(
             self.frame_gen_act, text="OAS SWIFT", variable=self.var_swift
         )
-        self.chk_swift.pack(side="left", padx=(0, 20))
+        self.chk_swift.pack(side="left", padx=(0, 16))
+
+        self.frame_generation_mode = ctk.CTkFrame(self.frame_gen_act, fg_color="transparent")
+        self.frame_generation_mode.pack(side="left", padx=(0, 20))
+        ctk.CTkLabel(self.frame_generation_mode, text="Mode:", font=("Arial", 12)).pack(side="left", padx=(0, 6))
+        self.cbo_generation_mode = ctk.CTkComboBox(
+            self.frame_generation_mode,
+            values=list(GENERATION_MODES),
+            variable=self.var_generation_mode,
+            width=170,
+            button_color="#0A809E",
+            command=self._on_generation_mode_changed,
+        )
+        self.cbo_generation_mode.pack(side="left")
         
         # Generate Button
         self.btn_gen = ctk.CTkButton(
@@ -455,6 +1186,11 @@ class OASGenApp(ctk.CTk):
         # Log Area (Row 2)
         self.log_area = ctk.CTkTextbox(self.tab_gen, font=("Consolas", 11), wrap="word")
         self.log_area.grid(row=2, column=0, padx=10, pady=10, sticky="nsew")
+        self.log_area._textbox.tag_configure(
+            "action_required",
+            background="#FFF3CD",
+            foreground="#7A3E00",
+        )
         self.log_area.configure(state="disabled")
         
         # Add Context Menu for clearing
@@ -1013,15 +1749,17 @@ class OASGenApp(ctk.CTk):
         # self.val_log_print("Ready.") # Removed - handled by [Init] log
         self.log_visible = False
         
-        # Load file lists on startup (after widgets are ready)
-        self.after(200, self._load_files_on_startup)
+        # Startup tasks run only after the main window is mapped and stable.
+        self._startup_tasks_started = False
+        self._startup_ready_bind_id = None
+        self.after_idle(self._run_startup_tasks_when_ready)
 
 
 
     def _create_menu(self):
         """Create standard menu bar."""
         menubar = tk.Menu(self)
-        self.file_menu = tk.Menu(menubar, tearoff=0)  # Save reference for enabling/disabling
+        self.file_menu = self._create_styled_menu(menubar)  # Save reference for enabling/disabling
         
         # File Menu
         self.file_menu.add_command(label="Select Template Folder...", command=self._smart_select_template)
@@ -1031,21 +1769,24 @@ class OASGenApp(ctk.CTk):
         menubar.add_cascade(label="File", menu=self.file_menu)
         
         # Edit Menu
-        edit_menu = tk.Menu(menubar, tearoff=0)
+        edit_menu = self._create_styled_menu(menubar)
         edit_menu.add_command(label="Preferences", command=self.open_preferences)
         menubar.add_cascade(label="Edit", menu=edit_menu)
 
         # Tools Menu
-        tools_menu = tk.Menu(menubar, tearoff=0)
+        tools_menu = self._create_styled_menu(menubar)
         tools_menu.add_command(label="Create Template from OAS", command=self.open_import_dialog)
         tools_menu.add_command(label="OAS Comparison", command=self.open_oas_diff)
         tools_menu.add_separator()
         tools_menu.add_command(label="Legacy Template Converter", command=self.open_legacy_converter)
         tools_menu.add_command(label="Template Schema Tracer", command=self.open_legacy_schema_tracer)
+        tools_menu.add_command(label="Template Example Tracer", command=self.open_legacy_example_tracer)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
-        # View Menu (Generation, Validation, YAML Viewer)
-        self.view_menu = tk.Menu(menubar, tearoff=0)
+        # View Menu (Generation, Validation, YAML Viewer; Designer is experimental)
+        self.view_menu = self._create_styled_menu(menubar)
+        if self._designer_enabled:
+            self.view_menu.add_command(label="Designer", command=self._view_designer)
         self.view_menu.add_command(label="OAS Generation", command=self._view_generation)
         self.view_menu.add_command(label="Validation", command=self._view_validation)
         self.view_menu.add_command(label="YAML Viewer", command=self._view_yaml_viewer)
@@ -1056,7 +1797,9 @@ class OASGenApp(ctk.CTk):
         menubar.add_cascade(label="View", menu=self.view_menu)
 
         # Help Menu
-        help_menu = tk.Menu(menubar, tearoff=0)
+        help_menu = self._create_styled_menu(menubar)
+        help_menu.add_command(label="Check for Updates", command=self.check_for_updates)
+        help_menu.add_separator()
         help_menu.add_command(label="User Guide", command=self.open_user_guide)
         help_menu.add_command(label="About", command=self.show_about_dialog)
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -1065,6 +1808,45 @@ class OASGenApp(ctk.CTk):
         # Note: ctk doesn't directly support standard menus well on all platforms,
         # but configured it on the underlying tk root usually works on Windows.
         self.config(menu=menubar)
+
+    def _create_styled_menu(self, parent):
+        """Create a native Tk menu with OASIS highlight colors."""
+        return tk.Menu(
+            parent,
+            tearoff=0,
+            activebackground="#0A809E",
+            activeforeground="#FFFFFF",
+        )
+
+    def _set_designer_visibility(self, enabled: bool):
+        """Enable or hide the experimental Designer tab and related navigation."""
+        enabled = bool(enabled)
+        if enabled == self._designer_enabled:
+            return
+
+        self._designer_enabled = enabled
+        if not hasattr(self, "tabview"):
+            return
+
+        if enabled:
+            self.tab_designer = self.tabview.insert(0, "Designer")
+            self.designer_tab = ApiDesignerTab(
+                self.tab_designer,
+                self.prefs_manager,
+                status_callback=self.log_app,
+            )
+        else:
+            if self.tabview.get() == "Designer":
+                self.tabview.set("OAS Generation")
+            try:
+                self.tabview.delete("Designer")
+            except Exception:
+                pass
+            self.tab_designer = None
+            self.designer_tab = None
+
+        self._create_menu()
+        self._apply_default_tab()
 
     def show_application_logs(self):
         """Open detached application logs window."""
@@ -1096,12 +1878,19 @@ class OASGenApp(ctk.CTk):
             self.file_menu.entryconfig("Select Template Folder...", state="disabled")
             
         if current_tab == "Validation":
+            self.update_file_list()
             self.run_validation()
         elif current_tab == "View":
             self.after(75, self._focus_yaml_viewer)
 
     def _view_yaml_viewer(self):
         self.tabview.set("View")
+
+    def _view_designer(self):
+        if self._designer_enabled:
+            self.tabview.set("Designer")
+        else:
+            self.tabview.set("OAS Generation")
 
     def _smart_select_template(self):
         """Switch to Generation tab and open template selector."""
@@ -1120,6 +1909,57 @@ class OASGenApp(ctk.CTk):
 
     def _view_validation(self):
         self.tabview.set("Validation")
+
+    def _apply_default_tab(self):
+        default_tab = self.prefs_manager.get("default_tab", "OAS Generation")
+        valid_tabs = {"OAS Generation", "Validation", "View"}
+        if self._designer_enabled:
+            valid_tabs.add("Designer")
+        if default_tab not in valid_tabs:
+            default_tab = "OAS Generation"
+        try:
+            self.tabview.set(default_tab)
+            self._on_tab_change()
+        except Exception:
+            pass
+
+    def _run_startup_tasks_when_ready(self, event=None):
+        """Start deferred startup work after the root window is mapped."""
+        if getattr(self, "_startup_tasks_started", False):
+            return
+        if event is not None and getattr(event, "widget", self) is not self:
+            return
+
+        try:
+            self.update_idletasks()
+            window_ready = (
+                self.winfo_viewable()
+                and self.winfo_width() > 1
+                and self.winfo_height() > 1
+            )
+        except tk.TclError as exc:
+            self.log_app(f"[Init] Could not check startup window readiness: {exc}")
+            return
+
+        if not window_ready:
+            if getattr(self, "_startup_ready_bind_id", None) is None:
+                self._startup_ready_bind_id = self.bind(
+                    "<Visibility>",
+                    self._run_startup_tasks_when_ready,
+                    add="+",
+                )
+            return
+
+        bind_id = getattr(self, "_startup_ready_bind_id", None)
+        if bind_id is not None:
+            try:
+                self.unbind("<Visibility>", bind_id)
+            except Exception:
+                pass
+            self._startup_ready_bind_id = None
+
+        self._startup_tasks_started = True
+        self.after_idle(self._load_files_on_startup)
         
     def _load_files_on_startup(self):
         """Load file lists in Validation and View tabs on startup."""
@@ -1132,9 +1972,206 @@ class OASGenApp(ctk.CTk):
             # Benign info log, don't scare the user
             self.log_app(f"[Init] Default output folder not found (will be created on first generation): {oas_dir}")
         
-        # Apply all preferences (themes, fonts, etc.) on startup
-        self._apply_preferences(self.prefs_manager.get_all())
+        # Apply all preferences (themes, fonts, etc.) on startup.
+        # Preference UI issues must not block startup services such as update checks.
+        try:
+            self._apply_preferences(self.prefs_manager.get_all())
+        except Exception as exc:
+            self.log_app(f"[Init] Could not apply preferences: {exc}")
+        self._apply_default_tab()
+        try:
+            self.after_idle(self._schedule_startup_update_check)
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not schedule startup update check: {exc}")
 
+    def check_for_updates(self):
+        self._schedule_startup_update_check(manual=True)
+
+    def _schedule_startup_update_check(self, manual=False):
+        prefs = self.prefs_manager.get_all()
+        if not manual and not prefs.get("update_check_enabled", True):
+            return
+
+        manifest_url = str(prefs.get("update_manifest_url", "") or "").strip()
+        if not manifest_url:
+            if manual:
+                OASUpdateMessageDialog(
+                    self,
+                    title="OASIS Updates",
+                    heading="Update check is not configured",
+                    message="The update manifest URL is not configured.",
+                )
+            return
+
+        fallback_download_url = str(prefs.get("update_download_url", "") or "").strip()
+        self.log_app(f"[Updates] Checking manifest: {manifest_url}")
+        result_queue = queue.Queue(maxsize=1)
+
+        def worker():
+            result = check_for_update(manifest_url, FULL_VERSION, timeout=5.0)
+            result_queue.put(result)
+
+        threading.Thread(target=worker, daemon=True).start()
+        try:
+            self.after(
+                100,
+                lambda: self._drain_update_check_queue(
+                    result_queue,
+                    fallback_download_url,
+                    manifest_url,
+                    manual=manual,
+                ),
+            )
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not schedule update result polling: {exc}")
+
+    def _drain_update_check_queue(self, result_queue, fallback_download_url, manifest_url, manual=False):
+        try:
+            result = result_queue.get_nowait()
+        except queue.Empty:
+            try:
+                self.after(
+                    100,
+                    lambda: self._drain_update_check_queue(
+                        result_queue,
+                        fallback_download_url,
+                        manifest_url,
+                        manual=manual,
+                    ),
+                )
+            except Exception as exc:
+                self.log_app(f"[Updates] Could not schedule update result polling: {exc}")
+            return
+
+        self._handle_update_check_result(result, fallback_download_url, manifest_url, manual=manual)
+
+    def _handle_update_check_result(self, result, fallback_download_url, manifest_url, manual=False):
+        if result.error:
+            self.log_app(f"[Updates] Could not check for updates: {result.error}")
+            if manual:
+                OASUpdateMessageDialog(
+                    self,
+                    title="OASIS Updates",
+                    heading="Could not check for updates",
+                    message=str(result.error),
+                    is_error=True,
+                )
+            return
+
+        self._apply_manifest_preference_overrides(result.preferences_override)
+
+        if not result.update_available:
+            self.log_app("[Updates] No update available.")
+            if manual:
+                OASUpdateMessageDialog(
+                    self,
+                    title="OASIS Updates",
+                    heading="OASIS is up to date",
+                    message=f"Current version: {FULL_VERSION}",
+                )
+            return
+
+        download_url = result.download_url or fallback_download_url or manifest_url
+        self.log_app(f"[Updates] Update available: {result.latest_version}")
+        has_whats_new = bool(result.release_index_url or result.release_manifest_url)
+        try:
+            OASUpdateAvailableDialog(
+                self,
+                current_version=FULL_VERSION,
+                latest_version=result.latest_version,
+                download_url=download_url,
+                release_notes=result.release_notes,
+                announcement_url=result.announcement_url,
+                whats_new_callback=(lambda owner: self._show_update_whats_new(owner, result)) if has_whats_new else None,
+            )
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not show update dialog: {exc}")
+
+    def _show_update_whats_new(self, owner, result):
+        if not (result.release_index_url or result.release_manifest_url):
+            return
+        try:
+            if not owner.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        self.log_app("[Updates] Loading release index...")
+        result_queue = queue.Queue(maxsize=1)
+
+        def worker():
+            try:
+                releases = load_update_release_index(
+                    release_index_url=result.release_index_url,
+                    release_manifest_url=result.release_manifest_url,
+                    current_version=FULL_VERSION,
+                    latest_version=result.latest_version,
+                    timeout=5.0,
+                )
+                result_queue.put((releases, ""))
+            except Exception as exc:
+                result_queue.put(([], str(exc)))
+
+        threading.Thread(target=worker, daemon=True).start()
+        try:
+            self.after(100, lambda: self._drain_whats_new_queue(owner, result_queue))
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not schedule release history polling: {exc}")
+
+    def _drain_whats_new_queue(self, owner, result_queue):
+        try:
+            if not owner.winfo_exists():
+                return
+        except tk.TclError:
+            return
+
+        try:
+            releases, error = result_queue.get_nowait()
+        except queue.Empty:
+            try:
+                self.after(100, lambda: self._drain_whats_new_queue(owner, result_queue))
+            except Exception as exc:
+                self.log_app(f"[Updates] Could not schedule release history polling: {exc}")
+            return
+
+        if error:
+            self.log_app(f"[Updates] Could not load release index: {error}")
+            return
+        if not releases:
+            self.log_app("[Updates] No release index details available.")
+            return
+
+        def restore_update_dialog_grab():
+            try:
+                if owner.winfo_exists():
+                    owner.grab_set()
+                    owner.focus_set()
+            except tk.TclError:
+                pass
+
+        try:
+            try:
+                owner.grab_release()
+            except tk.TclError:
+                pass
+            OASWhatsNewDialog(owner, releases, on_close=restore_update_dialog_grab)
+        except Exception as exc:
+            restore_update_dialog_grab()
+            self.log_app(f"[Updates] Could not show release history: {exc}")
+
+    def _apply_manifest_preference_overrides(self, overrides):
+        if not overrides:
+            return
+        try:
+            applied, skipped = self.prefs_manager.apply_overrides(overrides)
+        except Exception as exc:
+            self.log_app(f"[Updates] Could not apply preference overrides: {exc}")
+            return
+
+        for key in applied:
+            self.log_app(f"[Updates] Preference override applied: {key}")
+        for key, reason in skipped:
+            self.log_app(f"[Updates] Preference override skipped: {key} ({reason})")
 
     def _load_custom_theme(self, theme_name):
         """Load a custom TOML theme file and return as dict."""
@@ -1398,6 +2435,7 @@ class OASGenApp(ctk.CTk):
 
     def open_preferences(self):
         """Open the preferences dialog."""
+        self.prefs_manager.load()
         dialog = PreferencesDialog(
             self, self.prefs_manager, on_save_callback=self._apply_preferences
         )
@@ -1418,6 +2456,10 @@ class OASGenApp(ctk.CTk):
     def open_legacy_schema_tracer(self):
         """Open the Template Schema Tracer standalone tool."""
         LegacySchemaTracerDialog(self, prefs_manager=self.prefs_manager)
+
+    def open_legacy_example_tracer(self):
+        """Open the Template Example Tracer standalone tool."""
+        LegacyExampleTracerDialog(self, prefs_manager=self.prefs_manager)
 
     def show_about_dialog(self):
         """Show About dialog using SplashScreen."""
@@ -1486,6 +2528,9 @@ class OASGenApp(ctk.CTk):
 
     def _apply_preferences(self, new_prefs: dict):
         """Apply new preferences to the UI."""
+        if "enable_api_designer" in new_prefs:
+            self._set_designer_visibility(bool(new_prefs["enable_api_designer"]))
+
         # Apply YAML theme
         if "yaml_theme" in new_prefs:
             self.on_theme_change(new_prefs["yaml_theme"])
@@ -1544,6 +2589,13 @@ class OASGenApp(ctk.CTk):
         else:
             self.var_swift.set(False)
 
+        if "generation_mode" in new_prefs:
+            mode = normalize_generation_mode(new_prefs.get("generation_mode", DEFAULT_GENERATION_MODE))
+            if hasattr(self, "var_generation_mode"):
+                self.var_generation_mode.set(mode)
+            if hasattr(self, "cbo_generation_mode"):
+                self.cbo_generation_mode.set(mode)
+
         # Apply validation checkbox
         if "ignore_bad_request" in new_prefs:
             if new_prefs["ignore_bad_request"]:
@@ -1576,16 +2628,25 @@ class OASGenApp(ctk.CTk):
 
         if "app_log_theme" in new_prefs:
             theme = new_prefs["app_log_theme"]
-            if self.log_window:
-                self.log_window.apply_theme(theme)
+            self._apply_log_window_theme(theme)
 
         if "import_log_theme" in new_prefs:
             theme = new_prefs["import_log_theme"]
-            if self.import_dialog and hasattr(self.import_dialog, 'import_log_area'):
+            import_dialog = getattr(self, "import_dialog", None)
+            try:
+                import_dialog_exists = bool(import_dialog and import_dialog.winfo_exists())
+            except (tk.TclError, AttributeError):
+                import_dialog_exists = False
+            import_log_area = getattr(import_dialog, "import_log_area", None) if import_dialog_exists else None
+            try:
+                import_log_exists = bool(import_log_area and import_log_area.winfo_exists())
+            except (tk.TclError, AttributeError):
+                import_log_exists = False
+            if import_log_exists:
                 if theme == "Dark":
-                    self.import_dialog.import_log_area.configure(fg_color="#1e1e1e", text_color="#d4d4d4")
+                    import_log_area.configure(fg_color="#1e1e1e", text_color="#d4d4d4")
                 else:
-                    self.import_dialog.import_log_area.configure(fg_color="#ffffff", text_color="#333333")
+                    import_log_area.configure(fg_color="#ffffff", text_color="#333333")
 
         if "spectral_log_theme" in new_prefs:
             theme = new_prefs["spectral_log_theme"]
@@ -1622,6 +2683,19 @@ class OASGenApp(ctk.CTk):
         self.update_file_list()
 
         # [Init] Application Ready moved to _load_files_on_startup to ensure it's last
+
+    def _apply_log_window_theme(self, theme):
+        """Apply the app log theme only when the detached log window is still alive."""
+        log_window = getattr(self, "log_window", None)
+        if log_window is None:
+            return
+        try:
+            if not log_window.winfo_exists():
+                self.log_window = None
+                return
+            log_window.apply_theme(theme)
+        except tk.TclError:
+            self.log_window = None
 
     def toggle_log(self):
         if self.log_visible:
@@ -1759,9 +2833,11 @@ class OASGenApp(ctk.CTk):
         # Update Generation Tab Log
         self.log_area.configure(state="normal")
         
-        # Formatting for "Done!" message (Green + Bold)
-        # Formatting for "Done!" message (Green + Bold)
-        self.log_area.insert("end", gui_msg + "\n")
+        if self._is_action_required_log_line(gui_msg):
+            self.log_area.insert("end", gui_msg, "action_required")
+            self.log_area.insert("end", "\n")
+        else:
+            self.log_area.insert("end", gui_msg + "\n")
         
         self.log_area.see("end")
         self.log_area.configure(state="disabled")
@@ -1769,6 +2845,15 @@ class OASGenApp(ctk.CTk):
         # Duplicate to Global Application Log (with timestamp)
         self._log_history_append(full_msg)
 
+    def _is_action_required_log_line(self, message):
+        if not isinstance(message, str):
+            return False
+        return (
+            message.startswith("+-- ACTION REQUIRED")
+            or message.startswith("| Fix the Parent column")
+            or message.startswith("| Then regenerate the OAS")
+            or message.startswith("+-----------------------------------------------------------+")
+        )
 
     def log_app(self, message):
         # Add Timestamp: HH:MM:SS.mmm > 
@@ -1791,7 +2876,7 @@ class OASGenApp(ctk.CTk):
 
     def _show_log_context_menu(self, event):
         """Show context menu for log area."""
-        menu = tk.Menu(self, tearoff=0)
+        menu = self._create_styled_menu(self)
         menu.add_command(label="Clear Log", command=self.clear_gen_log)
         menu.add_separator()
         menu.add_command(label="Copy", command=lambda: self.log_area.event_generate("<<Copy>>"))
@@ -1803,25 +2888,158 @@ class OASGenApp(ctk.CTk):
         self.log_area.delete("1.0", "end")
         self.log_area.configure(state="disabled")
 
+    def _on_generation_mode_changed(self, value=None):
+        """Persist the generation mode selected in the OAS Generation toolbar."""
+        mode = normalize_generation_mode(value or self.var_generation_mode.get())
+        self.var_generation_mode.set(mode)
+        try:
+            self.prefs_manager.set("generation_mode", mode)
+            self.prefs_manager.save()
+        except Exception:
+            pass
+
     def start_generation(self):
+        self.clear_gen_log()
         base_dir = self.entry_dir.get()
         gen_30 = self.var_30.get()
         gen_31 = self.var_31.get()
         gen_swift = self.var_swift.get()
+        generation_mode = normalize_generation_mode(self.var_generation_mode.get())
+        self._on_generation_mode_changed(generation_mode)
+        x_info_options = x_info_options_from_preferences(self.prefs_manager.get_all())
 
         if not base_dir:
             self.log_gen("ERROR: Please select a directory.")
+            return
+
+        validation_errors = main_script.get_converted_template_validation_errors(base_dir)
+        if validation_errors:
+            for error in validation_errors:
+                self.log_gen(error)
+            return
+
+        if gen_swift and not self._ensure_swift_template_rows(base_dir):
+            self.log_gen("Generation cancelled.")
+            return
+
+        if not self._prepare_oas_output_folder(base_dir, gen_30, gen_31, gen_swift):
+            self.log_gen("Generation cancelled.")
             return
 
         self.btn_gen.configure(state="disabled", text="GENERATING...")
         self.log_gen("Starting generation process...")
 
         t = threading.Thread(
-            target=self.run_process, args=(base_dir, gen_30, gen_31, gen_swift)
+            target=self.run_process,
+            args=(base_dir, gen_30, gen_31, gen_swift, generation_mode, x_info_options),
         )
         t.start()
 
-    def run_process(self, base_dir, gen_30, gen_31, gen_swift):
+    def _ensure_swift_template_rows(self, base_dir):
+        index_path = os.path.join(base_dir, "$index.xlsx")
+        try:
+            if has_swift_server_rows(index_path):
+                return True
+        except Exception as exc:
+            self.log_gen(f"ERROR: Could not inspect $index.xlsx for SWIFT server rows: {exc}")
+            return False
+
+        dialog = SwiftTemplateUpdateDialog(
+            self,
+            self.prefs_manager.get("swift_services", {}) if self.prefs_manager else {},
+        )
+        self.wait_window(dialog)
+        if dialog.result is None:
+            return False
+
+        warning = str(dialog.result.get("swift_server_warning", "") or "").strip()
+        if warning:
+            self.log_gen(warning)
+
+        try:
+            backup_path = f"{index_path}.bak_{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}"
+            shutil.copy2(index_path, backup_path)
+            update_index_swift_servers(index_path, dialog.result.get("swift_servers", []) or [])
+            self.log_gen(f"Updated $index.xlsx with SWIFT server rows. Backup: {backup_path}")
+            return True
+        except Exception as exc:
+            self.log_gen(f"ERROR: Could not update $index.xlsx with SWIFT server rows: {exc}")
+            return False
+
+    def _prepare_oas_output_folder(self, base_dir, gen_30, gen_31, gen_swift):
+        output_dir = self.entry_oas_folder.get()
+        if not output_dir:
+            return True
+
+        previous_files = self._get_previous_oas_output_files(
+            base_dir,
+            output_dir,
+            gen_30,
+            gen_31,
+            gen_swift,
+        )
+        if not previous_files:
+            return True
+
+        dialog = OASOutputFolderDialog(self, output_dir, len(previous_files))
+        self.wait_window(dialog)
+        choice = dialog.choice
+
+        try:
+            if choice == "cancel":
+                return False
+            if choice == "keep":
+                self.log_gen(f"Keeping {len(previous_files)} previous OAS file(s) in output folder.")
+                return True
+            if choice == "archive":
+                moved = archive_existing_oas_files(previous_files, output_dir)
+                folders = describe_archive_destinations(moved)
+                if folders:
+                    self.log_gen(f"Archived {len(moved)} previous OAS file(s) under:")
+                    for folder in folders:
+                        self.log_gen(f"  {folder}")
+                else:
+                    self.log_gen("No previous OAS files were archived.")
+                self.update_file_list()
+                return True
+            if choice == "delete":
+                deleted = delete_existing_oas_files(previous_files, output_dir)
+                self.log_gen(f"Deleted {len(deleted)} previous OAS file(s) from output folder.")
+                self.update_file_list()
+                return True
+        except Exception as exc:
+            self.log_gen(f"ERROR: Failed to prepare OAS output folder: {exc}")
+            return False
+
+        return False
+
+    def _get_previous_oas_output_files(self, base_dir, output_dir, gen_30, gen_31, gen_swift):
+        existing_files = list_existing_oas_files(output_dir)
+        if not existing_files:
+            return []
+
+        try:
+            index_path = os.path.join(base_dir, "$index.xlsx")
+            if not os.path.exists(index_path):
+                return existing_files
+
+            df_info = main_script.parser.load_excel_sheet(index_path, "General Description")
+            info_data, _inline_servers = main_script.parser.parse_info(df_info)
+            expected_filenames = build_expected_oas_filenames(
+                info_data.get("filename_pattern"),
+                api_version=info_data.get("version", "1.0"),
+                release=info_data.get("release", ""),
+                gen_30=gen_30,
+                gen_31=gen_31,
+                gen_swift=gen_swift,
+            )
+        except Exception as exc:
+            self.log_gen(f"WARNING: Could not determine expected OAS filenames: {exc}")
+            return existing_files
+
+        return filter_previous_oas_files(existing_files, expected_filenames)
+
+    def run_process(self, base_dir, gen_30, gen_31, gen_swift, generation_mode=None, x_info_options=None):
         try:
             self.last_generated_files = []
             output_dir = self.entry_oas_folder.get()  # Get OAS output folder
@@ -1839,6 +3057,8 @@ class OASGenApp(ctk.CTk):
                 gen_30=gen_30,
                 gen_31=gen_31,
                 gen_swift=gen_swift,
+                generation_mode=generation_mode,
+                x_info_options=x_info_options,
                 output_dir=output_dir,
                 log_callback=gui_logger,
             )
@@ -1856,8 +3076,8 @@ class OASGenApp(ctk.CTk):
         files_to_show = []
         candidates = set()  # Use set to avoid duplicates
 
-        # Always read from OAS folder
-        oas_dir = self.entry_oas_folder.get()
+        # Always read from Validation OAS folder when populating Validation files.
+        oas_dir = self.entry_val_oas_folder.get()
         if os.path.exists(oas_dir):
             for f in os.listdir(oas_dir):
                 if f.endswith(".yaml") or f.endswith(".json"):
@@ -2982,7 +4202,7 @@ class OASGenApp(ctk.CTk):
         """Position main window and viewer side-by-side (snap-like behavior).
         Uses non-blocking scheduling to avoid freezing the UI."""
 
-        def do_positioning():
+        def do_positioning(attempt=0):
             """Actual positioning logic, called after delay."""
             try:
                 import pygetwindow as gw
@@ -3001,29 +4221,46 @@ class OASGenApp(ctk.CTk):
                 work_width = work_area.right - work_area.left
                 work_height = work_area.bottom - work_area.top
 
-                # Windows 11 has invisible borders (7px) plus rounded corners (~10px)
-                # We compensate to position windows correctly and show rounded corners above taskbar
-                BORDER = 7
-                BOTTOM_MARGIN = 30  # Extra space to show UI elements above taskbar
-
                 # Calculate half-width for each window
                 half_width = work_width // 2
 
-                # Position main window on left half of work area
-                self.geometry(
-                    f"{half_width + BORDER}x{work_height - BOTTOM_MARGIN}+{work_left - BORDER}+{work_top}"
-                )
+                app_windows = gw.getWindowsWithTitle(self.title())
+                app_win = next((w for w in app_windows if w.title == self.title()), None)
+                if app_win:
+                    set_window_visible_bounds(
+                        app_win,
+                        work_left,
+                        work_top,
+                        work_left + half_width,
+                        work_area.bottom,
+                    )
+                else:
+                    self.geometry(
+                        f"{half_width}x{work_height}+{work_left}+{work_top}"
+                    )
                 self.update_idletasks()
 
-                # Find and position doc viewer window by its actual title
+                # Find and position doc viewer window by its actual title.
+                # The webview process may still be creating the native window, so
+                # retry briefly instead of leaving the first dock with stale width.
                 if hasattr(viewer, "_window_title") and viewer._window_title:
                     doc_windows = gw.getWindowsWithTitle(viewer._window_title)
                     if doc_windows:
                         doc_win = doc_windows[0]
-                        doc_win.moveTo(work_left + half_width - BORDER, work_top)
-                        doc_win.resizeTo(
-                            half_width + BORDER, work_height - BOTTOM_MARGIN
+                        self.update_idletasks()
+                        if app_win:
+                            _, _, doc_x, _ = get_window_visible_bounds(app_win)
+                        else:
+                            doc_x = self.winfo_x() + self.winfo_width()
+                        set_window_visible_bounds(
+                            doc_win,
+                            doc_x,
+                            work_top,
+                            work_area.right,
+                            work_area.bottom,
                         )
+                    elif attempt < 8:
+                        self.after(250, lambda: do_positioning(attempt + 1))
 
             except Exception:
                 # If positioning fails, just continue without it
@@ -3554,7 +4791,7 @@ class OASGenApp(ctk.CTk):
             if not history:
                 return
                 
-            menu = tk.Menu(self, tearoff=0)
+            menu = self._create_styled_menu(self)
             
             def load_search(text):
                 self.search_entry.delete(0, "end")
@@ -4158,6 +5395,11 @@ class ImportDialog(ctk.CTkToplevel):
             self._show_error("Error", "Invalid Output Folder")
             return
 
+        metadata_overrides = self._prompt_import_metadata_if_needed(src_path)
+        if metadata_overrides is None:
+            self._log("Import cancelled.")
+            return
+
         # Check for non-empty output folder
         if os.path.exists(dst_folder) and os.listdir(dst_folder):
             choice = self._show_clean_folder_dialog(dst_folder)
@@ -4190,9 +5432,64 @@ class ImportDialog(ctk.CTkToplevel):
                 return
 
         self.btn_import.configure(state="disabled")
-        threading.Thread(target=self._run_oas_import, args=(src_path, dst_folder)).start()
+        threading.Thread(
+            target=self._run_oas_import,
+            args=(src_path, dst_folder, metadata_overrides),
+        ).start()
 
-    def _run_oas_import(self, src_path, dst_folder):
+    def _get_import_metadata_defaults(self, src_path):
+        defaults = load_metadata_preferences(self.prefs_manager)
+
+        try:
+            info = OASToExcelConverter(src_path).parser.get_info()
+        except Exception as exc:
+            self._log(f"[Metadata] Could not read OAS info metadata: {exc}")
+            return defaults, True
+
+        for key in ("contact_name", "contact_url", "release"):
+            if info.get(key):
+                defaults[key] = str(info.get(key) or "").strip()
+
+        source_pattern = str(info.get("filename_pattern", "") or "").strip()
+        if source_pattern:
+            defaults["filename_pattern"] = source_pattern
+
+        return defaults, not bool(source_pattern)
+
+    def _prompt_import_metadata_if_needed(self, src_path):
+        defaults, needs_filename_pattern = self._get_import_metadata_defaults(src_path)
+
+        swift_services = {}
+        if self.prefs_manager:
+            swift_services = self.prefs_manager.get("swift_services", {})
+
+        dialog = LegacyConversionMetadataDialog(
+            self,
+            initial_values=defaults,
+            swift_services=swift_services,
+            window_title="Template Creation Metadata",
+            heading="Create Template from OAS Metadata",
+            description=(
+                "These values come from Preferences. You can keep them or change them "
+                "just for this template creation."
+            ),
+        )
+        self.wait_window(dialog)
+        result = dialog.result
+        if result is None:
+            return None
+
+        warning = str(result.get("swift_server_warning", "") or "").strip()
+        if warning:
+            self._log(warning)
+
+        if self.prefs_manager and result.get("save_in_preferences"):
+            save_metadata_preferences(self.prefs_manager, result)
+            self._log("Saved import metadata to preferences.")
+
+        return result
+
+    def _run_oas_import(self, src_path, dst_folder, metadata_overrides=None):
         try:
             self._log("Starting Import...")
             self._log(f"Source: {src_path}")
@@ -4201,7 +5498,10 @@ class ImportDialog(ctk.CTkToplevel):
             converter = OASToExcelConverter(src_path, log_callback=self._log)
 
             self._log("Generating Index File...")
-            converter.generate_index_file(os.path.join(dst_folder, "$index.xlsx"))
+            converter.generate_index_file(
+                os.path.join(dst_folder, "$index.xlsx"),
+                info_overrides=metadata_overrides,
+            )
 
             self._log("Generating Endpoint Files (this may take time)...")
             files = converter.generate_all_endpoint_files(dst_folder)
@@ -4502,7 +5802,19 @@ class ImportDialog(ctk.CTkToplevel):
                 self.prefs_manager.save()
             except:
                 pass
+        self._clear_parent_import_dialog()
         self.destroy()
+
+    def _clear_parent_import_dialog(self):
+        try:
+            if getattr(self.parent, "import_dialog", None) is self:
+                self.parent.import_dialog = None
+        except Exception:
+            pass
+
+    def destroy(self):
+        self._clear_parent_import_dialog()
+        super().destroy()
 
 
 

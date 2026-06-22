@@ -2,7 +2,13 @@ import customtkinter as ctk
 from tkinter import filedialog
 import os
 import threading
-from .legacy_converter import LegacyConverter
+from .legacy_converter import (
+    EXAMPLE_TRACE_COMPLEX_MARKER,
+    EXAMPLE_TRACE_IMPOSSIBLE_MARKER,
+    LegacyConverter,
+)
+from .conversion_metadata_preferences import load_metadata_preferences, save_metadata_preferences
+from .swift_services import get_swift_service_servers, normalize_swift_services
 
 class CleanFolderDialog(ctk.CTkToplevel):
     def __init__(self, parent, folder_path):
@@ -86,13 +92,25 @@ class CleanFolderDialog(ctk.CTkToplevel):
 class LegacyConversionMetadataDialog(ctk.CTkToplevel):
     """Allows per-run override of legacy metadata sourced from preferences."""
 
-    def __init__(self, parent, initial_values=None):
+    def __init__(
+        self,
+        parent,
+        initial_values=None,
+        swift_services=None,
+        window_title="Conversion Metadata",
+        heading="Legacy Conversion Metadata",
+        description="These values come from Preferences. You can keep them or change them just for this conversion.",
+    ):
         super().__init__(parent)
         self.initial_values = dict(initial_values or {})
+        self.swift_services = normalize_swift_services(swift_services)
+        self.window_title = window_title
+        self.heading = heading
+        self.description = description
         self.result = None
         self.var_save_preferences = ctk.BooleanVar(value=False)
 
-        self.title("Conversion Metadata")
+        self.title(self.window_title)
         self.geometry("780x430")
         self.minsize(720, 380)
         self.resizable(True, True)
@@ -131,18 +149,29 @@ class LegacyConversionMetadataDialog(ctk.CTkToplevel):
 
         ctk.CTkLabel(
             content,
-            text="Legacy Conversion Metadata",
+            text=self.heading,
             text_color="#0A809E",
             font=ctk.CTkFont(size=22, weight="bold"),
         ).pack(anchor="w")
 
         ctk.CTkLabel(
             content,
-            text="These values come from Preferences. You can keep them or change them just for this conversion.",
+            text=self.description,
             font=ctk.CTkFont(size=13),
             justify="left",
             wraplength=720,
         ).pack(anchor="w", pady=(6, 16))
+
+        service_row = ctk.CTkFrame(content, fg_color="transparent")
+        service_row.pack(fill="x", pady=6)
+        ctk.CTkLabel(service_row, text="Service:", width=140, anchor="w").pack(side="left")
+        self.cbo_swift_service = ctk.CTkComboBox(
+            service_row,
+            values=[""] + sorted(self.swift_services.keys()),
+            button_color="#0A809E",
+        )
+        self.cbo_swift_service.pack(side="left", fill="x", expand=True)
+        self.cbo_swift_service.set(str(self.initial_values.get("swift_service", "") or ""))
 
         self.entries = {}
         fields = [
@@ -200,6 +229,15 @@ class LegacyConversionMetadataDialog(ctk.CTkToplevel):
             key: entry.get().strip()
             for key, entry in self.entries.items()
         }
+        swift_service = self.cbo_swift_service.get().strip()
+        values["swift_service"] = swift_service
+        values["swift_servers"] = get_swift_service_servers(self.swift_services, swift_service)
+        configured_servers = self.swift_services.get(swift_service, {}).get("servers", [])
+        if len(configured_servers) > 2:
+            values["swift_server_warning"] = (
+                f"WARNING: Service '{swift_service}' has {len(configured_servers)} configured servers; "
+                "only the first 2 were written to the template."
+            )
         values["save_in_preferences"] = bool(self.var_save_preferences.get())
         return values
 
@@ -216,6 +254,7 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         super().__init__(parent)
         self.master_dir = master_dir
         self.prefs_manager = prefs_manager
+        self._action_required_log_block_active = False
         self.title("Legacy Template Converter")
         
         # Match parent window size and position
@@ -258,12 +297,10 @@ class LegacyConverterDialog(ctk.CTkToplevel):
         if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
             last_src = self.prefs_manager.get("last_legacy_src", "")
             last_dst = self.prefs_manager.get("last_legacy_dst", "")
-            if last_src and os.path.exists(last_src):
+            if last_src:
                 self.entry_src.insert(0, last_src)
-            if last_dst and os.path.exists(last_dst):
+            if last_dst:
                 self.entry_dst.insert(0, last_dst)
-        else:
-            print("DEBUG: remember_paths is False or prefs_manager is None")
 
     def _on_close(self):
         """Save settings and close window."""
@@ -335,6 +372,20 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                                            font=ctk.CTkFont(size=12))
         self.chk_tracing.pack(side="left", padx=15)
 
+        self.var_example_tracing = ctk.BooleanVar(value=True)
+        if self.prefs_manager:
+            self.var_example_tracing.set(self.prefs_manager.get("tools_legacy_example_tracing_enabled", True))
+
+        self.chk_example_tracing = ctk.CTkCheckBox(
+            opts_frame,
+            text="Enable Example Tracing (Repair details in log)",
+            variable=self.var_example_tracing,
+            fg_color="#0A809E",
+            hover_color="#076075",
+            font=ctk.CTkFont(size=12),
+        )
+        self.chk_example_tracing.pack(side="left", padx=15)
+
         # Action Buttons Frame
         btn_frame = ctk.CTkFrame(self.container, fg_color="transparent")
         btn_frame.pack(pady=10)
@@ -360,16 +411,36 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                                       wrap="none", # Important for table alignment
                                       state="disabled")
         self.log_area.pack(fill="both", expand=True, pady=(10, 0))
+        self._configure_log_tags()
 
-    def _get_initial_dir(self, entry_widget):
-        """Returns the folder from entry if it exists, otherwise cwd."""
-        p = entry_widget.get()
-        if p and os.path.exists(p):
-            return p if os.path.isdir(p) else os.path.dirname(p)
-        return os.getcwd()
+    def _get_initial_dir(self, entry_widget, pref_key=None):
+        """Return the best existing folder for a browse dialog."""
+        candidates = [entry_widget.get()]
+        if pref_key and self.prefs_manager and self.prefs_manager.get("remember_paths", True):
+            candidates.append(self.prefs_manager.get(pref_key, ""))
+
+        for candidate in candidates:
+            initial = self._nearest_existing_dir(candidate)
+            if initial:
+                return initial
+
+        return os.path.expanduser("~")
+
+    def _nearest_existing_dir(self, value):
+        if not value:
+            return ""
+        path = os.path.abspath(os.path.expanduser(str(value).strip().strip('"')))
+        if os.path.isfile(path):
+            path = os.path.dirname(path)
+        while path and not os.path.isdir(path):
+            parent = os.path.dirname(path)
+            if parent == path:
+                return ""
+            path = parent
+        return path
 
     def _browse_src(self):
-        initial = self._get_initial_dir(self.entry_src)
+        initial = self._get_initial_dir(self.entry_src, "last_legacy_src")
         p = filedialog.askdirectory(parent=self, initialdir=initial, title="Select Legacy Templates Folder")
         if p:
             self.lift()
@@ -386,10 +457,9 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 self.prefs_manager.set("last_legacy_src", p)
                 self.prefs_manager.set("last_legacy_dst", self.entry_dst.get())
                 self.prefs_manager.save()
-                print(f"DEBUG: Saved src='{p}', dst='{self.entry_dst.get()}'")
 
     def _browse_dst(self):
-        initial = self._get_initial_dir(self.entry_dst)
+        initial = self._get_initial_dir(self.entry_dst, "last_legacy_dst")
         p = filedialog.askdirectory(parent=self, initialdir=initial, title="Select Destination Folder")
         if p:
             self.lift()
@@ -402,7 +472,6 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             if self.prefs_manager and self.prefs_manager.get("remember_paths", True):
                 self.prefs_manager.set("last_legacy_dst", p)
                 self.prefs_manager.save()
-                print(f"DEBUG: Saved dst='{p}'")
 
 
     def _open_output_folder(self):
@@ -411,35 +480,86 @@ class LegacyConverterDialog(ctk.CTkToplevel):
             os.startfile(dst)
 
     def _log(self, msg):
+        text = str(msg)
+        tag = None
+        if text.startswith(EXAMPLE_TRACE_IMPOSSIBLE_MARKER):
+            text = text[len(EXAMPLE_TRACE_IMPOSSIBLE_MARKER):]
+            tag = "example_impossible"
+        elif text.startswith(EXAMPLE_TRACE_COMPLEX_MARKER):
+            text = text[len(EXAMPLE_TRACE_COMPLEX_MARKER):]
+            tag = "example_complex"
+        elif self._is_action_required_log_line(text):
+            tag = "action_required"
+
         self.log_area.configure(state="normal")
-        self.log_area.insert("end", f"{msg}\n")
+        if tag:
+            self._insert_tagged_log(text, tag)
+            self.log_area.insert("end", "\n")
+        else:
+            self.log_area.insert("end", f"{text}\n")
         self.log_area.see("end")
         self.log_area.configure(state="disabled")
 
-    def _get_conversion_metadata_defaults(self):
-        if not self.prefs_manager:
-            return {
-                "contact_name": "",
-                "contact_url": "",
-                "release": "",
-                "filename_pattern": "",
-            }
+    def _configure_log_tags(self):
+        tag_target = getattr(self.log_area, "_textbox", self.log_area)
+        try:
+            tag_target.tag_configure("example_impossible", foreground="#A65A5A")
+            tag_target.tag_configure("example_complex", foreground="#9A8700")
+            tag_target.tag_configure("action_required", background="#FFF2CC", foreground="#8A5A00")
+        except Exception:
+            pass
 
-        return {
-            "contact_name": str(self.prefs_manager.get("tools_legacy_contact_name", "") or "").strip(),
-            "contact_url": str(self.prefs_manager.get("tools_legacy_contact_url", "") or "").strip(),
-            "release": str(self.prefs_manager.get("tools_legacy_release", "") or "").strip(),
-            "filename_pattern": str(self.prefs_manager.get("tools_legacy_filename_pattern", "") or "").strip(),
-        }
+    def _is_action_required_log_line(self, message):
+        if not isinstance(message, str):
+            return False
+        if message.startswith("+-- ACTION REQUIRED"):
+            self._action_required_log_block_active = True
+            return True
+        if not getattr(self, "_action_required_log_block_active", False):
+            return False
+        if message.startswith("+-----------------------------------------------------------+"):
+            self._action_required_log_block_active = False
+            return True
+        if message.startswith("|"):
+            return True
+        self._action_required_log_block_active = False
+        return False
+
+    def _insert_tagged_log(self, text, tag):
+        tag_target = getattr(self.log_area, "_textbox", None)
+        try:
+            if tag_target is not None:
+                tag_target.insert("end", text, tag)
+            else:
+                self.log_area.insert("end", text, tag)
+        except Exception:
+            self.log_area.insert("end", text)
+
+    def _get_conversion_metadata_defaults(self):
+        return load_metadata_preferences(self.prefs_manager)
 
     def _prompt_conversion_metadata_overrides(self):
         defaults = self._get_conversion_metadata_defaults()
-        if not any(defaults.values()):
-            return defaults
 
-        dialog = LegacyConversionMetadataDialog(self, initial_values=defaults)
+        swift_services = {}
+        if self.prefs_manager:
+            swift_services = self.prefs_manager.get("swift_services", {})
+
+        dialog = LegacyConversionMetadataDialog(
+            self,
+            initial_values=defaults,
+            swift_services=swift_services,
+        )
         self.wait_window(dialog)
-        return dialog.result
+        result = dialog.result
+        if result is None:
+            return None
+
+        if self.prefs_manager and result.get("save_in_preferences"):
+            save_metadata_preferences(self.prefs_manager, result)
+            self._log("Saved conversion metadata to preferences.")
+
+        return result
 
     def _start_conversion(self):
         src = self.entry_src.get()
@@ -517,10 +637,15 @@ class LegacyConverterDialog(ctk.CTkToplevel):
     def _run_conversion(self, src, dst, metadata_overrides=None):
         try:
             tracing = self.var_tracing.get()
+            example_tracing = self.var_example_tracing.get()
             self._log(f"Starting conversion from {src} to {dst}...")
             include_desc = False
             include_ex = False
             capitalize_schemas = True
+            repair_examples = True
+            complete_examples = False
+            example_seed_values_path = None
+            example_semantic_rules_path = None
             defaults = self._get_conversion_metadata_defaults()
             overrides = dict(defaults)
             if metadata_overrides:
@@ -529,19 +654,25 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 include_desc = bool(self.prefs_manager.get("tools_legacy_collision_include_descriptions", False))
                 include_ex = bool(self.prefs_manager.get("tools_legacy_collision_include_examples", False))
                 capitalize_schemas = bool(self.prefs_manager.get("tools_legacy_capitalize_schema_names", True))
+                legacy_fill_fix = bool(self.prefs_manager.get("tools_legacy_fill_fix_examples", True))
+                repair_examples = bool(self.prefs_manager.get("tools_legacy_repair_examples", legacy_fill_fix))
+                complete_examples = bool(self.prefs_manager.get("tools_legacy_complete_examples", False))
+                if hasattr(self.prefs_manager, "get_legacy_example_seed_values_path"):
+                    example_seed_values_path = self.prefs_manager.get_legacy_example_seed_values_path()
+                if hasattr(self.prefs_manager, "get_legacy_example_semantic_rules_path"):
+                    example_semantic_rules_path = self.prefs_manager.get_legacy_example_semantic_rules_path()
+                self.prefs_manager.set("tools_legacy_tracing_enabled", bool(tracing))
+                self.prefs_manager.set("tools_legacy_example_tracing_enabled", bool(example_tracing))
+                self.prefs_manager.save()
 
             contact_name = str(overrides.get("contact_name", "") or "").strip()
             contact_url = str(overrides.get("contact_url", "") or "").strip()
             release = str(overrides.get("release", "") or "").strip()
             filename_pattern = str(overrides.get("filename_pattern", "") or "").strip()
-
-            if self.prefs_manager and overrides.get("save_in_preferences"):
-                self.prefs_manager.set("tools_legacy_contact_name", contact_name)
-                self.prefs_manager.set("tools_legacy_contact_url", contact_url)
-                self.prefs_manager.set("tools_legacy_release", release)
-                self.prefs_manager.set("tools_legacy_filename_pattern", filename_pattern)
-                self.prefs_manager.save()
-                self._log("Saved conversion metadata to preferences.")
+            swift_servers = list(overrides.get("swift_servers", []) or [])
+            swift_warning = str(overrides.get("swift_server_warning", "") or "").strip()
+            if swift_warning:
+                self._log(swift_warning)
 
             converter = LegacyConverter(
                 src,
@@ -554,6 +685,12 @@ class LegacyConverterDialog(ctk.CTkToplevel):
                 contact_url=contact_url,
                 release=release,
                 filename_pattern=filename_pattern,
+                swift_servers=swift_servers,
+                repair_examples=repair_examples,
+                complete_examples=complete_examples,
+                example_seed_values_path=example_seed_values_path,
+                example_semantic_rules_path=example_semantic_rules_path,
+                example_tracing_enabled=example_tracing,
             )
             success = converter.convert(tracing_enabled=tracing)
             

@@ -18,6 +18,71 @@
 
 ## Lessons Learned
 
+### 2026-05-26 - Restore Body Metadata Template Contract
+
+- Restored the official Body sheet metadata contract: `Body!B1` stores requestBody description and `Body!C1` stores the required marker.
+- Updated the legacy converter to write the requestBody required marker to `C1`, leaving `B1` available for descriptions.
+- Updated Excel parsing so generated OAS requestBody metadata is derived from the Body sheet without heuristics or fallback source data.
+- Reapplied focused OAS import fixes for reusable requestBody `$ref` metadata and schema-name hyperlinks after reverting the broader failed cleanup attempt.
+- Added regression coverage for converter output, Excel parsing, OAS generation, OAS import metadata, and schema hyperlinks.
+- Added generation-time compatibility for already converted legacy templates where `Body!B1` contains `M` or `O` and `Body!C1` contains the requestBody description.
+- Fixed Validation tab file discovery so entering the tab refreshes the OAS file list from the Validation folder, and added OAS import metadata prompting to populate release and filename pattern before writing `$index.xlsx`.
+
+### 2026-05-11 - Build v3.0.6: Regex-Driven Example Semantics
+
+- Made regex constraints a primary semantic signal for repaired examples, so date/time-like patterns produce realistic date-time values even when field names are ambiguous or misspelled.
+- Updated general BIC semantic repair to generate mixed BIC8/BIC11 examples when the regex permits both forms, while preserving strict BIC8 or BIC11 output when constraints require a specific length.
+- Improved Example Tracer table rendering so long unbroken values wrap within the table grid instead of breaking column alignment.
+- Extended Minimal generation so schema-level examples are removed from generated OAS output, not only request/response body examples.
+- Added deterministic visible-window docking calculations for API documentation so initial dock geometry uses native visible frame bounds.
+- Added regression coverage for Minimal schema example removal, regex-driven date-time examples, mixed BIC examples, and Example Tracer grid wrapping.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.6`.
+
+### 2026-05-11 - Build v3.0.5: Constraint-Aware Example Repair
+
+- Hardened legacy example repair so generated examples are validated against regex, numeric, boolean, and length constraints before being written back.
+- Added multi-example generation for regex alternatives, including escaped literal handling for values such as ISO 20022 message types.
+- Improved BIC/BIC8/BIC11 semantic repair for grouped regex patterns so fields such as `ReBic` use plausible BIC11 seed examples instead of generic regex fallbacks.
+- Added Example Tracer severity markers for intrinsically impossible constraints and too-complex automatic example generation cases.
+- Added regression coverage for regex alternatives, BIC semantic repair, impossible constraints, complex regex tracing, and constraint-aware example generation.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.5`.
+
+### 2026-05-05 - Build v3.0.4: Intermediate Release with Designer Feature Flag
+
+- Added an `Enable API Designer (experimental)` preference so intermediate colleague builds can hide the unfinished Designer by default without removing the implementation.
+- Changed the default startup tab to `OAS Generation` and omitted the Designer tab/menu entry unless the experimental preference is enabled.
+- Kept the Designer first in the workflow when enabled, including when toggled on from Preferences during the same session.
+- Added the generation mode selector directly to the OAS Generation interface next to the OAS version selectors.
+- Added regression coverage for the hidden-by-default Designer release behavior.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.4`.
+
+### 2026-05-04 - Build v3.0.3: Generation Modes and Example Repair Tracing
+
+- Added OAS Generation mode preferences for Minimal, Standard, and API Portal-ready output, controlling request/response examples and `x-sandbox-*` custom extensions at generation time.
+- Kept legacy template conversion independent from generation mode so converted templates retain body examples, response examples, and sandbox extensions when legacy data provides them.
+- Added deterministic Repair and complete examples support for converted templates, including configurable seed values and semantic rules stored under the existing OASIS preferences folder.
+- Added Template Example Tracer tooling with optional repair mode, field usage context, readable multi-row tracing output, and support for already repaired `KEPT` examples.
+- Improved semantic classification and example validation for BIC8/BIC11, EBA pattern syntax, filenames, statuses, descriptions, references, and other recurring legacy fields.
+- Added user documentation for semantic classification and semantic-rules configuration, plus regression coverage for generation modes, example repair, tracing, and browse path behavior.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.3`.
+
+### 2026-05-04 - Build v3.0.2: Restore Legacy Converter Browse Paths
+
+- Fixed Legacy Template Converter browse dialogs so they open from the entry path, the saved preference, or the nearest existing parent folder instead of falling back to the executable working directory.
+- Removed the custom API Designer `.oasis_state` session snapshot mechanism and returned Designer restore behavior to the existing preferences-based path memory.
+- Removed stale `.oasis_state` output from `dist` and kept `docs/presentations` out of application builds and commits.
+- Added regression coverage for browse initial directory selection when the remembered leaf folder no longer exists.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.2`.
+
+### 2026-04-28 - Build v3.0.1: API Designer Major Release Baseline
+
+- Added the initial API Designer implementation as the baseline for the new 3.0 major line.
+- Introduced the `src/api_designer` module set covering designer models, OAS import, local persistence, and workspace/session restore behavior.
+- Hardened the Designer Model tree refresh path and batch expansion/collapse behavior to prevent stale-node crashes and long UI freezes on large imported specifications.
+- Added regression coverage and example/manual assets for the new Designer workflow.
+- Updated `OASIS.spec` to collect documentation through a filtered file list, excluding `docs/presentations` artifacts and Office temp lock files so the standard PyInstaller build completes reliably.
+- Standard build completed successfully and produced `dist/OASIS.exe` as version `3.0.1`.
+
 ### 2026-04-10 - Legacy Converter: Preference Injection and Collision-Safe Example Promotion
 
 - Added `Templates > Legacy Tools` preferences for injecting missing `$index.xlsx` `General Description` values generated from legacy templates:

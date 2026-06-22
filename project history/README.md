@@ -11,10 +11,12 @@ When starting a new chat to continue work on this project, share these files:
 2. **REFERENCE**: `KEY_FILES.md` - Detailed file-by-file breakdown
 3. **CONTEXT**: `IMPLEMENTATION_HISTORY.md` - Recent major changes and why decisions were made
 4. **DETAILS**: `WALKTHROUGH.md` - Technical implementation walkthrough
+5. **FUTURE ARCHITECTURE**: `API_DESIGNER_SPEC.md` - Target architecture for the new API Model / Designer workflow
+6. **WORKING NOTES**: `API_DESIGNER_NOTES.md` - Product/domain notes collected while refining the Designer concept
 
 ## Current Status (as of 2026-02-26)
 
-- **Current Version**: `v2.1.98`
+- **Current Version**: `v3.0.2`
 - **Recent focus area**: Legacy Tools schema tracing correctness + readability
 
 ### Recent work summary (v2.1.70 - v2.1.71)
@@ -70,6 +72,19 @@ When starting a new chat to continue work on this project, share these files:
 - Technical walkthrough of final implementation
 - Code snippets and file references
 - Verification results
+
+#### API_DESIGNER_SPEC.md
+- Target architecture for the API Designer
+- API Model as the primary source of truth
+- Reusable shared components and reverse usage tracing
+- OAS import / projection strategy
+- Future-proof callback-ready design
+
+#### API_DESIGNER_NOTES.md
+- Business vocabulary for release planning
+- Change vs ChangeStep notes
+- Release and slip scenarios
+- Practical notes for future data-modeling decisions
 
 ## Project Status (as of 2025-12-16)
 
@@ -154,3 +169,10 @@ Keep these documents updated when making significant changes:
 - Update KEY_FILES.md when adding/removing files or changing APIs
 - Document new discoveries in IMPLEMENTATION_HISTORY.md
 - Update WALKTHROUGH.md after major feature completions
+
+## Project Rules
+
+### Delivery completeness rule
+- Requested features, and any refactors needed to support them correctly, must be completed end-to-end before the task is considered delivered.
+- Do not stop in an intermediate or partially migrated state unless the user explicitly asks for an incremental checkpoint.
+- Before concluding a task, run the relevant verification/tests for the implemented scope and treat passing validation as part of the definition of done.

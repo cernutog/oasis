@@ -1,5 +1,5 @@
 # OASIS - Project Overview
-**Current Version**: `v2.1.98`
+**Current Version**: `v3.0.2`
 
 ## Project Purpose
 OASIS (**O**penAPI **S**pecification **I**ntegration **S**uite) generates OpenAPI Specification (OAS) 3.0 and 3.1 YAML files from Excel templates. It provides a robust pipeline for importing, generating, validating, and documenting professional-grade API specifications.

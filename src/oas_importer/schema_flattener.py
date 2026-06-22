@@ -330,9 +330,7 @@ class SchemaFlattener:
         """
         Flatten a schema by name into rows.
         """
-        print(f"DEBUG: flatten_schema called for {schema_name}")
         if schema_name not in self.schemas:
-            print(f"DEBUG: {schema_name} not found in schemas: {list(self.schemas.keys())}")
             return []
         
         rows = []
@@ -342,7 +340,6 @@ class SchemaFlattener:
         # Check if this schema is a combinator (has oneOf/anyOf/allOf)
         # Combinators will be handled directly by _flatten_schema_def, no root row needed
         is_combinator = any(key in schema for key in ['oneOf', 'anyOf', 'allOf'])
-        print(f"DEBUG: flatten_schema {name} is_combinator={is_combinator} include_root={include_root} keys={list(schema.keys())}") 
         
         # Add root row for top-level component schemas (SKIP for combinators)
         if include_root and not is_combinator:

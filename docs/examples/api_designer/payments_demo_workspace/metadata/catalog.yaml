@@ -1,0 +1,35 @@
+schema_version: api-designer.metadata-catalog/v1
+definitions:
+  - id: meta_owner_team
+    name: owner_team
+    scope: operation
+    value_type: string
+    cardinality: single
+    allowed_values: []
+    default_value: Payments Squad
+    export_policy: internal
+    extensions: {}
+    custom_metadata: {}
+  - id: meta_related_change
+    name: related_change
+    scope: operation
+    value_type: string
+    cardinality: single
+    allowed_values: []
+    default_value: null
+    export_policy: internal
+    extensions: {}
+    custom_metadata: {}
+  - id: meta_bounded_context
+    name: bounded_context
+    scope: api
+    value_type: string
+    cardinality: single
+    allowed_values:
+      - payments
+      - accounts
+      - liquidity
+    default_value: payments
+    export_policy: internal
+    extensions: {}
+    custom_metadata: {}

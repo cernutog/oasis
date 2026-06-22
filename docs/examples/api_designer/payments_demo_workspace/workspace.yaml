@@ -1,0 +1,106 @@
+schema_version: api-designer.workspace/v1
+id: ws_payments_demo
+name: Payments Demo Workspace
+description: Example workspace for exploring the API Designer Milestone 1.
+apis:
+  - id: api_payments
+    name: Payments API
+    display_label: Payments API
+    file: apis/api_payments.yaml
+libraries:
+  - id: lib_shared_banking
+    name: Shared Banking Components
+    file: libraries/lib_shared_banking.yaml
+metadata_catalog_file: metadata/catalog.yaml
+release_catalog:
+  - id: rel_q4_2026
+    code: Q4-2026
+    year: 2026
+    family: quarterly
+    release_type: standard
+    target_date: '2026-11-15'
+    publication_date: ''
+    status: planned
+    notes: Main release for payment status and payment detail enhancements.
+    extensions: {}
+    custom_metadata: {}
+  - id: rel_hf_2026_12
+    code: HF-2026-12
+    year: 2026
+    family: hotfix
+    release_type: hotfix
+    target_date: '2026-12-10'
+    publication_date: ''
+    status: planned
+    notes: Reserved hotfix window for urgent corrections.
+    extensions: {}
+    custom_metadata: {}
+changes:
+  - id: chg_cr5262
+    kind: CR
+    external_ref: CR5262
+    title: Add payment status retrieval endpoint
+    description: Introduce payment status retrieval and enrich payment details with release metadata.
+    target_api_id: api_payments
+    assigned_release_id: rel_q4_2026
+    status: planned
+    priority: high
+    dependencies: []
+    affected_node_ids:
+      - path_payment_status
+      - op_get_payment_status
+      - cmp_payment_status_response
+    steps:
+      - id: step_add_path_payment_status
+        order: 1
+        kind: add_path
+        target_id: path_payment_status
+        path: /payments/{paymentId}/status
+        before: null
+        after:
+          method: get
+          operation_id: getPaymentStatus
+        payload:
+          release: Q4-2026
+        status: planned
+        extensions: {}
+        custom_metadata: {}
+      - id: step_add_status_response
+        order: 2
+        kind: add_component
+        target_id: cmp_payment_status_response
+        path: components.schemas.PaymentStatusResponse
+        before: null
+        after:
+          type: object
+          required:
+            - paymentId
+            - status
+        payload:
+          source: change-step-demo
+        status: planned
+        extensions: {}
+        custom_metadata: {}
+    phases: []
+    audit_trail: []
+    extensions: {}
+    custom_metadata: {}
+release_snapshots:
+  - id: snap_q3_2026_baseline
+    release_id: rel_q4_2026
+    api_id: api_payments
+    label: Working baseline before Q4-2026
+    payload_ref: snapshots/q3-2026-baseline
+    extensions: {}
+    custom_metadata: {}
+settings:
+  projection_defaults:
+    oas_versions:
+      - '3.0'
+      - '3.1'
+    source: api_model
+  workspace_owner: API Guild
+extensions:
+  x-workspace-purpose: demo
+custom_metadata:
+  business_domain: payments

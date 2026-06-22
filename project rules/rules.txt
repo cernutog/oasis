@@ -1,5 +1,29 @@
 PROJECT RULES
 
+GENERAL ENGINEERING PREFLIGHT GATE
+
+Before every response, action, code edit, build, commit, explanation, or verification:
+
+1. Classify the next output: analysis, proposal, code edit, build, commit, explanation, or verification.
+2. Do not modify code or behavior unless the user has explicitly authorized implementation after the strategy is clear.
+3. Identify the source of truth and do not invent missing data.
+4. Prefer fixing the upstream data structure, lifecycle, ownership, or algorithm over applying an output correction.
+5. Reject hard-coded values, ad-hoc heuristics, hidden state, and silent fallbacks unless explicitly approved as the intended design.
+6. Choose the simplest responsibility-correct solution; avoid accumulating workaround layers.
+7. If source data is missing, inconsistent, or ambiguous, report it clearly instead of silently compensating.
+8. Before claiming completion, run the relevant checks or state exactly what could not be verified.
+
+FAST ADMIN PATH
+
+For non-development administrative tasks, such as updating release metadata, removing temporary release files, publishing gh-pages manifests, or simple Git housekeeping:
+
+1. Apply the project preflight, but only for scope, authorization, safety, and source-of-truth checks.
+2. Do not run runtime tests, Spectral, architectural analysis, or broad regression checks unless the change can affect application behavior, generated OAS content, templates, or runtime configuration.
+3. Perform only the minimal file checks needed to avoid touching unintended files.
+4. Verify with git diff/status and, if pushed, a final remote/tree/status check.
+5. Keep user updates short and avoid exploratory detours.
+6. If the administrative task reveals a possible behavior or data issue, stop treating it as Fast Admin Path and switch back to the full engineering preflight.
+
 ONE-SHOT INPUT MAINTENANCE PATH
 
 For explicitly requested one-shot activities, fast-track activities, or tasks that only update/manipulate external input artifacts, templates, Excel files, generated deliverables, reference data, or other non-application assets:
@@ -42,3 +66,5 @@ Don't take long sequences of actions without interacting with him. Sometimes he 
 13. Python Execution Safety: The use of "python -c" or any form of inline Python execution is strictly forbidden. All Python logic must be contained within script files (e.g., in the tests/ directory or as temporary temp_*.py files). This ensures that all executions use the project's virtual environment and are traceable within the project's structure.
 
 14. External File Safety: before modifying any file outside the project workspace or any file not protected by Git versioning, create an explicit backup/snapshot first. Never perform in-place edits on external Excel/templates or other user assets unless a recoverable backup has already been created and its location is known.
+
+15. Root Cause and Simplicity Gate: before proposing or implementing bug fixes, reworks, behavior changes, or fixes to previous failed attempts, apply the root-cause-and-simplicity-gate skill. Identify the symptom, evidence, proximate cause, architectural/root cause, correct ownership/lifecycle, complexity risks, rejected workarounds, simplest responsibility-correct strategy, and verification plan. Do not proceed to code changes before the strategy is clear and explicitly authorized by the user.

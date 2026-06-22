@@ -1,0 +1,318 @@
+schema_version: api-designer.api/v1
+id: api_payments
+name: Payments API
+display_label: Payments API
+version: 1.4.0
+info:
+  title: Payments API
+  version: 1.4.0
+  summary: Manage and track interbank payment instructions.
+  description: API model example used to explore the Designer shell in Milestone 1.
+servers:
+  - url: https://api.sandbox.bank.example/payments
+    description: Sandbox
+  - url: https://api.bank.example/payments
+    description: Production
+tags:
+  - name: Payments
+    description: Payment initiation and retrieval.
+  - name: Status
+    description: Payment lifecycle status operations.
+path_items:
+    - id: path_payments_collection
+      path: /payments
+      summary: Payments collection
+      description: Collection endpoints for creating and listing payments.
+      parameters: []
+      operations:
+        - id: op_create_payment
+          method: post
+          path: /payments
+          operation_id: createPayment
+          summary: Create a payment
+          description: Create a new payment instruction and return the accepted resource.
+          tags:
+            - Payments
+          parameters: []
+          request_body:
+            required: true
+            content:
+              application/json:
+                schema:
+                  $ref: '#/components/schemas/CreatePaymentRequest'
+          responses:
+            '201':
+              description: Payment created
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/PaymentDetails'
+            '400':
+              description: Invalid request
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ErrorResponse'
+          security:
+            - oauth2:
+                - payments.write
+          callbacks: []
+          extensions:
+            x-sandbox-rule-type: SCRIPT_JS
+          custom_metadata:
+            owner_team: Payments Squad
+        - id: op_list_payments
+          method: get
+          path: /payments
+          operation_id: listPayments
+          summary: List payments
+          description: Return payments visible to the calling client.
+          tags:
+            - Payments
+          parameters:
+            - name: pageSize
+              in: query
+              required: false
+              schema:
+                type: integer
+                minimum: 1
+                maximum: 100
+          request_body: {}
+          responses:
+            '200':
+              description: Payment list
+              content:
+                application/json:
+                  schema:
+                    type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/PaymentSummary'
+          security:
+            - oauth2:
+                - payments.read
+          callbacks: []
+          extensions: {}
+          custom_metadata:
+            owner_team: Payments Squad
+    - id: path_payment_details
+      path: /payments/{paymentId}
+      summary: Payment detail
+      description: Operations on a single payment resource.
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      operations:
+        - id: op_get_payment
+          method: get
+          path: /payments/{paymentId}
+          operation_id: getPayment
+          summary: Get payment details
+          description: Return details and execution metadata for one payment.
+          tags:
+            - Payments
+          parameters:
+            - name: paymentId
+              in: path
+              required: true
+              schema:
+                type: string
+          request_body: {}
+          responses:
+            '200':
+              description: Payment details
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/PaymentDetails'
+            '404':
+              description: Payment not found
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ErrorResponse'
+          security:
+            - oauth2:
+                - payments.read
+          callbacks: []
+          extensions:
+            x-api-visibility: internal
+          custom_metadata:
+            owner_team: Payments Squad
+    - id: path_payment_status
+      path: /payments/{paymentId}/status
+      summary: Payment status
+      description: Retrieve the current status for one payment.
+      parameters:
+        - name: paymentId
+          in: path
+          required: true
+          schema:
+            type: string
+      operations:
+        - id: op_get_payment_status
+          method: get
+          path: /payments/{paymentId}/status
+          operation_id: getPaymentStatus
+          summary: Get payment status
+          description: Return lifecycle status plus the most recent transition timestamp.
+          tags:
+            - Payments
+            - Status
+          parameters:
+            - name: paymentId
+              in: path
+              required: true
+              schema:
+                type: string
+          request_body: {}
+          responses:
+            '200':
+              description: Payment status
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/PaymentStatusResponse'
+            '404':
+              description: Payment not found
+              content:
+                application/json:
+                  schema:
+                    $ref: '#/components/schemas/ErrorResponse'
+          security:
+            - oauth2:
+                - payments.read
+          callbacks: []
+          extensions:
+            x-release-target: Q4-2026
+          custom_metadata:
+            related_change: CR5262
+local_components:
+  schemas:
+    CreatePaymentRequest:
+      type: object
+      required:
+        - debtorAccount
+        - creditorAccount
+        - amount
+        - currency
+      properties:
+        debtorAccount:
+          $ref: '#/components/schemas/AccountReference'
+        creditorAccount:
+          $ref: '#/components/schemas/AccountReference'
+        amount:
+          type: number
+          minimum: 0.01
+        currency:
+          type: string
+          minLength: 3
+          maxLength: 3
+        remittanceInformation:
+          type: string
+    PaymentSummary:
+      type: object
+      properties:
+        paymentId:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        status:
+          type: string
+    PaymentDetails:
+      type: object
+      required:
+        - paymentId
+        - status
+      properties:
+        paymentId:
+          type: string
+        status:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        debtorAccount:
+          $ref: '#/components/schemas/AccountReference'
+        creditorAccount:
+          $ref: '#/components/schemas/AccountReference'
+    PaymentStatusResponse:
+      type: object
+      required:
+        - paymentId
+        - status
+        - lastUpdatedAt
+      properties:
+        paymentId:
+          type: string
+        status:
+          type: string
+          enum:
+            - RECEIVED
+            - ACCEPTED
+            - EXECUTED
+            - REJECTED
+        reasonCode:
+          type: string
+        lastUpdatedAt:
+          type: string
+          format: date-time
+    ErrorResponse:
+      type: object
+      required:
+        - code
+        - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    AccountReference:
+      type: object
+      required:
+        - iban
+        - bic
+      properties:
+        iban:
+          type: string
+        bic:
+          type: string
+  responses:
+    PaymentCreated:
+      description: Payment accepted and created.
+    PaymentNotFound:
+      description: Target payment does not exist.
+  securitySchemes:
+    oauth2:
+      type: oauth2
+      flows:
+        clientCredentials:
+          tokenUrl: https://auth.bank.example/token
+          scopes:
+            payments.read: Read payments
+            payments.write: Create payments
+shared_component_refs:
+  - library_id: lib_shared_banking
+    component_id: cmp_trace_headers
+    component_kind: headers
+    adopted_revision_id: rev_trace_headers_v1
+  - library_id: lib_shared_banking
+    component_id: cmp_problem_details
+    component_kind: schema
+    adopted_revision_id: rev_problem_details_v2
+extensions:
+  x-api-domain: payments
+custom_metadata:
+  visibility: internal
+  bounded_context: payments

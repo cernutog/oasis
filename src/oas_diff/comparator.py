@@ -32,7 +32,6 @@ def compare_specs(old_spec: Dict[str, Any], new_spec: Dict[str, Any], debug_mode
             f.write(f"Old Spec Keys: {list(old_spec.keys())}\n")
             f.write(f"New Spec Keys: {list(new_spec.keys())}\n")
 
-        # DEBUG: Dump full specs to analyze structure
         with open(os.path.join(log_dir, "debug_old_spec.yaml"), "w", encoding="utf-8") as f:
             yaml.dump(old_spec, f)
         with open(os.path.join(log_dir, "debug_new_spec.yaml"), "w", encoding="utf-8") as f:

@@ -153,6 +153,11 @@ class OASParser:
                 result['contact_name'] = contact['name']
             if 'url' in contact:
                 result['contact_url'] = contact['url']
+
+        if info.get('x-info-release'):
+            result['release'] = info.get('x-info-release')
+        if info.get('x-info-filename-pattern'):
+            result['filename_pattern'] = info.get('x-info-filename-pattern')
         
         # License
         if 'license' in info:
@@ -231,7 +236,7 @@ class OASParser:
         
         # Request body
         if 'requestBody' in op_data:
-            operation.request_body = op_data['requestBody']
+            operation.request_body = self._parse_request_body(op_data['requestBody'])
         
         # Responses
         for status_code, resp_data in op_data.get('responses', {}).items():
@@ -243,6 +248,26 @@ class OASParser:
                 operation.extensions[key] = value
         
         return operation
+
+    def _parse_request_body(self, request_body: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse a requestBody object, resolving reusable requestBody refs."""
+        if not isinstance(request_body, dict):
+            return request_body
+
+        top_ref = request_body.get('$ref')
+        if not top_ref:
+            return request_body
+
+        resolved_data = self._resolve_ref(top_ref)
+        if not isinstance(resolved_data, dict):
+            return request_body
+
+        parsed_body = dict(resolved_data)
+        for key, value in request_body.items():
+            if key != '$ref':
+                parsed_body[key] = value
+
+        return parsed_body
 
     def _parse_parameter(self, param_data: Dict) -> ParameterInfo:
         """Parse a parameter definition."""

@@ -57,12 +57,22 @@ class CompatibilityDocxGenerator:
     """
     Generates a Word Document (.docx) detailing Interface Compatibility issues.
     """
-    def __init__(self, issues: List[CompatibilityIssue], old_path: str, new_path: str, template_path: str = None, spec1: dict = None, spec2: dict = None):
+    def __init__(
+        self,
+        issues: List[CompatibilityIssue],
+        old_path: str,
+        new_path: str,
+        template_path: str = None,
+        spec1: dict = None,
+        spec2: dict = None,
+        report_filters: dict = None,
+    ):
         self.issues = issues
         self.old_path = old_path
         self.new_path = new_path
         self.spec1 = spec1 or {}
         self.spec2 = spec2 or {}
+        self.report_filters = report_filters or {}
         
         if template_path:
             template_path = template_path.strip('"\' ')
@@ -105,6 +115,7 @@ class CompatibilityDocxGenerator:
         
         # 1. Metadata Table
         self._add_metadata_table()
+        self._add_filter_summary()
 
         # 2. Executive Summary or Total Count
 
@@ -135,7 +146,7 @@ class CompatibilityDocxGenerator:
         self.doc.add_paragraph().add_run(f'Total Issues Found: {len(self.issues)}').bold = True
              
         sorted_freq = sorted(freq.items(), key=lambda x: x[1], reverse=True)
-        widths_s = [Inches(0.4), Inches(2.1), Inches(3.5), Inches(1.0)]
+        widths_s = [Inches(0.6), Inches(2.1), Inches(3.3), Inches(1.0)]
         table = self._create_table(4, widths_s)
         self._set_repeat_header(table.rows[0])
         
@@ -467,6 +478,34 @@ class CompatibilityDocxGenerator:
                  r_cells[0].paragraphs[0].runs[0].font.bold = True
              for j in range(3):
                  self._style_body_cell(r_cells[j])
+
+    def _add_filter_summary(self):
+        """Document which interface filters were applied to this report."""
+        show_enum = self.report_filters.get("show_enum_order_changes", False)
+        show_validation_rule_only = self.report_filters.get(
+            "show_validation_rule_only_description_changes",
+            True,
+        )
+
+        self.doc.add_paragraph()
+        self.doc.add_heading("Report Filters", 1)
+
+        filters = [
+            (
+                "Enum order changes",
+                "shown" if show_enum else "disabled",
+            ),
+            (
+                "Description changes caused only by added validation rules",
+                "shown" if show_validation_rule_only else "disabled",
+            ),
+        ]
+        for label, state in filters:
+            paragraph = self.doc.add_paragraph(style=None)
+            paragraph.style = self.doc.styles["Normal"]
+            paragraph.paragraph_format.left_indent = Inches(0.25)
+            paragraph.add_run(f"{label}: ").bold = True
+            paragraph.add_run(state)
 
     def _norm_desc(self, txt):
         """Collapses all whitespace into single spaces and strips."""
