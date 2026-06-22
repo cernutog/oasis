@@ -24,6 +24,15 @@ For non-development administrative tasks, such as updating release metadata, rem
 5. Keep user updates short and avoid exploratory detours.
 6. If the administrative task reveals a possible behavior or data issue, stop treating it as Fast Admin Path and switch back to the full engineering preflight.
 
+BRANCH POLICY
+
+1. master is the production branch and must always represent the latest consolidated and accepted production state.
+2. Development work must happen on non-master development branches.
+3. After a development branch has been merged into master and the merge has been verified, that branch is considered absorbed and should be deleted locally and remotely unless the user explicitly asks to keep it.
+4. Do not use old absorbed branches as functional documentation. Preserve relevant history through master commits, tags, release notes, or project documentation instead.
+5. gh-pages is a separate publishing branch for release metadata and update manifests. Do not treat it as an application development branch and do not merge it into master.
+6. Ask the user before merging any development branch into master or deleting remote branches.
+
 ONE-SHOT INPUT MAINTENANCE PATH
 
 For explicitly requested one-shot activities, fast-track activities, or tasks that only update/manipulate external input artifacts, templates, Excel files, generated deliverables, reference data, or other non-application assets:
