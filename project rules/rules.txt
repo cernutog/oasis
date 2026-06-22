@@ -1,5 +1,19 @@
 PROJECT RULES
 
+ONE-SHOT INPUT MAINTENANCE PATH
+
+For explicitly requested one-shot activities, fast-track activities, or tasks that only update/manipulate external input artifacts, templates, Excel files, generated deliverables, reference data, or other non-application assets:
+
+1. Treat the task as one-shot input maintenance, not application development.
+2. Do not create or switch Git branches unless explicitly requested.
+3. Do not stage, commit, or version helper scripts, scratch reports, or generated verification artifacts unless explicitly requested.
+4. Put temporary manipulation scripts, reports, generated OAS, logs, and comparison outputs outside the repository, preferably under C:\tmp.
+5. If editing files outside Git/workspace protection, create a recoverable backup before any in-place edit.
+6. Use only the declared source-of-truth files for data changes.
+7. Run focused artifact verification: import/open checks, targeted content checks, generated output checks when relevant, and Spectral when OAS is generated.
+8. Report changed files, backup path, verification evidence, and residual issues.
+9. If the work reveals a need to change OASIS application code, runtime behavior, generators, converters, tests, or configuration, stop the one-shot path and ask whether to switch to the normal development workflow.
+
 1. The user prompting requests is the project master. In case of doubt, before exploring possibilities, ask directly for information. In many cases he can give you the information you need.
 Don't take long sequences of actions without interacting with him. Sometimes he wishes to give hints, recommendations, help, but you are too selfishly busy in finding a solution. Stop frequenty and ask.
 
